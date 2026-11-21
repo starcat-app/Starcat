@@ -88,6 +88,7 @@ struct UserProjectRepositoryTests {
         let item = remote(id: 11, name: "shared")
         let starred = StarredRepoDTO(starredAt: "2026-07-01T00:00:00Z", repo: item.repo)
         try await stars.upsertStarred([starred], userID: 7, syncedAt: Date(timeIntervalSince1970: 100))
+        _ = try await stars.cacheSubscriberCount(repoID: 11, count: 7)
 
         try await database.writer.write { db in
             try db.execute(
@@ -122,6 +123,7 @@ struct UserProjectRepositoryTests {
         let saved = try #require(try await stars.findById(11))
         #expect(saved.isStarred)
         #expect(saved.starredAt == "2026-07-01T00:00:00Z")
+        #expect(saved.subscribersCount == 7)
         try await database.writer.read { db in
             let note = try String.fetchOne(db, sql: "SELECT content FROM repo_notes WHERE repo_id = 11")
             let pinCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM repo_pins WHERE repo_id = 11")

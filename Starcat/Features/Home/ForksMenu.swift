@@ -139,6 +139,7 @@ struct ForksMenu: View {
         RepoStatItem(
             label: "repo.stats.forks",
             value: repo.forksCount,
+            introductionKey: .init(repo.fullName, .forks),
             businessIcon: .forkCount,
             tint: forkTint
         )

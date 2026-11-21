@@ -393,7 +393,7 @@ struct WeeklyFeedRepoDTO: Decodable, Equatable, Sendable {
             stars: try c.decodeIfPresent(Int.self, forKey: .stars) ?? 0,
             forks: try c.decodeIfPresent(Int.self, forKey: .forks) ?? 0,
             watchers: try c.decodeIfPresent(Int.self, forKey: .watchers) ?? 0,
-            subscribers: try c.decodeIfPresent(Int.self, forKey: .subscribers) ?? 0,
+            subscribers: try c.decodeIfPresent(Int.self, forKey: .subscribers),
             topics: try c.decodeIfPresent([String].self, forKey: .topics) ?? [],
             homepage: try decodeOptionalURL(c, forKey: .homepage),
             licenseSpdx: try c.decodeIfPresent(String.self, forKey: .licenseSpdx),

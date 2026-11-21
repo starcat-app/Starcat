@@ -29,12 +29,14 @@ extension GitHubAPIClient {
     /// - Parameters:
     ///   - owner: 仓库 owner（org 或 user 的 login）。
     ///   - repo: 仓库 name（不含 owner 前缀）。
+    ///   - forceRefresh: 跳过本地 HTTP 缓存，读取 GitHub 当前返回的资料。
     /// - Returns: 完整的 `GitHubRepoDTO`（含 description / language / stargazers_count /
     ///   topics / license / created_at / updated_at / pushed_at 等字段）。
     /// - Throws: 网络层 `NetworkError`，404 / 401 / RateLimit 等按各自语义抛。
-    func repo(owner: String, repo: String) async throws -> GitHubRepoDTO {
+    func repo(owner: String, repo: String, forceRefresh: Bool) async throws -> GitHubRepoDTO {
         let response: APIResponse<GitHubRepoDTO> = try await get(
-            path: AppEndpoints.GitHubREST.Paths.repo(owner: owner, repo: repo)
+            path: AppEndpoints.GitHubREST.Paths.repo(owner: owner, repo: repo),
+            cachePolicy: forceRefresh ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy
         )
         return response.value
     }

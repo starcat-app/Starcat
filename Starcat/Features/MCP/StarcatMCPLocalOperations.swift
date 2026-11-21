@@ -37,7 +37,9 @@ extension StarcatMCPPublicCatalog {
             "notifications_enabled": boolean, "external_search_allow_private_repos": boolean,
             "auto_tidy": .object(["type": .string("object")])
         ]) { _, new in new }, permission: "write"),
-        .init(name: "export_diagnostics", summary: "Build the App's standard redacted diagnostic ZIP without a save dialog. Read bytes with read_export_chunk; export expires after one hour.", properties: preview.merging(["description": string(), "module": string()]) { _, new in new }, permission: "write", task: true),
+        .init(name: "export_diagnostics", summary: "Build the App's standard redacted diagnostic ZIP without a save dialog. Optional occurred_at (ISO 8601 instant) or occurred_on (YYYY-MM-DD) preserves the user's time precision. Read bytes with read_export_chunk; export expires after one hour.", properties: preview.merging([
+            "description": string(), "module": string(), "occurred_at": string(), "occurred_on": string()
+        ]) { _, new in new }, permission: "write", task: true),
         .init(name: "read_export_chunk", summary: "Read a base64 chunk of an App-created diagnostic export by artifact ID; paths are never accepted.", properties: [
             "id": string(), "offset": integer(0, Int.max), "limit": integer(1, 65_536)
         ], required: ["id"])
@@ -197,12 +199,12 @@ extension StarcatMCPPublicFacade {
             if let tidy { app.settings.autoTidySettings = tidy }
             return try await call(name: "get_public_settings", arguments: [:])
         case "export_diagnostics":
+            let options = try Self.diagnosticExportOptions(arguments)
             if dryRun { return preview(name, target: .object(["redacted": .bool(true), "retention_seconds": .int(3600)])) }
             pruneDiagnosticExports()
             let artifactID = UUID().uuidString.lowercased()
             let destination = FileManager.default.temporaryDirectory.appendingPathComponent("starcat-public-diagnostics-\(artifactID).zip")
             return try tasks.start(kind: name, supportsCancellation: false) {
-                let options = DiagnosticExportOptions(description: arguments["description"]?.stringValue ?? "", module: arguments["module"]?.stringValue ?? "")
                 let url = try await DiagnosticBundleExporter.export(to: destination, settings: app.settings, options: options)
                 self.diagnosticExports[artifactID] = (url, Date())
                 let bytes = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
@@ -223,6 +225,34 @@ extension StarcatMCPPublicFacade {
             ])
         default: throw StarcatMCPError.unsupported("Unknown local operation: \(name)")
         }
+    }
+
+    /// 公共导出与窗口使用同一时间精度；无效日期在接受任务前拒绝，不静默忽略用户线索。
+    static func diagnosticExportOptions(_ arguments: [String: Value]) throws -> DiagnosticExportOptions {
+        var options = DiagnosticExportOptions(description: arguments["description"]?.stringValue ?? "",
+                                              module: arguments["module"]?.stringValue ?? "")
+        if let value = arguments["occurred_at"] {
+            // 共享 formatter 用于带小数秒的事件；公共输入同样允许标准的不带小数秒形式。
+            guard let text = value.stringValue,
+                  let date = ISO8601DateFormatter.shared.date(from: text) ?? ISO8601DateFormatter().date(from: text) else {
+                throw StarcatMCPError.invalidArguments("occurred_at must be an ISO 8601 instant.")
+            }
+            options.occurredAt = date
+        }
+        if let value = arguments["occurred_on"] {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.calendar = Calendar(identifier: .gregorian)
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.dateFormat = "yyyy-MM-dd"
+            formatter.isLenient = false
+            guard options.occurredAt == nil, let text = value.stringValue,
+                  let date = formatter.date(from: text), formatter.string(from: date) == text else {
+                throw StarcatMCPError.invalidArguments("occurred_on must be YYYY-MM-DD and cannot be combined with occurred_at.")
+            }
+            options.occurredOn = text
+        }
+        return options
     }
 
     static func cacheStatistics(_ statistics: CacheStatistics) -> Value {

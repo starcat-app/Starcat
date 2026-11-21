@@ -17,34 +17,12 @@
 
 import SwiftUI
 
-/// Inline AI 浮层高度：从 README 状态栏上沿往上铺，顶边停在 README / 洞察切换行下方。
-///
-/// Overlay 挂在整个 body 上（含切换行和 README 状态栏）。Manage 详情通过 PreferenceKey
-/// 上报切换行和状态栏高度；没有对应 chrome 的场景继续使用兼容兜底间距。
-enum RepoAIOverlayLayout {
-    static let panelBottomInset: CGFloat = 34
-    static let fallbackTopInset: CGFloat = 16
-    static let panelMinHeight: CGFloat = 320
-    static let maximizedMinHeight: CGFloat = 360
-
-    static func panelHeight(
-        availableHeight: CGFloat,
-        topChromeInset: CGFloat,
-        bottomChromeInset: CGFloat = panelBottomInset,
-        isMaximized: Bool
-    ) -> CGFloat {
-        let topInset = topChromeInset > 0 ? topChromeInset : fallbackTopInset
-        let minHeight = isMaximized ? maximizedMinHeight : panelMinHeight
-        return max(minHeight, availableHeight - bottomChromeInset - topInset)
-    }
-}
-
 /// 右侧详情页内的 AI 悬浮入口和两档面板容器。
 struct RepoAIFloatingOverlay: View {
     let repo: Repo
-    /// Manage 详情 README / 洞察切换行高度；其它场景保持 0。
+    /// 正文顶部到仓库切换栏下沿的实际距离。
     var topChromeInset: CGFloat = 0
-    /// README 状态栏高度；为 0 时使用 `RepoAIOverlayLayout.panelBottomInset` 兼容旧场景。
+    /// README 状态栏高度。
     var bottomChromeInset: CGFloat = 0
 
     @Environment(AppDependencies.self) private var dependencies

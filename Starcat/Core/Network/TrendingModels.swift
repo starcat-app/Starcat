@@ -179,7 +179,7 @@ struct TrendingRepo: Identifiable, Equatable, Sendable {
 
         // R-01 v1.2 扩展 4 字段透传（DTO 对应字段直接拿）
         self.ownerAvatar = card.ownerAvatar
-        self.subscribersCount = card.subscribers
+        self.subscribersCount = Repo.subscriberCount(fromFeed: card.subscribers)
         self.defaultBranch = card.defaultBranch
         self.openIssuesCount = card.openIssues
 
@@ -276,7 +276,7 @@ struct TrendingRepo: Identifiable, Equatable, Sendable {
             starredAt: nil,
             cachedAt: nil,
             ownerAvatar: self.ownerAvatar?.absoluteString,
-            subscribersCount: self.subscribersCount,
+            subscribersCount: Repo.subscriberCount(fromFeed: self.subscribersCount),
             defaultBranch: self.defaultBranch,
             openIssuesCount: self.openIssuesCount
         )

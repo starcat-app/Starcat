@@ -84,15 +84,7 @@ struct FollowGraphUserCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 Spacer(minLength: 0)
-                Button { model.focus(node.id) } label: {
-                    Label("followGraph.action.locate", systemImage: "scope")
-                        .labelStyle(.iconOnly)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help("followGraph.action.locate")
+                FollowGraphLocateButton { model.focus(node.id) }
             }
 
             HStack(alignment: .center, spacing: 10) {
@@ -105,8 +97,7 @@ struct FollowGraphUserCard: View {
                     .help(loadCountLabel + "\n" + String.l10n(loadStateKey))
                 Spacer(minLength: 0)
                 if model.showsLoadMore(node.id, fallbackTotal: relationTotal) {
-                    Button("followGraph.action.moreCompact") { model.loadMore(node.id, fallbackTotal: relationTotal) }
-                        .fixedSize()
+                    FollowGraphMoreButton { model.loadMore(node.id, fallbackTotal: relationTotal) }
                         .disabled(model.isLoading || model.isRevealingRelations(for: node.id))
                 } else if model.needsRelationReload(node.id) {
                     Button("followGraph.action.refresh") { model.reloadRelations(node.id) }
@@ -180,5 +171,31 @@ struct FollowGraphUserCard: View {
         guard let email = profile?.email?.trimmingCharacters(in: .whitespacesAndNewlines),
               !email.isEmpty, let url = URL(string: "mailto:\(email)") else { return }
         open(url)
+    }
+}
+
+/// 资料浮卡共用的定位入口，保持点击区域和键盘提示一致。
+struct FollowGraphLocateButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label("followGraph.action.locate", systemImage: "scope")
+                .labelStyle(.iconOnly)
+                .foregroundStyle(.secondary)
+                .frame(width: 28, height: 28)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help("followGraph.action.locate")
+    }
+}
+
+/// 图谱的按需展开按钮，分页策略由使用它的视图模型提供。
+struct FollowGraphMoreButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button("followGraph.action.moreCompact", action: action).fixedSize()
     }
 }

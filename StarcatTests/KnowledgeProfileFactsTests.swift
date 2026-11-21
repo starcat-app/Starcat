@@ -47,6 +47,43 @@ struct KnowledgeProfileFactsTests {
         }
     }
 
+    @Test("合入 dev 后保留专项预览库的账本和覆盖起点")
+    func upgradeFromProfilePreview() throws {
+        let queue = try DatabaseQueue()
+        var migrations = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrations)
+        try migrations.migrate(queue, upTo: "v27-repository-skill-summaries")
+        try queue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE knowledge_activity_coverage (
+                    id INTEGER PRIMARY KEY CHECK (id = 1), started_at REAL NOT NULL
+                );
+                CREATE TABLE knowledge_activity (
+                    id INTEGER PRIMARY KEY, repo_id INTEGER NOT NULL, kind TEXT NOT NULL,
+                    occurred_at REAL NOT NULL, source TEXT NOT NULL
+                );
+                CREATE INDEX idx_knowledge_activity_time ON knowledge_activity(occurred_at);
+                INSERT INTO knowledge_activity_coverage VALUES (1, 100);
+                INSERT INTO knowledge_activity VALUES (1, 1, 'wroteNote', 110, 'starcat');
+                INSERT INTO grdb_migrations VALUES ('v28-knowledge-activity');
+                INSERT INTO repos(id,owner,name,full_name,html_url,subscribers_count)
+                VALUES (1,'o','a','o/a','a',0);
+                INSERT INTO repo_notes(repo_id,content,edited_at) VALUES (1,'','2020-01-01');
+                """)
+        }
+        try migrations.migrate(queue)
+        try migrations.migrate(queue)
+        try queue.read { db in
+            let applied = try migrations.appliedIdentifiers(db)
+            #expect(applied.contains("v30-knowledge-activity"))
+            #expect(!applied.contains("v28-knowledge-activity"))
+            #expect(try Double.fetchOne(db, sql: "SELECT started_at FROM knowledge_activity_coverage") == 100)
+            #expect(try String.fetchAll(db, sql: "SELECT kind FROM knowledge_activity") == ["wroteNote"])
+            #expect(try RepoNote.fetchOne(db, key: 1)?.editedAt == nil)
+            #expect(try Int.fetchOne(db, sql: "SELECT subscribers_count FROM repos WHERE id = 1") == nil)
+        }
+    }
+
     @Test("重复保存、自动已读和重放快照不重复记账，账本写失败回滚正文")
     func writesAndRollback() async throws {
         let database = try InMemoryDatabaseManager(userId: 42)

@@ -66,8 +66,10 @@ struct DiscoveryDetailPresentationTests {
         #expect(retryID != requestID)
         #expect(model.repo == snapshot)
         #expect(!model.metadataFailed)
+        var complete = item.toEphemeralRepo(isStarred: false)
+        complete.subscribersCount = 0
         await model.resolveMetadata(requestID: retryID, registry: registry) {
-            item.toEphemeralRepo(isStarred: false)
+            complete
         }
         #expect(model.repo?.subscribersCount == 0)
         #expect(!model.metadataFailed)
@@ -129,7 +131,7 @@ struct DiscoveryDetailPresentationTests {
         #expect(model.repo?.subscribersCount == 8)
         model.present(item: item, requiresCompleteMetadata: false, registry: registry)
         #expect(model.metadataRequestID == nil)
-        #expect(model.repo?.subscribersCount == 0)
+        #expect(model.repo?.subscribersCount == nil)
     }
 
     /// 复用每日推荐的真实 DTO 适配路径，避免测试与未知字段约定各维护一套。

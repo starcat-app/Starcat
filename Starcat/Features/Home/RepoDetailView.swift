@@ -316,6 +316,8 @@ struct ReadmeStateView: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
+    @Environment(\.repoSubscriberCountRefresh) private var subscriberCountRefresh
+
     /// 相对时间 helper 需要显式 `\.locale`，否则 formatter 会回到系统语言。
     /// 已挂 `appLocaleEnvironment()` 的子树自动拿到正确值。
     @Environment(\.locale) private var locale
@@ -541,7 +543,7 @@ struct ReadmeStateView: View {
             identity: "\(refreshCommandIdentity)-\(readmeVM.isRefreshing)-\(isMarkdownRefreshing)",
             title: String.l10n("commands.actions.refreshCurrentDetail"),
             isEnabled: !readmeVM.isRefreshing && !isMarkdownRefreshing,
-            action: retryReadme
+            action: refreshDetail
         )
         .onChange(of: translationSyncKey, initial: true) { _, _ in
             syncSharedTranslationToCurrentRepo()
@@ -677,6 +679,12 @@ struct ReadmeStateView: View {
         } else {
             onRetry()
         }
+    }
+
+    /// 正文链接仍按文件刷新，仓库 README 的刷新才同时更新仓库计数。
+    private func refreshDetail() {
+        if scopedMarkdownDocument == nil { subscriberCountRefresh?.perform() }
+        retryReadme()
     }
 
     /// 切换 repo 时 `state` 可能仍停留在上一个 `.loaded`（onChange 晚于 body 一帧）；
@@ -1223,7 +1231,7 @@ struct ReadmeStateView: View {
             font: .caption2,
             frameSize: 18,
             tooltip: String.l10n("readme.refresh"),
-            action: retryReadme
+            action: refreshDetail
         )
     }
 }
@@ -1626,9 +1634,9 @@ struct ReadmeTranslationFooterButton: View {
 private struct StatItem: View {
     let label: LocalizedStringKey
     let value: Int?
+    let introductionKey: RepoStatCountKey
     let systemImage: String
     let tint: Color
-    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .center, spacing: 2) {
@@ -1636,8 +1644,7 @@ private struct StatItem: View {
                 Image(systemName: systemImage)
                     .foregroundStyle(tint)
                     .font(.system(size: 14))
-                Text(value.map { $0.formatted(.number.locale(locale)) } ?? "-")
-                    .monospacedDigit()
+                RepoMetadataCountLabel(count: value, introductionKey: introductionKey)
                     .font(.system(size: 14, weight: .medium))
             }
             Text(label)
@@ -1681,192 +1688,333 @@ private struct DateStatItem: View {
 
 struct WatchersMenu: View {
     let repo: Repo
+    let loadsMissingSubscriberCount: Bool
     @Environment(AppDependencies.self) private var dependencies
-    /// Watchers 图标用 StatSemanticColor.watchers 紫色(light/dark 双主题)。
     @Environment(\.colorScheme) private var colorScheme
-    
-    enum WatchState: Equatable {
-        case loading
-        case participating // un-watched (default)
-        case allActivity // subscribed: true, ignored: false
-        case ignore // subscribed: false, ignored: true
-        case custom // other states
-        case error
-    }
-    
-    @State private var watchState: WatchState = .loading
-    @State private var loadedRepoId: Int64?
-    
+    @State private var isPresented = false
+
     var body: some View {
-        Menu {
-            switch watchState {
-            case .loading:
-                Text("watch.loading")
-            case .error:
-                Button("action.retry") {
-                    Task { await fetchSubscription() }
-                }
-            default:
-                Button {
-                    Task { await updateSubscription(subscribed: false, ignored: false) }
-                } label: {
-                    if watchState == .participating {
-                        Label("watch.participating", systemImage: "checkmark")
-                    } else {
-                        Text("watch.participating")
-                    }
-                }
-
-                Button {
-                    Task { await updateSubscription(subscribed: true, ignored: false) }
-                } label: {
-                    if watchState == .allActivity {
-                        Label("watch.allActivity", systemImage: "checkmark")
-                    } else {
-                        Text("watch.allActivity")
-                    }
-                }
-
-                Button {
-                    Task { await updateSubscription(subscribed: false, ignored: true) }
-                } label: {
-                    if watchState == .ignore {
-                        Label("watch.ignore", systemImage: "checkmark")
-                    } else {
-                        Text("watch.ignore")
-                    }
-                }
-
-                Divider()
-
-                Button {
-                    if let url = URL(string: "\(repo.htmlUrl)/watchers") {
-                        NSWorkspace.shared.open(url)
-                    }
-                } label: {
-                    Label("watch.viewOnGithub", systemImage: "safari")
-                }
-            }
-        } label: {
-            StatItem(label: "repo.stats.watchers", value: repo.subscribersCount, systemImage: "eye.fill", tint: StatSemanticColor.watchers.resolved(colorScheme: colorScheme))
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .fixedSize()
-        // 2026-06-02 dong4j 要求统一 hover 反馈：跟 Stars / Forks 一样加
-        // `.pressableHover()`，让用户感知 Watchers 数字是可点击的（点开下拉菜单）。
-        .pressableHover()
-        .help("repo.watch")
-        // D-37（2026-06-29）：原来用 `.simultaneousGesture(TapGesture())` 想做"打开菜单才懒加载",
-        // 但 macOS Menu label 内部 button 优先消费 tap event,挂在外层的 .onEnded 在 Menu 上不可靠
-        // 触发,导致 fetchSubscription Task 永远不启动,watchState 永远停在 .loading。
-        // 改回 `.task(id: repo.id)`,cache 命中就跳过;跟工程内 9+ 个其他 section 同款 lifecycle。
-        // .task 在 view 离开 / repo 切换时会自动 cancel 旧任务,符合"切换 repo 不抢网络"原意。
-        .task(id: repo.id) {
-            if WatchSubscriptionSessionCache.state(for: repo.id) == nil {
-                // Watch 状态不影响详情首屏。稍后再请求，避免与 README / 本地关系查询
-                // 同时争抢卡片点击后的关键窗口；连续切换会自动取消旧 task。
-                try? await Task.sleep(for: .milliseconds(250))
-                guard !Task.isCancelled else { return }
-                await fetchSubscription()
-            } else {
-                applyCachedSubscriptionState()
-            }
-        }
-    }
-    
-    @discardableResult
-    private func applyCachedSubscriptionState() -> Bool {
-        if let cached = WatchSubscriptionSessionCache.state(for: repo.id) {
-            watchState = cached
-            loadedRepoId = repo.id
-            return true
-        }
-        // GitHub Watch 状态只在用户打开菜单时才需要；切换 repo 不再自动打
-        // `/subscription`，避免详情切换路径抢网络和触发额外状态更新。
-        watchState = .loading
-        loadedRepoId = nil
-        return false
-    }
-
-    private func fetchSubscription() async {
-        let requestedRepoId = repo.id
-        if loadedRepoId == requestedRepoId, watchState != .error {
-            return
-        }
-        watchState = .loading
-        do {
-            let dto = try await dependencies.apiClient.getSubscription(owner: repo.owner, repo: repo.name)
-            let resolvedState: WatchState
-            if dto.subscribed {
-                resolvedState = .allActivity
-            } else if dto.ignored {
-                resolvedState = .ignore
-            } else {
-                resolvedState = .custom
-            }
-            guard repo.id == requestedRepoId else { return }
-            watchState = resolvedState
-            loadedRepoId = requestedRepoId
-            WatchSubscriptionSessionCache.set(resolvedState, for: requestedRepoId)
-        } catch NetworkError.notFound {
-            // 404 在 GitHub Watch API 是预期行为：表示用户对这个 repo 没有显式
-            // 订阅记录、保持默认 Participating 级别（不是"repo 不存在"）。
-            // 完整语义见 `StarsAPI.getSubscription` 的 doc comment。
-            guard repo.id == requestedRepoId else { return }
-            watchState = .participating
-            loadedRepoId = requestedRepoId
-            WatchSubscriptionSessionCache.set(.participating, for: requestedRepoId)
-        } catch {
-            guard repo.id == requestedRepoId else { return }
-            watchState = .error
-        }
-    }
-    
-    private func updateSubscription(subscribed: Bool, ignored: Bool) async {
-        let repoId = repo.id
-        let previousState = watchState
-        watchState = .loading
-        do {
-            if !subscribed && !ignored {
-                try await dependencies.apiClient.deleteSubscription(owner: repo.owner, repo: repo.name)
-                guard repo.id == repoId else { return }
-                watchState = .participating
-            } else {
-                let dto = try await dependencies.apiClient.putSubscription(
-                    owner: repo.owner,
-                    repo: repo.name,
-                    subscribed: subscribed,
-                    ignored: ignored
+        RepoSubscriberCountView(repo: repo, loadsIfMissing: loadsMissingSubscriberCount) { count in
+            Button {
+                isPresented = true
+            } label: {
+                StatItem(
+                    label: "repo.stats.watchers",
+                    value: count,
+                    introductionKey: .init(repo.fullName, .subscribers),
+                    systemImage: "eye.fill",
+                    tint: StatSemanticColor.watchers.resolved(colorScheme: colorScheme)
                 )
-                guard repo.id == repoId else { return }
-                if dto.subscribed {
-                    watchState = .allActivity
-                } else if dto.ignored {
-                    watchState = .ignore
-                } else {
-                    watchState = .custom
-                }
             }
-            WatchSubscriptionSessionCache.set(watchState, for: repoId)
-            loadedRepoId = repoId
-        } catch {
-            AppLog.sync.error("Update subscription failed: \(error.localizedDescription, privacy: .public)")
-            watchState = previousState
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .fixedSize()
+            .pressableHover(scale: 1)
+            .help("repo.watch")
+            .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+                RepoWatchOptions(repo: repo)
+                    .id("\(dependencies.authSession.state.user?.id ?? 0):\(repo.fullName.lowercased())")
+                    .appLocaleEnvironment()
+            }
         }
     }
 }
 
-@MainActor
-private enum WatchSubscriptionSessionCache {
-    private static var states: [Int64: WatchersMenu.WatchState] = [:]
+/// 面板保留异步结果，直到用户关闭。每次打开按当前账号读取，避免在账号间复用关注状态。
+private struct RepoWatchOptions: View {
+    let repo: Repo
+    @Environment(AppDependencies.self) private var dependencies
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.repoSubscriberCountRefresh) private var subscriberCountRefresh
 
-    static func state(for repoId: Int64) -> WatchersMenu.WatchState? {
-        states[repoId]
+    private enum Mode: CaseIterable {
+        case participating, allActivity, ignore
+
+        var title: LocalizedStringKey {
+            switch self {
+            case .participating: "watch.participating"
+            case .allActivity: "watch.allActivity"
+            case .ignore: "watch.ignore"
+            }
+        }
+
+        var description: LocalizedStringKey {
+            switch self {
+            case .participating: "watch.participating.description"
+            case .allActivity: "watch.allActivity.description"
+            case .ignore: "watch.ignore.description"
+            }
+        }
+
+        static func from(_ subscription: GitHubSubscriptionDTO) -> Self? {
+            if subscription.subscribed { return .allActivity }
+            if subscription.ignored { return .ignore }
+            return nil
+        }
     }
 
-    static func set(_ state: WatchersMenu.WatchState, for repoId: Int64) {
-        states[repoId] = state
+    private enum Subscription: Equatable {
+        case loading
+        case loaded(Mode?)
+        case needsAuthorization
+        case loadFailed
+    }
+
+    private enum Operation: Equatable {
+        case load
+        case save(Mode)
+    }
+
+    private enum Feedback: Equatable {
+        case saved, saveFailed
+
+        var title: LocalizedStringKey {
+            switch self {
+            case .saved: "watch.updateSuccess"
+            case .saveFailed: "watch.updateFailed"
+            }
+        }
+    }
+
+    @State private var subscription: Subscription = .loading
+    @State private var operation: Operation? = .load
+    @State private var feedback: Feedback?
+    @State private var discussionsEnabled: Bool?
+
+    private var selectedMode: Mode? {
+        guard case .loaded(let mode) = subscription else { return nil }
+        return mode
+    }
+
+    private var canChangeMode: Bool {
+        guard case .loaded = subscription else { return false }
+        return operation == nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("repo.stats.watchers")
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Mode.allCases, id: \.self) { mode in
+                    modeRow(mode, isSelected: mode == selectedMode)
+                }
+            }
+            .disabled(!canChangeMode)
+
+            if dependencies.authSession.state.isAuthenticated {
+                subscriptionStatus
+            } else {
+                Button("action.login") {
+                    dismiss()
+                    dependencies.authSession.requestLoginSheet()
+                }
+            }
+
+            Divider()
+            customEvents
+            Divider()
+            Label("watch.listRestriction", systemImage: "info.circle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(width: 320, alignment: .leading)
+        .padding(12)
+        // 覆盖原生浮层的透底材质，避免仓库内容影响文字对比度。
+        .background(Color(nsColor: .windowBackgroundColor))
+        .task(id: operation) {
+            guard let operation, dependencies.authSession.state.isAuthenticated else { return }
+            await perform(operation)
+        }
+        .task {
+            await loadDiscussionAvailability()
+        }
+    }
+
+    /// 勾选标记始终占位，悬停只绘制高亮，避免选中与未选中行的文字错位。
+    private func modeRow(_ mode: Mode, isSelected: Bool) -> some View {
+        Button {
+            if isSelected {
+                feedback = .saved
+            } else {
+                operation = .save(mode)
+            }
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "checkmark")
+                    .font(.caption.weight(.semibold))
+                    .frame(width: 14)
+                    .opacity(isSelected ? 1 : 0)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(mode.title)
+                        .font(.subheadline.weight(.semibold))
+                    Text(mode.description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .background {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.accentColor.opacity(isSelected ? 0.12 : 0))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .inlineActionHover()
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var subscriptionStatus: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if operation != nil {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("watch.loading").font(.caption).foregroundStyle(.secondary)
+                }
+            } else {
+                switch subscription {
+                case .needsAuthorization:
+                    Text("activity.notification.missingScope.subtitle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("activity.notification.missingScope.action") {
+                        let session = dependencies.authSession
+                        dismiss()
+                        Task {
+                            await session.signOut()
+                            session.requestLoginSheet()
+                        }
+                    }
+                case .loadFailed:
+                    Text("watch.loadFailed")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("action.retry") { operation = .load }
+                case .loaded:
+                    if let feedback {
+                        Label(feedback.title, systemImage: feedback == .saved ? "checkmark.circle" : "info.circle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .transition(.opacity)
+                    }
+                case .loading:
+                    EmptyView()
+                }
+            }
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: feedback)
+    }
+
+    private var customEvents: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("watch.custom.title")
+                .font(.subheadline.weight(.semibold))
+            TagChipFlowLayout(constrainsItemWidth: true) {
+                eventChip("repo.issues.entry.title", systemImage: "exclamationmark.circle")
+                eventChip("watch.custom.event.pullRequests", systemImage: "arrow.triangle.pull")
+                eventChip("repo.stats.releases", systemImage: "tag")
+                eventChip(
+                    "watch.custom.event.discussions", systemImage: "bubble.left.and.bubble.right",
+                    isUnavailable: discussionsEnabled == false
+                )
+                eventChip("watch.custom.event.securityAlerts", systemImage: "shield")
+            }
+            if discussionsEnabled == false {
+                Text("watch.custom.discussionsDisabled")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text("watch.custom.instructions")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let url = URL(string: repo.htmlUrl) {
+                Link("watch.custom.openSettings", destination: url)
+                    .font(.caption)
+            }
+        }
+    }
+
+    /// 复用语言筛选的胶囊表面，事件在 GitHub 网页内编辑。
+    private func eventChip(_ title: LocalizedStringKey, systemImage: String, isUnavailable: Bool = false) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemImage)
+                .frame(width: 14, height: 14)
+                .accessibilityHidden(true)
+            Text(title)
+                .lineLimit(1)
+        }
+        .font(.caption)
+        .modifier(TagChipSurface(color: isUnavailable ? .secondary : .accentColor, isSelected: false))
+        .opacity(isUnavailable ? 0.65 : 1)
+        .help(Text(title))
+    }
+
+    /// 复用仓库资料的缓存策略，讨论状态读取不阻塞前三个订阅档位。
+    private func loadDiscussionAvailability() async {
+        let metadata = try? await dependencies.apiClient.repo(owner: repo.owner, repo: repo.name)
+        guard !Task.isCancelled else { return }
+        discussionsEnabled = metadata?.hasDiscussions
+    }
+
+    /// 面板关闭、切仓库或切账号会取消任务，避免旧请求回写状态。
+    private func perform(_ requestedOperation: Operation) async {
+        defer { operation = nil }
+        feedback = nil
+        do {
+            let api = dependencies.apiClient
+            switch requestedOperation {
+            case .load:
+                let mode: Mode?
+                do {
+                    let response = try await api.getSubscription(owner: repo.owner, repo: repo.name)
+                    mode = Mode.from(response)
+                } catch NetworkError.notFound {
+                    mode = .participating
+                }
+                try Task.checkCancellation()
+                subscription = .loaded(mode)
+            case .save(let mode):
+                let confirmedMode: Mode?
+                if mode == .participating {
+                    try await api.deleteSubscription(owner: repo.owner, repo: repo.name)
+                    confirmedMode = .participating
+                } else {
+                    let response = try await api.putSubscription(
+                        owner: repo.owner, repo: repo.name,
+                        subscribed: mode == .allActivity, ignored: mode == .ignore
+                    )
+                    confirmedMode = Mode.from(response)
+                }
+                try Task.checkCancellation()
+                subscription = .loaded(confirmedMode)
+                feedback = confirmedMode == mode ? .saved : .saveFailed
+                if confirmedMode == mode { subscriberCountRefresh?.perform() }
+            }
+        } catch GitHubWatchSubscriptionError.missingNotificationsScope {
+            guard !Task.isCancelled else { return }
+            subscription = .needsAuthorization
+        } catch {
+            guard !Task.isCancelled else { return }
+            AppLog.sync.error("Repository watch action failed: \(error.localizedDescription, privacy: .private)")
+            switch requestedOperation {
+            case .load: subscription = .loadFailed
+            case .save: feedback = .saveFailed
+            }
+        }
     }
 }
 

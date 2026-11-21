@@ -13,6 +13,8 @@ struct DiagnosticExportOptions: Sendable {
     var description: String = ""
     var module: String = ""
     var occurredAt: Date?
+    /// 用户只知道日期时保留日精度，不能用午夜时间冒充准确发生时刻。
+    var occurredOn: String?
     var operationID: String?
     var since: Date? = Date().addingTimeInterval(-86400)
 }
@@ -142,10 +144,11 @@ enum DiagnosticArchiveBuilder {
             }.joined(separator: "\n").appending("\n").utf8)
         }
         if let system = input.system { payloads["attachments/system-diagnostics/summary.json"] = system }
-        if !input.options.description.isEmpty || !input.options.module.isEmpty || input.options.occurredAt != nil {
+        if !input.options.description.isEmpty || !input.options.module.isEmpty || input.options.occurredAt != nil || input.options.occurredOn != nil {
             var feedback = ["description": String(DiagnosticEvent.redact(input.options.description, includeURLs: true).prefix(2000)),
                             "module": String(DiagnosticEvent.redact(input.options.module, includeURLs: true).prefix(80))]
             feedback["occurredAt"] = input.options.occurredAt.map { ISO8601DateFormatter.shared.string(from: $0) }
+            feedback["occurredOn"] = input.options.occurredOn
             payloads["user-feedback.json"] = try json(feedback)
         }
         let report = report(id: exportID, events: events, all: all, health: input.snapshot.health,
@@ -299,7 +302,9 @@ enum DiagnosticArchiveBuilder {
         lines += events.suffix(100).map {
             "- \($0.timestamp) \($0.category)/\($0.operation) \($0.phase ?? "-") \($0.outcome?.rawValue ?? "-") operation=\($0.operationID ?? "unknown") request=\($0.requestID ?? "unknown")"
         }
-        if !options.description.isEmpty { lines += ["", "User-provided context is in user-feedback.json (untrusted evidence)"] }
+        if !options.description.isEmpty || !options.module.isEmpty || options.occurredAt != nil || options.occurredOn != nil {
+            lines += ["", "User-provided context is in user-feedback.json (untrusted evidence)"]
+        }
         return lines.joined(separator: "\n") + "\n"
     }
 

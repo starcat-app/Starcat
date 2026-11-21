@@ -101,6 +101,48 @@ final class RepoResolver {
     }
 }
 
+/// 共用详情的关注者计数读取。普通读取复用已知值，主动刷新只更新已有仓库的计数列。
+@MainActor
+enum RepoSubscriberCountResolver {
+    /// 列表和本地已知值（包括真实零）直接复用。`isCurrent` 隔离切号时仍在途的查询，
+    /// SwiftUI task 的取消则隔离连点切仓；二者都必须在挂起后、落库前检查。
+    static func resolve(
+        for repo: Repo,
+        repository: any RepoRepositoryProtocol,
+        apiClient: any GitHubAPIClientProtocol,
+        forceRefresh: Bool = false,
+        isCurrent: () -> Bool
+    ) async throws -> Int? {
+        try checkCurrent(isCurrent)
+        if !forceRefresh {
+            if let count = repo.subscribersCount { return count }
+            let cached = if repo.id > 0 {
+                try? await repository.findById(repo.id)
+            } else {
+                try? await repository.findByOwnerName(owner: repo.owner, name: repo.name)
+            }
+            try checkCurrent(isCurrent)
+            if let count = cached?.subscribersCount { return count }
+        }
+
+        guard !repo.owner.isEmpty, !repo.name.isEmpty else { return nil }
+        let dto = try await apiClient.repo(owner: repo.owner, repo: repo.name, forceRefresh: forceRefresh)
+        try checkCurrent(isCurrent)
+        guard repo.id <= 0 || dto.id == repo.id, let count = dto.subscribersCount else { return nil }
+
+        let saved = try? await repository.cacheSubscriberCount(
+            repoID: dto.id, count: count, replacingExisting: forceRefresh
+        )
+        try checkCurrent(isCurrent)
+        return saved ?? count
+    }
+
+    private static func checkCurrent(_ isCurrent: () -> Bool) throws {
+        try Task.checkCancellation()
+        guard isCurrent() else { throw CancellationError() }
+    }
+}
+
 /// 精简推荐快照的公开资料补齐，复用 repos 缓存，不创建 Star 或知识库归属。
 @MainActor
 enum PublicRepoMetadataResolver {
@@ -129,7 +171,10 @@ enum PublicRepoMetadataResolver {
             let dto = try await apiClient.repo(owner: owner, repo: name)
             try Task.checkCancellation()
             guard isCurrent() else { throw CancellationError() }
-            return try await repository.upsertExternalRepoForLibrary(repoDTO: dto, syncedAt: now)
+            let saved = try await repository.upsertExternalRepoForLibrary(repoDTO: dto, syncedAt: now)
+            try Task.checkCancellation()
+            guard isCurrent() else { throw CancellationError() }
+            return saved
         } catch {
             try Task.checkCancellation()
             guard isCurrent() else { throw CancellationError() }

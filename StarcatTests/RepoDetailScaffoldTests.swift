@@ -12,6 +12,28 @@ import XCTest
 @MainActor
 final class RepoDetailScaffoldTests: XCTestCase {
 
+    func testStatCountReopensAtCurrentValueAcrossDetailSources() {
+        var history = RepoStatCountHistory()
+        let stars = RepoStatCountKey("Example/Repo", .stars)
+        let sameStars = RepoStatCountKey("example/repo", .stars)
+        XCTAssertEqual(history.initialValue(for: stars, count: 2_745), 0)
+        XCTAssertTrue(history.claimIntroduction(for: stars))
+        XCTAssertFalse(history.claimIntroduction(for: sameStars))
+        XCTAssertEqual(history.initialValue(for: sameStars, count: 2_746), 2_746)
+        XCTAssertEqual(history.initialValue(for: RepoStatCountKey("other/repo", .stars), count: 81), 0)
+    }
+
+    func testStatCountIntroductionsAreIndependentIncludingConfirmedZero() {
+        var history = RepoStatCountHistory()
+        for metric in [RepoStatCountKey.Metric.stars, .forks, .subscribers] {
+            let key = RepoStatCountKey("example/repo", metric)
+            XCTAssertEqual(history.initialValue(for: key, count: 0), 0)
+            XCTAssertTrue(history.claimIntroduction(for: key))
+            XCTAssertFalse(history.claimIntroduction(for: key))
+            XCTAssertEqual(history.initialValue(for: key, count: 7), 7)
+        }
+    }
+
     // MARK: - scroll report stabilization
 
     func testScrollReport_ignoresSubpixelGeometryJitter() {

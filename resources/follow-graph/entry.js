@@ -4,7 +4,7 @@ import { forceCollide } from 'd3-force-3d';
 import { ProgressiveReveal, compareIDs } from './progressive-reveal.mjs';
 
 const container = document.getElementById('graph');
-let relation = 'following';
+let relation = 'following', kind = 'follow';
 let session = '', root = '', selected = null, dark = false, reduceMotion = false;
 let destroyed = false, active = true, lastDrag = -Infinity;
 let lastSequence = 0;
@@ -19,7 +19,8 @@ let selectionRevision = 0, visibleLinkCount = 0;
 const renderedRelations = new Map();
 const incidentLinks = new Map(), visibleNodeIDs = new Set(), visibleEdgeKeys = new Set();
 let visibleNodes = [], visibleLinks = [], visibleTopologyDirty = true;
-let hasAppearance = false, rootPainted = false, presented = false;
+const tagCaptions = [];
+let hasAppearance = false, firstNodePainted = false, presented = false;
 let adjacentNodes = new Set();
 let directionLinks = [], hoveredLink = null;
 const nodes = new Map(), links = new Map(), resources = new Map();
@@ -33,6 +34,7 @@ const avatarPulses = new Set(), pulsedAvatars = new Set();
 // avatars to hit an arbitrary count: that would create placeholder/cache-read churn.
 const avatarBudget = 512;
 let viewportBounds = null, nextAvatarTrim = 0;
+const isTagGraph = () => kind === 'tags';
 const endpoint = value => typeof value === 'object' ? value.id : value;
 const edgeKey = (a, b) => `${a}:${b}`;
 // Degree describes only the loaded presentation graph. Logarithmic scaling keeps
@@ -44,9 +46,21 @@ const isAdjacent = link => selected != null &&
 const pathColor = () => dark ? '#53c9b5a0' : '#087f758c';
 const linkColor = link => isPath(link) ? pathColor() : isAdjacent(link) ?
   (dark ? '#9aafbf70' : '#526c8068') : (dark ? '#65788b45' : '#8196ab40');
+// All loaded memberships have the same stroke. Selection stays local and undirected.
+function membershipColor(link) {
+  if (isAdjacent(link)) return pathColor();
+  if (selected) return dark ? '#65788b18' : '#8196ab18';
+  return dark ? '#65788b45' : '#8196ab40';
+}
 const post = (type, extra = {}) => {
   if (!destroyed) window.webkit?.messageHandlers.followGraph.postMessage({ type, session, ...extra });
 };
+
+/** Native SF Symbol PNGs are black and transparent; tint them against each tag color. */
+function symbolInk(fillStyle) {
+  const [r, g, b] = [1, 3, 5].map(index => parseInt(fillStyle.slice(index, index + 2), 16));
+  return r * 299 + g * 587 + b * 114 < 145000 ? '#ffffff' : '#000000';
+}
 
 /** Rasterize each avatar once; Canvas drawing never allocates GPU textures or images per frame. */
 function paint(resource, node, placeholder = false) {
@@ -58,15 +72,29 @@ function paint(resource, node, placeholder = false) {
   ctx.beginPath();
   ctx.arc(32, 32, 32, 0, Math.PI * 2);
   ctx.clip();
-  ctx.fillStyle = dark ? '#46586a' : '#cdd9e5';
+  const tag = node.kind === 'tag';
+  const color = tag && /^#[0-9a-f]{6}$/i.test(node.color) ? node.color : null;
+  const badge = color || (dark ? '#46586a' : '#cdd9e5');
+  ctx.fillStyle = badge;
   ctx.fillRect(0, 0, 64, 64);
-  if (resource.loaded && !placeholder) ctx.drawImage(resource.image, 0, 0, 64, 64);
-  else {
-    ctx.fillStyle = dark ? '#ffffff' : '#24374a';
+  if (resource.loaded && !placeholder) {
+    if (tag) {
+      const { naturalWidth, naturalHeight } = resource.image;
+      const scale = 36 / Math.max(naturalWidth, naturalHeight);
+      const width = naturalWidth * scale, height = naturalHeight * scale;
+      ctx.filter = symbolInk(badge) === '#ffffff' ? 'brightness(0) invert(1)' : 'brightness(0)';
+      ctx.drawImage(resource.image, (64 - width) / 2, (64 - height) / 2, width, height);
+      ctx.filter = 'none';
+    } else if (node.kind === 'app') {
+      // Keep the macOS icon's rounded square intact inside the same circular node.
+      ctx.drawImage(resource.image, 4, 4, 56, 56);
+    } else ctx.drawImage(resource.image, 0, 0, 64, 64);
+  } else {
+    ctx.fillStyle = tag ? symbolInk(badge) : dark ? '#ffffff' : '#24374a';
     ctx.font = 'bold 28px -apple-system, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(node.login.slice(0, 1).toUpperCase(), 32, 33);
+    ctx.fillText((node.login || node.name).slice(0, 1).toUpperCase(), 32, 33);
   }
   ctx.restore();
 }
@@ -118,15 +146,19 @@ function drainImages(queue) {
         // A local miss releases first-frame presentation immediately, without
         // waiting for the network. Keep the existing placeholder/download fade.
         graph.nodeCanvasObject(drawNode);
+        if (node.glyph) return; // Native symbols are already local. Keep the fallback on decode failure.
         if (node.id === selected) downloadQueue.pending.unshift([node, resource]);
         else downloadQueue.pending.push([node, resource]);
         drainImages(downloadQueue);
       }
     };
-    const url = new URL(node.avatar);
-    if (!queue.cacheOnly) url.hostname = 'load';
-    url.searchParams.set('attempt', String(++imageAttempt));
-    image.src = url.href;
+    if (node.glyph) image.src = node.glyph;
+    else {
+      const url = new URL(node.avatar);
+      if (!queue.cacheOnly) url.hostname = 'load';
+      url.searchParams.set('attempt', String(++imageAttempt));
+      image.src = url.href;
+    }
   }
 }
 
@@ -135,7 +167,7 @@ function drainImages(queue) {
  */
 function prioritizeAvatar(id) {
   const node = nodes.get(id);
-  if (!node?.avatar) return;
+  if (!node?.avatar && !node?.glyph) return;
   let resource = resources.get(id);
   if (resource?.failed) {
     discardAvatar(id);
@@ -190,9 +222,10 @@ function updateViewportBounds() {
 }
 
 function avatarOnscreen(node) {
-  if (!viewportBounds || node.id === root || node.id === selected) return true;
+  if (!viewportBounds || node.id === reveal.root || node.id === selected) return true;
   // Include both entry/pop and avatar pulse overshoot, plus the screen-space stroke.
-  const pad = radius(node) * 1.31 + 4 / viewportBounds.scale;
+  const pad = radius(node) * 1.31 +
+    (isTagGraph() && node.kind === 'tag' ? 26 : 4) / viewportBounds.scale;
   return node.x + pad >= viewportBounds.left && node.x - pad <= viewportBounds.right &&
     node.y + pad >= viewportBounds.top && node.y - pad <= viewportBounds.bottom;
 }
@@ -204,9 +237,11 @@ function trimAvatars() {
   const now = performance.now();
   if (resources.size <= avatarBudget || now < nextAvatarTrim) return;
   nextAvatarTrim = now + 500;
-  const candidates = [...resources].filter(([id, resource]) =>
-    resource.loaded && !resource.cancel && !avatarFades.has(resource) &&
-      !avatarPulses.has(resource) && !avatarOnscreen(nodes.get(id)));
+  const candidates = [...resources].filter(([id, resource]) => {
+    const node = nodes.get(id);
+    return resource.loaded && !resource.cancel && !avatarFades.has(resource) &&
+      !avatarPulses.has(resource) && !avatarOnscreen(node);
+  });
   candidates.sort((a, b) => a[1].lastUsed - b[1].lastUsed);
   for (const [id] of candidates) {
     if (resources.size <= avatarBudget) break;
@@ -232,10 +267,11 @@ function refreshCardAvatar(event) {
 
 function avatar(node) {
   if (!resources.has(node.id)) {
-    const resource = { canvas: avatarSurface(), placeholder: null, loaded: false, probing: Boolean(node.avatar) };
+    const probing = Boolean(node.avatar || node.glyph);
+    const resource = { canvas: avatarSurface(), placeholder: null, loaded: false, probing };
     resources.set(node.id, resource);
     paint(resource, node);
-    if (node.avatar) { cacheQueue.pending.push([node, resource]); drainImages(cacheQueue); }
+    if (probing) { cacheQueue.pending.push([node, resource]); drainImages(cacheQueue); }
   }
   const resource = resources.get(node.id);
   resource.lastUsed = performance.now();
@@ -264,17 +300,18 @@ function avatarPulse(node, resource) {
 
 /** Avatars keep graph-space geometry; picking additionally guarantees a small screen-space target. */
 function drawNode(node, ctx, scale) {
-  // Only the root's bounded local probe gates initial presentation. A cached root
-  // should not flash its letter first; no remote request can hold this gate.
-  if (node.id === root && avatar(node).probing) return;
-  if (node.id === root) rootPainted = true;
+  const anchor = node.id === reveal.root;
+  // Both roots get their real image first. The app icon is bundled locally.
+  if (anchor && avatar(node).probing) return;
   if (!avatarOnscreen(node)) return;
-  const progress = reduceMotion ? 1 : reveal.progress(node.id, performance.now());
+  const progress = reduceMotion || (anchor && isTagGraph()) ? 1 : reveal.progress(node.id, performance.now());
+  if (isTagGraph() && progress === 0) return;
+  if (anchor) firstNodePainted = true;
   // A short ease-out-back gives a readable pop without a perpetual spring simulation.
   const overshoot = progress - 1;
   const pop = progress === 0 ? 0 : 1 + 2.70158 * overshoot ** 3 + 1.70158 * overshoot ** 2;
   let r = radius(node) * Math.max(0.01, pop);
-  const emphasized = node.id === root || node.id === selected ||
+  const emphasized = anchor || node.id === selected ||
     highlightedNodes.has(node.id) || adjacentNodes.has(node.id);
   ctx.save();
   const opacity = (!selected || emphasized ? 1 : 0.3) * Math.min(1, progress * 3);
@@ -302,16 +339,39 @@ function drawNode(node, ctx, scale) {
     ctx.lineWidth = (emphasized ? 2 : 1) / scale;
     ctx.stroke();
   }
-  if (node.id === root || node.id === selected) {
-    // Only prominent nodes have persistent labels, so large graphs stay readable.
-    const fontSize = 12 / scale;
-    ctx.font = `500 ${fontSize}px -apple-system, sans-serif`;
+  if (isTagGraph()) {
+    if (anchor || node.id === selected || node.kind === 'tag') {
+      tagCaptions.push({ node, y: node.y + r + 5 / scale, opacity, anchor });
+    }
+  } else if (anchor || node.id === selected) {
+    ctx.font = `500 ${12 / scale}px -apple-system, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillStyle = dark ? '#f5f5f7' : '#1c1c1e';
     ctx.fillText(`@${node.login}`, node.x, node.y + r + 5 / scale);
   }
   ctx.restore();
+}
+
+/** Paint names above both dots and lines so a small repo cannot cover a tag caption. */
+function drawTagCaptions(ctx, scale) {
+  if (!tagCaptions.length) return;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = dark ? '#1c1c1e' : '#f5f5f7';
+  ctx.fillStyle = dark ? '#f5f5f7' : '#1c1c1e';
+  ctx.lineWidth = 4 / scale;
+  for (const { node, y, opacity, anchor } of tagCaptions) {
+    ctx.globalAlpha = opacity;
+    ctx.font = `600 ${(anchor ? 14 : 12) / scale}px -apple-system, sans-serif`;
+    const maxWidth = (node.kind === 'tag' ? 122 : 244) / scale;
+    ctx.strokeText(node.name, node.x, y, maxWidth);
+    ctx.fillText(node.name, node.x, y, maxWidth);
+  }
+  ctx.restore();
+  tagCaptions.length = 0;
 }
 
 const graph = new ForceGraph(container)
@@ -322,36 +382,42 @@ const graph = new ForceGraph(container)
   .nodePointerAreaPaint((node, color, ctx, scale = 1) => {
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(node.x, node.y, Math.max(radius(node), 6 / scale), 0, Math.PI * 2);
+    const hitRadius = Math.max(radius(node), 6 / scale);
+    ctx.arc(node.x, node.y, hitRadius, 0, Math.PI * 2);
     ctx.fill();
   })
   .nodeLabel(node => {
     const label = document.createElement('span');
-    label.textContent = `${node.name} (@${node.login})`;
+    label.textContent = isTagGraph() ? node.name : `${node.name} (@${node.login})`;
     return label;
   })
   .linkWidth(link => isPath(link) ? 1.25 : isAdjacent(link) ? 0.8 : selected ? 0.3 : 0.6)
-  .linkColor(link => !isPath(link) && !isAdjacent(link) && selected ?
+  .linkColor(link => isTagGraph() ? membershipColor(link) : !isPath(link) && !isAdjacent(link) && selected ?
     (dark ? '#65788b18' : '#8196ab18') : linkColor(link))
   .linkDirectionalArrowColor(linkColor)
   // Native arrow lengths live in graph coordinates and become spikes when zoomed.
   .linkDirectionalArrowLength(() => 0)
   .linkDirectionalArrowRelPos(1)
   .cooldownTicks(120)
-  .onRenderFramePre(updateViewportBounds)
+  .onRenderFramePre(() => {
+    tagCaptions.length = 0;
+    updateViewportBounds();
+  })
   .onEngineTick(applyPendingView)
   .onEngineStop(applyPendingView)
   .onRenderFramePost((ctx, scale) => {
+    if (isTagGraph()) drawTagCaptions(ctx, scale);
     drawDirections(ctx, scale);
     // Geometry/zoom changes refresh the overlay in the same frame as the graph.
     // Settled path animation can then leave the base and picking canvases asleep.
     drawFlowOverlay(scale);
     trimAvatars();
     // Script readiness is earlier than the first real Canvas frame. Keep native
-    // presentation hidden until the themed graph has actually painted its root.
-    if (!presented && hasAppearance && rootPainted && session) {
+    // presentation hidden until the themed graph has actually painted a node.
+    if (!presented && hasAppearance && firstNodePainted && session) {
       presented = true;
       post('presented');
+      if (isTagGraph()) syncAnimation();
     }
   })
   .onNodeClick(node => { if (performance.now() - lastDrag > 250) selectNode(node.id); })
@@ -359,15 +425,15 @@ const graph = new ForceGraph(container)
   // Fine edges occupy much of a dense canvas. The library dispatches link hits
   // separately from background hits; both mean deselect in this product.
   .onLinkClick(() => selectNode(null))
-  .onLinkHover(link => { hoveredLink = link; redrawSelection(); })
+  .onLinkHover(link => { if (!isTagGraph()) { hoveredLink = link; redrawSelection(); } })
   .onNodeDrag(() => { lastDrag = performance.now(); })
   .onNodeDragEnd(node => {
     lastDrag = performance.now();
-    node.fx = node.id === root ? 0 : node.x;
-    node.fy = node.id === root ? 0 : node.y;
+    node.fx = node.id === reveal.root ? 0 : node.x;
+    node.fy = node.id === reveal.root ? 0 : node.y;
   })
   .onZoomEnd(({ x, y, k }) => {
-    post('viewport', { value: [x, y, k] });
+    if (!isTagGraph()) post('viewport', { value: [x, y, k] });
   });
 
 // Keep the existing post-node compositing order, but do not let an animated
@@ -415,7 +481,7 @@ function selectNode(id) {
   selected = id;
   // Compute from the same loaded directed graph immediately. Waiting for a SwiftUI
   // representable update left only the final adjacent edge visible after clicks.
-  setPath(pathFromRoot(id));
+  setPath(isTagGraph() ? [] : pathFromRoot(id));
   const oldCount = reveal.visible.size;
   reveal.show(selectedPath, performance.now());
   if (reduceMotion) reveal.finish();
@@ -513,6 +579,7 @@ function updateAdjacency() {
     adjacentNodes.add(endpoint(link.source));
     adjacentNodes.add(endpoint(link.target));
   }
+  if (isTagGraph()) return;
   // Hubs should not acquire a crown of arrows. Keep the full selected path,
   // and reveal a dense hub's other directions only on the hovered relationship.
   directionLinks = [...pathEdges].map(key => links.get(key)).filter(Boolean);
@@ -523,7 +590,7 @@ function updateAdjacency() {
  * outside the target avatar. Both dimensions remain stable while zooming.
  */
 function drawDirections(ctx, scale = 1) {
-  if (!ctx || !selected) return;
+  if (!ctx || !selected || isTagGraph()) return;
   const candidates = hoveredLink && isAdjacent(hoveredLink) && !directionLinks.includes(hoveredLink) ?
     [...directionLinks, hoveredLink] : directionLinks;
   ctx.save();
@@ -550,8 +617,8 @@ function drawDirections(ctx, scale = 1) {
 }
 
 function redrawSelection() {
-  graph.nodeCanvasObject(drawNode).nodePointerAreaPaint(graph.nodePointerAreaPaint())
-    .linkColor(graph.linkColor()).linkWidth(graph.linkWidth())
+  graph.nodeCanvasObject(drawNode).linkColor(graph.linkColor()).linkWidth(graph.linkWidth());
+  graph.nodePointerAreaPaint(graph.nodePointerAreaPaint())
     .linkDirectionalArrowLength(graph.linkDirectionalArrowLength());
 }
 
@@ -591,7 +658,10 @@ function preserveView() {
 
 function syncAnimation() {
   const running = active && !document.hidden;
-  reveal.setRunning(running, performance.now());
+  // The first tag must enter after the logo has actually painted, even if its
+  // local PNG decoding took longer than the usual first reveal interval.
+  const canReveal = !isTagGraph() || presented;
+  reveal.setRunning(running && canReveal, performance.now());
   if (running) graph.resumeAnimation();
   else graph.pauseAnimation();
   for (const resource of avatarFades) {
@@ -605,7 +675,7 @@ function syncAnimation() {
   }
   if (destroyed || !running || reduceMotion ||
       (selectedPath.length < 2 && !(outgoingPath.length > 1 && performance.now() - pathChangedAt < 180) &&
-        !reveal.animating && !avatarFades.size && !avatarPulses.size)) {
+        !(canReveal && reveal.animating) && !avatarFades.size && !avatarPulses.size)) {
     if (animationFrame !== null) cancelAnimationFrame(animationFrame);
     animationFrame = null;
   } else if (animationFrame === null) animationFrame = requestAnimationFrame(animate);
@@ -624,15 +694,14 @@ function animate() {
   syncAnimation();
 }
 
-/** Only revealed objects enter the force simulation and pointer canvas. Newly admitted
- * children start next to their actual parent; shared node objects preserve the rest of the layout.
- */
+/** Only revealed objects enter the graph. New nodes start near their revealed parent. */
 function applyVisibleGraph() {
   // Decode a bounded lookahead before these nodes pop in. Do not allocate avatar
   // canvases for the entire graph (10,000 nodes would cost hundreds of MB).
-  if (nodes.has(root)) avatar(nodes.get(root));
+  if (nodes.has(reveal.root)) avatar(nodes.get(reveal.root));
   for (const id of reveal.pending.slice(0, 16)) {
-    if (nodes.has(id)) avatar(nodes.get(id));
+    const node = nodes.get(id);
+    if (node) avatar(node);
   }
   const added = reveal.takeAdded();
   for (const id of added) {
@@ -683,6 +752,8 @@ function admitVisibleLink(link) {
   if (visibleEdgeKeys.has(key) || !visibleNodeIDs.has(source) || !visibleNodeIDs.has(target)) return;
   visibleEdgeKeys.add(key);
   visibleLinks.push(link);
+  // The synthetic app-to-tag edge does not count as a repository on the tag card.
+  if (isTagGraph() && nodes.get(source)?.kind !== 'tag') return;
   const owner = relation === 'followers' ? target : source;
   renderedRelations.set(owner, (renderedRelations.get(owner) || 0) + 1);
 }
@@ -700,7 +771,7 @@ function reportProgress() {
   }
 }
 
-/** Apply ordered native batches without rebuilding existing node positions or user pan/zoom. */
+/** Apply ordered native batches and retain node identities across expansion and metadata changes. */
 function update(payload) {
   if (destroyed || payload.sequence <= lastSequence) return;
   const previousRoot = root, previousRelation = relation, previousVisibleCount = reveal.visible.size;
@@ -708,6 +779,7 @@ function update(payload) {
   lastSequence = payload.sequence;
   session = payload.session;
   root = payload.root;
+  kind = payload.kind ?? kind;
   if ('relation' in payload) relation = payload.relation;
   if ('dark' in payload) {
     hasAppearance = true;
@@ -745,15 +817,15 @@ function update(payload) {
     }
     // Sorted phyllotaxis is deterministic on reopen and valid even with Reduce Motion.
     const sorted = [...payload.nodes].sort((a, b) =>
-      a.id === b.id ? 0 : a.id === root ? -1 : b.id === root ? 1 :
-        compareIDs(a.id, b.id));
+      a.id === b.id ? 0 : a.id === root ? -1 : b.id === root ? 1 : compareIDs(a.id, b.id));
     sorted.forEach((value, index) => {
       // A later relationship batch may still carry the older snapshot avatar URL.
       // Keep the selected card's newer profile source for this Canvas session.
       if (avatarOverrides.has(value.id)) value = { ...value, avatar: avatarOverrides.get(value.id) };
       if (nodes.has(value.id)) {
         const node = nodes.get(value.id);
-        if (node.avatar !== value.avatar || node.login !== value.login) {
+        if (node.avatar !== value.avatar || node.login !== value.login ||
+            node.glyph !== value.glyph || node.color !== value.color) {
           discardAvatar(value.id);
         }
         Object.assign(node, value);
@@ -779,12 +851,13 @@ function update(payload) {
           incidentLinks.get(id).push(link);
         }
       }
-      for (const node of nodes.values()) {
-        node.radius = Math.min(26, 10 + 2 * Math.log2(1 + (degrees.get(node.id) || 0)));
-      }
-      // D3 caches collision radii. Profiles and pagination do not alter geometry.
-      collision.radius(node => radius(node) + 6);
       reveal.sync(nodes, links, root, performance.now(), reduceMotion, relation);
+      for (const node of nodes.values()) {
+        // Keep the logo and tags legible without making a tag grow when a page arrives.
+        node.radius = node.kind === 'app' ? 26 : node.kind === 'tag' ? 17 :
+          Math.min(26, 10 + 2 * Math.log2(1 + (degrees.get(node.id) || 0)));
+      }
+      collision.radius(node => radius(node) + 6);
       visibleTopologyDirty = true;
     }
     graphRevision = payload.revision;
@@ -795,11 +868,12 @@ function update(payload) {
       graph.zoom(0.8, 0).centerAt(0, 0, 0);
     }
     if (topologyChanged) { applyVisibleGraph(); graphApplied = true; }
-    setPath(pathFromRoot(selected));
+    if (isTagGraph() && !nodes.has(selected)) selected = null;
+    setPath(isTagGraph() ? [] : pathFromRoot(selected));
   }
-  if (selected) {
+  if (selected && (!isTagGraph() || !reveal.visible.has(selected))) {
     const oldCount = reveal.visible.size;
-    reveal.show(selectedPath, performance.now());
+    reveal.show(isTagGraph() ? pathFromRoot(selected) : selectedPath, performance.now());
     if (reduceMotion) reveal.finish();
     if (oldCount !== reveal.visible.size) { applyVisibleGraph(); graphApplied = true; }
   }
@@ -818,7 +892,9 @@ function update(payload) {
       graph.zoom(zoom, 0).centerAt(x, y, 0);
     } else if ('focus' in payload) {
       const node = nodes.get(payload.focus);
-      const duration = reduceMotion ? 0 : 300;
+      // While nodes are still arriving the next batch preserves the camera.
+      // Finish a search jump immediately in that case so it cannot be interrupted.
+      const duration = reduceMotion || (isTagGraph() && reveal.animating) ? 0 : 300;
       if (node) graph.centerAt(node.x, node.y, duration).zoom(Math.max(1, graph.zoom()), duration);
       else fit(duration);
     }
@@ -850,6 +926,7 @@ window.followGraph = {
     destroyed = true;
     reveal.clear();
     placed.clear();
+    tagCaptions.length = 0;
     incidentLinks.clear();
     visibleNodeIDs.clear();
     visibleEdgeKeys.clear();

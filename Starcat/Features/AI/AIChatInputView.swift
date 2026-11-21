@@ -120,7 +120,11 @@ struct AIChatInputView: View {
         AIChatNativeTextEditor(
             state: editorState,
             placeholder: String.l10n("ai.assistant.input.placeholder"),
-            font: MarkdownTypography.nativeFont(scale: interfaceScale, adjustment: settings.readmeFontSizeAdjustment),
+            font: MarkdownTypography.nativeFont(
+                scale: interfaceScale,
+                adjustment: settings.readmeFontSizeAdjustment,
+                baseline: .repositoryPanel
+            ),
             isEnabled: !isSending,
             isFocused: focus,
             requiresCommandReturn: settings.aiChatRequiresCommandReturn,
@@ -486,9 +490,13 @@ private enum AIChatEditorMetrics {
     static let verticalInset: CGFloat = 4
 
     @MainActor
+    static var defaultFont: NSFont {
+        MarkdownTypography.nativeFont(scale: .standard, baseline: .repositoryPanel)
+    }
+
+    @MainActor
     static var defaultHeight: CGFloat {
-        let font = MarkdownTypography.nativeFont(scale: .standard)
-        return ceil(NSLayoutManager().defaultLineHeight(for: font) * minimumLines + verticalInset)
+        ceil(NSLayoutManager().defaultLineHeight(for: defaultFont) * minimumLines + verticalInset)
     }
 }
 
@@ -523,7 +531,7 @@ private final class AIChatIntrinsicScrollView: NSScrollView {
               let textContainer = textView.textContainer else { return }
 
         layoutManager.ensureLayout(for: textContainer)
-        let lineHeight = layoutManager.defaultLineHeight(for: textView.font ?? MarkdownTypography.nativeFont(scale: .standard))
+        let lineHeight = layoutManager.defaultLineHeight(for: textView.font ?? AIChatEditorMetrics.defaultFont)
         let contentHeight = ceil(layoutManager.usedRect(for: textContainer).height + textView.textContainerInset.height * 2)
         let minimumHeight = lineHeight * AIChatEditorMetrics.minimumLines + AIChatEditorMetrics.verticalInset
         let maximumHeight = lineHeight * AIChatEditorMetrics.maximumLines + AIChatEditorMetrics.verticalInset
@@ -563,7 +571,7 @@ private final class AIChatTextView: NSTextView {
         guard string.isEmpty, !placeholder.isEmpty else { return }
 
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: font ?? MarkdownTypography.nativeFont(scale: .standard),
+            .font: font ?? AIChatEditorMetrics.defaultFont,
             .foregroundColor: NSColor.placeholderTextColor
         ]
         placeholder.draw(

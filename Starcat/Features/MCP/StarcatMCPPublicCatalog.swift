@@ -53,6 +53,11 @@ enum StarcatMCPPublicCatalog {
         "repo_id": integer(1, Int.max), "owner": string(), "name": string()
     ]
     static let pagination: [String: Value] = ["limit": integer(), "offset": integer(0, 10_000)]
+    /// 边与仓库都按页返回。目录里的默认值与执行器保持一致，客户端可直接发现。
+    static let tagGraphPaging: [String: Value] = [
+        "limit": .object(["type": .string("integer"), "minimum": .int(1), "maximum": .int(100), "default": .int(20)]),
+        "offset": .object(["type": .string("integer"), "minimum": .int(0), "default": .int(0)])
+    ]
     static let preview: [String: Value] = ["dry_run": .object(["type": .string("boolean"), "default": .bool(true)])]
     static let ids: Value = .object([
         "type": .string("array"), "items": integer(1, Int.max), "minItems": .int(1), "maxItems": .int(30)
@@ -98,6 +103,10 @@ enum StarcatMCPPublicCatalog {
         .init(name: "list_notifications", summary: "Read the cached notification and Issue/PR inbox without remote hydration.", properties: pagination),
         .init(name: "list_activity_timeline", summary: "Read cached notifications and Star/Unstar/Fork activity with combined filters and cursor pagination. Values within events/reasons are OR; groups are AND. Does not hydrate remote state.", properties: activityTimeline),
         .init(name: "get_notification", summary: "Read one cached notification or Issue/PR conversation.", properties: ["id": string()], required: ["id"]),
+        .init(name: "get_tag_graph", summary: "Read current-account tags and one page of tag-to-starred-repository memberships, with repository nodes for that page.", properties: tagGraphPaging),
+        .init(name: "list_repos_by_tags", summary: "Read a page of currently starred repositories carrying every supplied tag ID. Repeated IDs count once.", properties: tagGraphPaging.merging([
+            "tag_ids": .object(["type": .string("array"), "items": string(), "minItems": .int(1)])
+        ]) { _, new in new }, required: ["tag_ids"]),
         .init(name: "list_collections", summary: "Read local smart collection definitions.", properties: pagination),
         .init(name: "list_languages", summary: "Read language aggregates for Starred or Knowledge repositories.", properties: ["scope": string(["starred", "knowledge"])]),
         .init(name: "list_trending", summary: "Read cached Trending with period, language and pagination.", properties: pagination.merging([

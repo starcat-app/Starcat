@@ -156,7 +156,7 @@ extension RepoDetailHero {
         self.starsCount = dto.stars
         self.forksCount = dto.forks
         self.watchersCount = dto.watchers
-        self.subscribersCount = dto.subscribers
+        self.subscribersCount = Repo.subscriberCount(fromFeed: dto.subscribers)
         self.topics = dto.topics
         self.licenseSpdx = dto.licenseSpdx
         self.updatedAt = Self.parseISO8601(dto.updatedAt)
@@ -290,17 +290,38 @@ struct RepoDetailViewData {
     /// repo full_name 同行右侧的来源标识。Weekly 用于展示来源图标和时间短标签。
     let headerSourceBadge: RepoDetailHeaderSourceBadge?
 
+    /// 宿主已负责请求完整资料时，详情头只消费结果，避免重复调用 GitHub。
+    let loadsMissingSubscriberCount: Bool
+
     init(
         hero: RepoDetailHero,
         trailingActions: [RepoDetailAction] = [],
         translation: ReadmeTranslationContext? = nil,
         backendHint: StarcatRepoCardDTO? = nil,
-        headerSourceBadge: RepoDetailHeaderSourceBadge? = nil
+        headerSourceBadge: RepoDetailHeaderSourceBadge? = nil,
+        loadsMissingSubscriberCount: Bool = true
     ) {
         self.hero = hero
         self.trailingActions = trailingActions
         self.translation = translation
         self.backendHint = backendHint
         self.headerSourceBadge = headerSourceBadge
+        self.loadsMissingSubscriberCount = loadsMissingSubscriberCount
     }
+}
+
+/// `databaseScopeRevision` 在换库后更新。请求也绑定实际库和会话账号，覆盖切换中的间隙。
+struct RepoDetailDatabaseScope: Equatable {
+    let revision: UInt64
+    let databaseUserID: Int64?
+    let authenticatedUserID: Int64?
+
+    @MainActor
+    init(_ dependencies: AppDependencies) {
+        revision = dependencies.databaseScopeRevision
+        databaseUserID = dependencies.database.currentUserId
+        authenticatedUserID = dependencies.authSession.state.user?.id
+    }
+
+    var isReady: Bool { databaseUserID == authenticatedUserID }
 }

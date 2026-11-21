@@ -1,348 +1,54 @@
 ---
 name: starcat-update-changelog
-description: >
-  Update the four Starcat changelog documents under supports/starcat-site/ (appstore/ and
-  direct/ channels, English and Chinese) by reading ALL git commits from the main Starcat
-  project and generating categorized release notes. Use this skill whenever the user wants to update changelog, release notes,
-  update records, or sync the changelog with recent commits. Also trigger when the user
-  mentions CHANGELOG.md, CHANGELOG-ZH.md, release notes update, or asks to summarize
-  recent changes for the next version.
+description: 以 Starcat 版本 Checklist 的已验收交付为主要素材，核对相关仓库完整提交补漏，经授权统一整理 supports/starcat-site 的 App Store 与 Direct 双语 Changelog。用于“整理 1.9.8 更新日志”“将版本清单写入 Changelog”“补齐发布说明”；已有当前计划的日常交付只维护 Checklist，不触发逐任务日志询问，不打 tag 或发布。
 ---
 
-# Update Starcat Changelog
+# Starcat 更新日志
 
-Read ALL git commits from the main Starcat project since the last version tag, then update the
-four channel changelogs under `supports/starcat-site/` (moved there 2026-11 from the main repo
-root and `starcat-pro`; see Starcat#202). The main repo root `CHANGELOG*` files are pointers only.
+先读取当前的 [Changelog 更新规范](../../docs/5-规范/Changelog-更新规范.md)与[版本迭代规范](../../docs/5-规范/版本迭代规范.md)。正式源稿在 `supports/starcat-site` 独立仓库，主仓库根 `CHANGELOG*` 只是指针，不承载条目。
 
-## File Locations
+## 1. 确认版本、渠道与授权
 
-| File | Path |
-|------|------|
-| App Store (EN) | `supports/starcat-site/appstore/CHANGELOG.md` |
-| App Store (ZH) | `supports/starcat-site/appstore/CHANGELOG-ZH.md` |
-| Direct (EN) | `supports/starcat-site/direct/CHANGELOG.md` |
-| Direct (ZH) | `supports/starcat-site/direct/CHANGELOG-ZH.md` |
-| Git repo (source) | Starcat root (the Xcode project) |
+- 使用用户指定的基础版本 `X.Y.Z`，上下文已确认不重复询问，无法确定时先澄清；Beta 序号和汇总版本分开记录。
+- 核对计划中的本次交付渠道与 Changelog 归属。1.9.x → 2.0.0 过渡期继续执行现行汇总规则，不把各渠道与未来版本混为同一发布事实。
+- “整理草稿”只授权读取和展示；明确要求“更新日志 / 写入 Changelog”等即为相应写入授权，已有授权不重复申请。业务开发或维护 Checklist 不授权写日志。
+- 当前版本计划在进行中时，日常交付维护清单；不要仅因提及更新记录就重新开展整轮日志整理。
 
----
+## 2. 先读 Checklist，再核对完整提交
 
-## Step 0: Ask for Version Number (MANDATORY — Do This FIRST)
+1. 优先读取 `docs/4-工程进度/版本迭代/X.Y.Z-迭代计划.md`。已有旧路径计划时续用其交付事实，不重复建清单；无计划则按 Git 与发布记录整理，不擅自补建。
+2. 读取已验收条目、待验收项、延期/取消与证据，核对哪些进入本次交付。常规依赖检查完成本身不是用户更新；实际升级且有用户意义的结果才考虑入日志。
+3. 从计划仓库名单/基线与真实 Git 状态确定参与项目。每仓确认实际上一发布基线与本次交付提交，API/CLI 可独立编号。不仅按 tag 创建时间选“最新 tag”，不把初始化 dev commit 当作上一发布基线。
+4. 阅读所选范围的完整提交信息后再过滤；不能只读 `feat:` / `fix:` 或省略 supports 交付。检查 merge 引入的实际差异，必要时读源码/diff 验证。未提交内容单列，不默认为已发布交付。
+5. 对账“清单条目 → 实际变更 → 日志主题”，报告已完成但未进入交付、未登记变更、重复主题和未验收项。新发现内容先核实，不能静默漏掉或假定已验收。即使范围内零条新提交，也继续核对清单、已有日志与发布事实。
 
-**This is a blocking step.** Before reading any git log or touching any file, you MUST
-know the target version number. If the user did not provide one in their invocation,
-immediately ask:
+Git 命令遵循项目 RTK 规则。每仓选好真实 `<previous-release>` 与 `<delivery-commit>` 再读取范围，不机械套用主仓库 tag。
 
-> "Which version number should I use for this changelog entry? (e.g., `1.2.0`, `1.1.1`)"
+## 3. 形成最终用户条目
 
-Do NOT proceed to Step 1 until the user answers. Do NOT guess or assume a version number.
+- 分类只用中文 `新增 / 优化 / 修复` 与英文 `New / Improvements / Fixes`，少数大版本可用 `亮点 / Highlights`。
+- 同一新功能在本版内的返工、修复、优化归并为最终能力；上一版本已交付功能的缺陷修复才独立归“修复”。
+- 排除内部文档、工作区整理、纯测试/构建维护、过程记录、未交付、延期和取消项。按实际用户效果判断，不单凭提交前缀。
+- 每条一行“短标题：说明”或 `Short title: detail`，不以分类动词开头，不写路径、命令、任务 ID 或测试过程；同分区条目连续排列，没有空白行。
+- 公共能力按适用渠道语义对齐，专属能力只写对应渠道；中英文一一对应，渠道不同的总条数不要求硬相等。
 
-If the user's invocation already includes a version number (e.g., "update changelog for 1.2.0"),
-validate that it matches `X.Y.Z` format. If it doesn't, ask the user to provide a valid format.
+## 4. 展示或写入四份 Markdown
 
-The version number must be in `X.Y.Z` format (semantic versioning) because `release-direct.sh`
-requires this format.
+| 渠道 | 英文 | 中文 |
+|---|---|---|
+| App Store | `supports/starcat-site/appstore/CHANGELOG.md` | `supports/starcat-site/appstore/CHANGELOG-ZH.md` |
+| Direct | `supports/starcat-site/direct/CHANGELOG.md` | `supports/starcat-site/direct/CHANGELOG-ZH.md` |
 
----
+1. 核对 `starcat-site` 分支和未提交修改，保留无关内容，不擅自切分支、暂存或提交。
+2. 展示完整双语草稿、渠道差异、素材覆盖、排除项、缺口与目标区段。无写入授权时等待；已有明确授权且范围清楚时执行，不重复请求。
+3. 日常/收口保持 `X.Y.Z-待发布`，有则合并去重，无则创建，不重复追加或回改已发布历史。过渡期按规范同时处理本次交付与 2.0.0 汇总，未来版本仍待发布。
+4. 不猜测 Release 链接。仅在源文件采用引用链接且实际目标已核实时维护；整理日志不创建 tag 或远端 Release。
+5. 核对精确版本标题、重复区段、双语语义、渠道差异、冒号和空行，分别在主仓库与 `starcat-site` 执行 `rtk git diff --check`。
 
-## Step 1: Determine Commit Range
+不生成 HTML、不部署、不自动操作 GUI。App 内验证如需屏幕控制，遵守当前 GUI 授权规则。
 
-```bash
-# Latest tag
-git tag --sort=-creatordate | head -1
+## 5. 交付与边界
 
-# All commits since that tag (NO filtering, NO skip)
-git log <latest-tag>..HEAD --oneline --no-merges
+报告版本/渠道、已写文件或待确认草稿、素材与补漏结果，以及未验收或未交付项。保持清单证据和发布状态真实，不因日志整理就改成已发布，不改功能总览。
 
-# Count
-git log <latest-tag>..HEAD --oneline --no-merges | wc -l
-```
-
-If no tag exists, start from the first commit.
-
-If there are 0 commits since the latest tag, stop and tell the user:
-"No new commits since <latest-tag>. There's nothing to add to the changelog."
-
----
-
-## Step 2: Read EVERY Commit Message (Do NOT Skip Any)
-
-```bash
-# Full messages for ALL non-merge commits — every single one
-git log <latest-tag>..HEAD --format="---COMMIT---%n%h%n%s%n%b" --no-merges
-```
-
-**Critical rule**: Read EVERY commit first. Then in Step 3a, filter out non-user-facing
-changes. Don't skip commits at read time — some commits with non-standard prefixes may
-still describe user-visible changes. The filtering happens AFTER reading, based on content.
-
----
-
-## Step 3: Filter and Categorize
-
-### 3a: EXCLUDE Non-User-Facing Changes First
-
-**The changelog is for end users.** Before categorizing, filter OUT commits that have
-zero user-visible impact. These commits are NOT included in the changelog at all:
-
-| Exclude | Examples |
-|---------|----------|
-| Internal documentation | `docs:` commits, 审查报告, 进度文档, 专项 checklist |
-| Build/config tooling | appcast.xml updates, CI scripts, .gitignore changes, sync scripts |
-| Developer-only changes | Test fixes, worktree recovery, project file tweaks, code review artifacts |
-| Meta/process commits | 回填进度, 记录验证, 补充审查, 落档方案, 同步口径 |
-
-**Test**: "Would a Starcat user notice this change when using the app?" If no → exclude.
-
-### 3b: Categorize Remaining Commits
-
-Read the full message (subject + body) and classify into one of THREE categories:
-
-| Category | How to recognize |
-|----------|-----------------|
-| **New** | New feature, new capability, new UI element, new workflow — something the user couldn't do before |
-| **Improved** | Enhancement, optimization, polish, refactor, style improvement — something that got better but existed before |
-| **Fixed** | Bug fix, correction, restoration — something that was broken and now works |
-
-**Classification by Chinese keywords** (most commits use Chinese messages):
-
-| Keywords | → Category |
-|----------|-----------|
-| `新增` `添加` `实现` `支持` `接入` `集成` `创建` `扩展` `放开` | **New** |
-| `优化` `改进` `增强` `调整` `重构` `统一` `收敛` `简化` `完善` `升级` `迁移` `拆分` `还原` `隐藏` | **Improved** |
-| `修复` `修正`(bug) `恢复`(误删) `解决` `避免` | **Fixed** |
-
-**When the prefix and content disagree**, trust the content.
-
-**For English-prefix commits** (`feat:`, `fix:`, `refactor:`, `perf:`, `style:`):
-- `feat:` → **New**
-- `fix:` → **Fixed**
-- `refactor:` `perf:` `style:` → **Improved**
-
----
-
-## Step 4: Group Related Commits into Topic Bullets
-
-This is the most important step. Don't write one bullet per commit — **merge related commits
-into a single, comprehensive bullet point** that tells a coherent user story.
-
-### How to group
-
-1. Scan all commits and identify topic clusters (e.g., "Onboarding flow", "Agent workbench",
-   "Landing page / DMG", "RAG workbench", "Sidebar / navigation")
-2. For each cluster, write ONE bullet that synthesizes all related commits
-3. A cluster typically has 2-8 commits; merge them into 1-2 bullets
-
-### Example: multiple commits → one bullet
-
-```
-Commits:
-  - feat(starcat): 新增新手引导返回功能及流程优化
-  - feat(starcat): 新增调试模式下主窗口新手引导开关及流程优化
-  - feat(starcat): 优化新手引导流程与分享指引交互
-  - feat(starcat): 重构新手引导流程并扩展详情页与分享步骤
-
-→ ONE bullet:
-  EN: Onboarding flow: Back navigation, debug-mode controls, share guidance, and extended detail-page and sharing steps.
-  ZH: 新手引导流程：支持返回导航、调试模式开关、分享指引，并扩展详情页与分享步骤。
-
-Contrast — too technical and verbose (DON'T do this):
-  ❌ EN: Implemented retreatStep method with spring animation for decrementing current step
-         index, added DebugFlags.gettingStartedGuide persistence via Debug menu, introduced
-         notification center event-driven mechanism for cross-component guide state sync,
-         and refactored TagManagementView Sheet presentation to fix SwiftUI nesting re-render
-  ❌ ZH: 实现 retreatStep 方法配合弹簧动画递减当前步骤索引，在 DebugFlags 中新增
-         gettingStartedGuide 配置项通过 Debug 菜单持久化控制，引入通知中心事件驱动机制
-         跨组件同步引导状态，并重构 TagManagementView 的 Sheet 呈现逻辑
-```
-
-### Bullet writing rules
-
-写法以主规范为准：[`docs/5-规范/Changelog-更新规范.md`](../../docs/5-规范/Changelog-更新规范.md) 第 4 节（App 更新说明友好）。摘要：
-
-- **短标题 + 冒号 + 说明**：中文用全角 `：`；英文用半角 `: `（冒号后必须有空格）。不要靠第一个逗号拆标题；新条目不要用 em dash。
-- **不要**以 `Added` / `Improved` / `Fixed` 或「新增 / 优化 / 修复」开头——分区标题已表达类别。
-- **One idea per bullet**：短、可扫读；不写实现细节、文件路径、测试过程。
-- **User-facing language**：写用户能感知的结果，像 App Store What's New。
-- **Every non-excluded commit must be accounted for**：分组后确认 Step 3a 通过的 commit 都落在某条里。
-
-→ 推荐形态：
-
-```
-EN: Repository pinning in Manage: Pin / Unpin, most-recently-pinned ordering, and a card-corner indicator.
-ZH: Manage 仓库置顶：支持 Pin / Unpin，按最近置顶优先排列，卡片左上角显示置顶标识。
-```
-
-Contrast — too technical and verbose (DON'T do this):
-  ❌ EN: Implemented retreatStep method with spring animation for decrementing current step
-         index, added DebugFlags.gettingStartedGuide persistence via Debug menu...
-  ❌ ZH: 实现 retreatStep 方法配合弹簧动画递减当前步骤索引...
-
-
----
-
-## Step 5: Format and Insert into Both Files
-
-Insert the new version section after the opening paragraph (the description line under the title)
-and before the first existing `## <version>` section.
-
-### English format
-
-```markdown
-## <version>
-
-### New
-
-- Short title: User-facing detail covering related changes.
-- Another short title: Another detail.
-
-### Improvements
-
-- Short title: What got better for the user.
-
-### Fixes
-
-- Short title: What was broken and now works.
-```
-
-### Chinese format
-
-```markdown
-## <version>
-
-### 新增
-
-- 短标题：用户能懂的说明，可涵盖一组相关变更。
-
-### 优化
-
-- 短标题：体验或性能上的改进。
-
-### 修复
-
-- 短标题：已修好的问题。
-```
-
-分区标题必须用上表词（`New` / `Improvements` / `Fixes` 与 `新增` / `优化` / `修复`），不要写成 `Improved`、`Changed`、`改进`、`Bug Fixes`。完整约束见主规范第 4 节。
-
-### Rules
-- Categories with no entries → omit the section entirely
-- Blank line between sections only; never between list items inside one section
-- Bullets start with `- ` (dash + space)
-- Bullets use `短标题：说明`（中文全角冒号）或 `Short title: detail`（英文冒号+空格）；不要句首分类动词、不要用 em dash
-- The version link reference goes at the bottom of the file（主仓库 releases 若在用）
-
----
-
-## Step 6: Add Version Link Reference
-
-At the bottom of each file, insert BEFORE the previous version's link:
-
-```markdown
-[<version>]: https://github.com/starcat-app/Starcat/releases/tag/<version>
-```
-
-Maintain reverse chronological order (newest first).
-
----
-
-## Step 7: Verify Before Writing
-
-Before touching any file, present the complete proposed changelog to the user:
-
-1. Show the version number
-2. Show ALL bullets under each category (EN + ZH side by side)
-3. Confirm the count: "Total N commits → M user-facing bullets (X New, Y Improved, Z Fixed), K excluded (docs/tooling/internal)"
-
-**Do NOT write files until the user explicitly approves the proposed content.**
-
-After writing, verify:
-- Both files have identical bullet counts per category
-- No blank lines between bullets in the same section
-- Version number matches across both files
-- Format matches existing entries exactly
-- Version link references are present and in correct order
-
----
-
-## Step 8: Offer to Create Git Tag
-
-After both changelog files have been written and verified, ask the user:
-
-> "Changelog updated. Would you like me to create a git tag `v<version>` for this release?"
-
-Use the exact version number from Step 0. Do NOT create the tag without explicit confirmation.
-
-If the user says yes:
-
-```bash
-git tag -a v<version> -m "v<version>"
-```
-
-Verify the tag was created:
-
-```bash
-git tag -l "v<version>"
-```
-
----
-
-## Step 9: Offer to Run Release Script
-
-After the tag is created (or skipped by user), ask:
-
-> "Would you like me to run the Direct release script (`scripts/release-direct.sh`) to publish this version?"
-
-**Do NOT run the script without explicit confirmation.**
-
-If the user says yes, present the script's requirements and parameters for confirmation:
-
-### Script: `scripts/release-direct.sh <version>`
-
-**Prerequisites:**
-- Must be on `main` branch (or set `STARCAT_RELEASE_SKIP_BRANCH_CHECK=1`)
-- Must have clean working tree (or set `STARCAT_RELEASE_SKIP_DIRTY_CHECK=1`)
-- Requires: `git`, `python3`, `rsync`, `ssh`, `curl`
-
-**Key parameters to confirm with user:**
-
-| Parameter | Purpose | Recommendation |
-|-----------|---------|----------------|
-| `STARCAT_NOTARIZE=1` | Enable notarization | Required for production release |
-| `STARCAT_RELEASE_SKIP_TAG=1` | Skip tag creation | Set if tag was already created in Step 8 |
-| `STARCAT_RELEASE_DRY_RUN=1` | Dry run (no actual changes) | Suggest for first run to verify |
-| `STARCAT_RELEASE_HOST=<host>` | SSH host for upload | Default: `aliyun` |
-| `STARCAT_RELEASE_SKIP_NGINX=1` | Skip nginx deploy | Optional |
-| `STARCAT_RELEASE_SKIP_SITE=1` | Skip site deploy | Optional |
-
-**Ask the user:**
-1. Is this a production release? (Yes → `STARCAT_NOTARIZE=1`)
-2. Run dry-run first to verify?
-3. Confirm SSH host (default: `aliyun`)
-4. Any steps to skip?
-
-After confirming all parameters, construct and execute the command:
-
-```bash
-# Example — actual command depends on user's answers
-STARCAT_NOTARIZE=1 STARCAT_RELEASE_SKIP_TAG=1 ./scripts/release-direct.sh <version>
-```
-
-**Note**: This script pushes tags to `origin`, deploys nginx config and site pages, packages the DMG,
-signs it for Sparkle, uploads all artifacts to the remote server, and verifies remote URLs.
-It is a full production release pipeline — make sure the user understands the scope.
-
----
-
-## Important Constraints
-
-1. **User-facing only** — exclude internal docs, build tooling, test fixes, review reports,
-   appcast updates, sync scripts, and developer-only changes. Test: "Would a user notice this?"
-2. **Read ALL commits first, filter later** — don't skip at read time; filter based on content in Step 3a
-3. **Merge aggressively** — one bullet covers a topic cluster, not one commit
-4. **User perspective** — describe what changed for the user, not the code
-5. **Don't fabricate** — only include changes actually present in the git log
-6. **Don't duplicate** — don't repeat changes already listed in earlier versions
-7. **Preserve history** — never modify existing version sections
-8. **Bilingual 1:1** — every EN bullet must have a corresponding ZH bullet
-9. **Ask first, write later** — always show the proposed content and get approval
+本 Skill 到日志整理结束，不主动接着询问打 tag 或执行旧发布脚本。用户另有准备发版或发布指令时，分别读取 `starcat-release-readiness`、`starcat-release`、对应 CLI/后端发布 Skill 与当前 SOP，执行各自授权边界；禁止绕过分支、脏状态或发布门禁。

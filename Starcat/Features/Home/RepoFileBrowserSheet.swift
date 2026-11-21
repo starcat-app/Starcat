@@ -26,6 +26,7 @@ struct RepoFileBrowserSheet: View {
     @Environment(\.locale) private var locale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var viewModel: RepoFileBrowserViewModel
     @State private var readingLayout = RepoFileReadingLayout()
     @State private var expandedPaths: Set<String> = []
@@ -57,7 +58,10 @@ struct RepoFileBrowserSheet: View {
         VStack(spacing: 0) {
             header
             columns
-            if !readingLayout.isExpanded || viewModel.isDownloading { footer }
+            if isFooterPresented {
+                Divider()
+                footer
+            }
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -81,7 +85,7 @@ struct RepoFileBrowserSheet: View {
         .onChange(of: viewModel.previewedPath) { _, path in
             if path == nil { readingLayout.isExpanded = false }
         }
-        .onExitCommand {
+        .workspaceEscapeAction {
             if !readingLayout.handleEscape() { closeWorkspace() }
         }
         .task(id: viewModel.previewRevision) {
@@ -171,6 +175,11 @@ struct RepoFileBrowserSheet: View {
         }
     }
 
+    /// 放大阅读时仅在下载进行中保留底栏，内容区边距也跟随同一展示条件。
+    private var isFooterPresented: Bool {
+        !readingLayout.isExpanded || viewModel.isDownloading
+    }
+
     /// 首屏固定左树与阅读区，README 加载和空态都不再引起整页宽度跳变。
     private var columns: some View {
         GeometryReader { geometry in
@@ -206,7 +215,8 @@ struct RepoFileBrowserSheet: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(.horizontal, 16)
-        .padding(.bottom, 12)
+        // 底栏已自带垂直间距；仅在隐藏底栏的放大阅读中保留卡片与窗口底边的留白。
+        .padding(.bottom, isFooterPresented ? 0 : 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: readingLayout)
@@ -337,8 +347,9 @@ struct RepoFileBrowserSheet: View {
                 }
             }
             Spacer(minLength: 0)
-            if let path = viewModel.previewedPath {
-                CopyFeedbackButton(providesContent: { path }, tooltip: "repo.files.preview.copy") { didCopy in
+            if let url = viewModel.githubBlobURL {
+                // 与“在 GitHub 查看”共用当前文件地址，复制后可直接打开文件页。
+                CopyFeedbackButton(providesContent: { url.absoluteString }, tooltip: "repo.files.preview.copy") { didCopy in
                     Image(systemName: didCopy ? "checkmark.circle.fill" : "square.on.square")
                         .font(.caption)
                         .foregroundStyle(didCopy ? Color.green : Color.secondary)
@@ -684,8 +695,10 @@ struct RepoFileBrowserSheet: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
+        // 与 Skills 底栏保持相同行高和上下间距，原生按钮在下载状态切换时不改变底栏高度。
+        .frame(height: max(32, interfaceScale.scaled(28)))
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 6)
     }
 
     /// 更新当前快照时不重建阅读器，模式与尺寸变更不会触发文件下载。
@@ -778,6 +791,19 @@ struct RepoFileBrowserSheet: View {
                 )
                 .disabled(viewModel.previewMode == .source || !isContentVisible)
             }
+            Button {
+                readingLayout.isExpanded.toggle()
+            } label: {
+                Image(systemName: readingLayout.isExpanded
+                      ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(readingLayout.isExpanded ? "repo.files.preview.restore" : "repo.files.preview.expand")
+            .accessibilityLabel(Text(readingLayout.isExpanded ? "repo.files.preview.restore" : "repo.files.preview.expand"))
+            .disabled(!readingLayout.isExpanded && viewModel.previewText == nil && viewModel.previewImageData == nil)
             if !readingLayout.isExpanded {
                 Button {
                     readingLayout.showsInspector.toggle()
@@ -792,19 +818,6 @@ struct RepoFileBrowserSheet: View {
                 .accessibilityLabel(Text(readingLayout.showsInspector ? "repo.files.inspector.hide" : "repo.files.inspector.show"))
                 .accessibilityValue(Text(readingLayout.showsInspector ? "repo.skills.content.expanded" : "repo.skills.content.collapsed"))
             }
-            Button {
-                readingLayout.isExpanded.toggle()
-            } label: {
-                Image(systemName: readingLayout.isExpanded
-                      ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help(readingLayout.isExpanded ? "repo.files.preview.restore" : "repo.files.preview.expand")
-            .accessibilityLabel(Text(readingLayout.isExpanded ? "repo.files.preview.restore" : "repo.files.preview.expand"))
-            .disabled(!readingLayout.isExpanded && viewModel.previewText == nil && viewModel.previewImageData == nil)
         }
     }
 

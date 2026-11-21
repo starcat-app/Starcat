@@ -352,14 +352,11 @@ struct RAGStreamingReasoningViewport: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     let session: RAGStreamingPlainTextSession
     var pinsToBottom: Bool = true
-    /// RAG 时间线用 `.body`；主窗口 AI 对话 Think 用 `.caption`，与改前字号对齐。
-    var typography: StarcatTypography = .body
+    /// 仓库对话用阅读字号，视口测高也必须使用同一个实际字体。
+    var fontOverride: NSFont? = nil
 
     var body: some View {
-        let font = RAGStreamingPlainTextMetrics.reasoningFont(
-            scale: interfaceScale,
-            typography: typography
-        )
+        let font = fontOverride ?? RAGStreamingPlainTextMetrics.reasoningFont(scale: interfaceScale)
         RAGStreamingPlainTextView(session: session, font: font, pinsToBottom: pinsToBottom)
             .frame(height: RAGStreamingPlainTextMetrics.viewportHeight(for: font))
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -372,13 +369,10 @@ struct RAGStreamingReasoningViewport: View {
 struct RAGCompletedReasoningViewport: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     let text: String
-    var typography: StarcatTypography = .body
+    var fontOverride: NSFont? = nil
 
     var body: some View {
-        let font = RAGStreamingPlainTextMetrics.reasoningFont(
-            scale: interfaceScale,
-            typography: typography
-        )
+        let font = fontOverride ?? RAGStreamingPlainTextMetrics.reasoningFont(scale: interfaceScale)
         RAGStaticReasoningPlainTextView(text: text, font: font)
             .frame(height: RAGStreamingPlainTextMetrics.viewportHeight(for: font))
             .frame(maxWidth: .infinity, alignment: .leading)

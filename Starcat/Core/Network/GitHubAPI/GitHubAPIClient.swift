@@ -448,8 +448,9 @@ actor GitHubAPIClient {
         _ request: URLRequest,
         transportContext: String
     ) async throws -> (Data, URLResponse) {
+        let result: (Data, URLResponse)
         do {
-            return try await DiagnosticHTTP.data(for: request, using: session, service: "github")
+            result = try await DiagnosticHTTP.data(for: request, using: session, service: "github")
         } catch is CancellationError {
             throw NetworkError.cancelled
         } catch {
@@ -461,6 +462,27 @@ actor GitHubAPIClient {
             )
             throw NetworkError.transport(underlying: error)
         }
+        try validateWatchSubscriptionScope(request: request, response: result.1, data: result.0)
+        return result
+    }
+
+    /// 在 404 被解释为默认关注状态之前检查 OAuth 响应头。
+    /// 只识别订阅端点有授权头的 403/404，保留限流和组织 SSO 原有的错误语义。
+    private func validateWatchSubscriptionScope(request: URLRequest, response: URLResponse, data: Data) throws {
+        guard let http = response as? HTTPURLResponse,
+              http.statusCode == 403 || http.statusCode == 404,
+              let path = request.url?.pathComponents,
+              path.count == 5, path[1] == "repos", path.last == "subscription",
+              request.value(forHTTPHeaderField: "Authorization") != nil,
+              let grantedScopes = http.value(forHTTPHeaderField: "X-OAuth-Scopes"),
+              http.value(forHTTPHeaderField: "Retry-After") == nil,
+              http.value(forHTTPHeaderField: "X-GitHub-SSO") == nil,
+              extractErrorMessage(data)?.localizedCaseInsensitiveContains("rate limit") != true
+        else { return }
+
+        let scopes = grantedScopes.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        guard !scopes.contains("notifications"), !scopes.contains("repo") else { return }
+        throw GitHubWatchSubscriptionError.missingNotificationsScope
     }
 
     /// 真正发起请求并按状态码处理。

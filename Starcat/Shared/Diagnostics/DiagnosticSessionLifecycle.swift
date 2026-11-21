@@ -2,7 +2,7 @@
 //  DiagnosticSessionLifecycle.swift
 //  Starcat
 //
-//  独立会话与增强复现控制，不访问账号、Keychain 或业务数据库。
+//  独立诊断会话的环境与正常退出标记，不访问账号、Keychain 或业务数据库。
 //
 
 import AppKit
@@ -57,81 +57,4 @@ enum DiagnosticSessionLifecycle {
             forName: NSApplication.willTerminateNotification, object: nil, queue: nil
         ) { _ in DiagnosticLogStore.shared.endSession() }
     }
-}
-
-/// 增强模式只增加操作内安全阶段，仍不允许普通事件独立落盘。
-/// 锁内只处理值，通知和日志在解锁后发送，避免递归入队死锁。
-final class DiagnosticRecording: @unchecked Sendable {
-    static let shared = DiagnosticRecording()
-    private let lock = NSLock()
-    private var deadline: Date?
-    private var generation = UUID()
-    private var bytes = 0
-    private let byteLimit: Int
-    private let lifecycleEvents: Bool
-
-    /// 小预算和静默生命周期只用于隔离测试；生产上限始终不超过 20MB。
-    init(byteLimit: Int = 20 * 1024 * 1024, lifecycleEvents: Bool = true) {
-        self.byteLimit = min(20 * 1024 * 1024, max(1, byteLimit))
-        self.lifecycleEvents = lifecycleEvents
-    }
-
-    var expiresAt: Date? {
-        lock.lock()
-        defer { lock.unlock() }
-        return deadline.flatMap { $0 > Date() ? $0 : nil }
-    }
-
-    @discardableResult
-    func start(duration: TimeInterval = 900) -> Date {
-        let duration = min(900, max(1, duration))
-        let end = Date().addingTimeInterval(duration)
-        let token = UUID()
-        lock.lock()
-        deadline = end
-        generation = token
-        bytes = 0
-        lock.unlock()
-        if lifecycleEvents {
-            notify()
-        }
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + duration) { [self] in
-            stop(ifGeneration: token)
-        }
-        return end
-    }
-
-    func stop() { stop(ifGeneration: nil) }
-
-    private func stop(ifGeneration token: UUID?) {
-        lock.lock()
-        guard deadline != nil, token == nil || token == generation else { lock.unlock(); return }
-        deadline = nil
-        lock.unlock()
-        if lifecycleEvents {
-            notify()
-        }
-    }
-
-    /// 在写入者编码后计量，达到预算立即关闭，不改变业务日志原有留存策略。
-    func consume(_ count: Int) -> Bool {
-        lock.lock()
-        let active = deadline.map { $0 > Date() } ?? false
-        if active { bytes += count }
-        let allowed = active && bytes <= byteLimit
-        let exceeded = active && !allowed
-        lock.unlock()
-        if exceeded { stop() }
-        return allowed
-    }
-
-    private func notify() {
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .diagnosticRecordingDidChange, object: nil)
-        }
-    }
-}
-
-extension Notification.Name {
-    static let diagnosticRecordingDidChange = Notification.Name("StarcatDiagnosticRecordingDidChange")
 }

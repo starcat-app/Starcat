@@ -310,7 +310,7 @@ extension RepoRecommendationItem {
             repoID: repoID, fullName: fullName, owner: parts.first ?? "",
             name: parts.count == 2 ? parts[1] : "", description: description,
             homepage: nil, language: language, stars: stars, forks: forks,
-            watchers: 0, subscribers: 0, openIssues: 0, ownerAvatar: nil,
+            watchers: 0, subscribers: nil, openIssues: 0, ownerAvatar: nil,
             defaultBranch: nil, licenseSpdx: nil, topics: [], platforms: [],
             pushedAt: nil, updatedAt: nil, createdAt: nil, isArchived: archived, isFork: false,
             latestReleaseTag: nil, latestReleaseAt: nil, latestReleaseURL: nil,

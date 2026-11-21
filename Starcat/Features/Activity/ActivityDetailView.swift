@@ -465,7 +465,9 @@ struct ActivityDetailView: View {
                         style: .full
                     )
                     MetaBadge(businessIcon: .forkCount, text: repo.forksCount.formattedShort, tint: .secondary)
-                    MetaBadge(systemImage: "eye", text: repo.watchersCount.formattedShort, tint: StatSemanticColor.watchers.resolved(colorScheme: colorScheme))
+                    RepoSubscriberCountView(repo: repo, loadsIfMissing: true) { count in
+                        MetaBadge(systemImage: "eye", text: count?.formattedShort ?? "-", tint: StatSemanticColor.watchers.resolved(colorScheme: colorScheme))
+                    }
                     if repo.isArchived {
                         ArchivedBadge()
                     }

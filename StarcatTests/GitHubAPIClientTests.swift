@@ -897,6 +897,108 @@ struct GitHubAPIClientTests {
         #expect(queryItems["per_page"] == "100")
     }
 
+    @Test("旧 token 在读取、设置及删除关注时均提示补权限", arguments: [403, 404])
+    func watchSubscriptionRequiresNotificationsScope(status: Int) async {
+        let client = makeClient()
+        URLProtocolStub.requestHandler = { request in
+            let response = httpResponse(status, request.url!, [
+                "X-OAuth-Scopes": "public_repo, user",
+                "X-Accepted-OAuth-Scopes": "notifications, repo",
+                "X-RateLimit-Remaining": "4980"
+            ])
+            return (response, Data())
+        }
+
+        await #expect(throws: GitHubWatchSubscriptionError.missingNotificationsScope) {
+            _ = try await client.getSubscription(owner: "alice", repo: "foo")
+        }
+        await #expect(throws: GitHubWatchSubscriptionError.missingNotificationsScope) {
+            _ = try await client.putSubscription(owner: "alice", repo: "foo", subscribed: true, ignored: false)
+        }
+        await #expect(throws: GitHubWatchSubscriptionError.missingNotificationsScope) {
+            try await client.deleteSubscription(owner: "alice", repo: "foo")
+        }
+        #expect(URLProtocolStub.receivedRequests.compactMap(\.httpMethod) == ["GET", "PUT", "DELETE"])
+    }
+
+    @Test("通知权限足够时，GET 关注状态的 404 仍保持原语义", arguments: ["public_repo, notifications", "repo"])
+    func watchSubscriptionNotFoundWithRequiredScope(scopes: String) async {
+        let client = makeClient()
+        URLProtocolStub.requestHandler = { request in
+            (httpResponse(404, request.url!, ["X-OAuth-Scopes": scopes]), Data())
+        }
+
+        await #expect {
+            _ = try await client.getSubscription(owner: "alice", repo: "foo")
+        } throws: { error in
+            if case NetworkError.notFound = error { return true }
+            return false
+        }
+    }
+
+    @Test("订阅限流保留限流错误，即使 token 没有通知 scope")
+    func watchSubscriptionRateLimitIsNotMissingScope() async {
+        let client = makeClient()
+        URLProtocolStub.requestHandler = { request in
+            let response = httpResponse(403, request.url!, [
+                "X-OAuth-Scopes": "public_repo",
+                "X-RateLimit-Remaining": "0"
+            ])
+            return (response, Data(#"{"message":"API rate limit exceeded"}"#.utf8))
+        }
+
+        await #expect {
+            try await client.deleteSubscription(owner: "alice", repo: "foo")
+        } throws: { error in
+            if case NetworkError.rateLimited = error { return true }
+            return false
+        }
+    }
+
+    @Test("主动刷新仓库资料绕过本地 HTTP 缓存", arguments: [false, true])
+    func repoMetadataRefreshRespectsCachePolicy(forceRefresh: Bool) async throws {
+        let client = makeClient()
+        let json = """
+        {
+          "id": 1, "name": "foo", "full_name": "alice/foo",
+          "owner": {"id": 10, "login": "alice"},
+          "stargazers_count": 100, "forks_count": 5, "watchers_count": 100,
+          "subscribers_count": 7, "html_url": "https://github.com/alice/foo",
+          "private": false, "fork": false, "archived": false
+        }
+        """
+        URLProtocolStub.requestHandler = { request in
+            (httpResponse(200, request.url!), Data(json.utf8))
+        }
+
+        let repo = try await client.repo(owner: "alice", repo: "foo", forceRefresh: forceRefresh)
+        #expect(repo.subscribersCount == 7)
+        let request = try #require(URLProtocolStub.receivedRequests.first)
+        #expect(request.url?.path == "/repos/alice/foo")
+        #expect(request.cachePolicy == (forceRefresh ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy))
+    }
+
+    @Test("仓库资料区分 Discussions 开启、关闭和未知", arguments: [true, false, nil] as [Bool?])
+    func repoMetadataDecodesDiscussionAvailability(expected: Bool?) async throws {
+        let client = makeClient()
+        let discussionsField = expected.map { ", \"has_discussions\": \($0)" } ?? ""
+        let json = """
+        {
+          "id": 1, "name": "foo", "full_name": "alice/foo",
+          "owner": {"id": 10, "login": "alice"},
+          "stargazers_count": 100, "forks_count": 5, "watchers_count": 100,
+          "html_url": "https://github.com/alice/foo",
+          "private": false, "fork": false, "archived": false\(discussionsField)
+        }
+        """
+        URLProtocolStub.requestHandler = { request in
+            (httpResponse(200, request.url!), Data(json.utf8))
+        }
+
+        let repo = try await client.repo(owner: "alice", repo: "foo")
+        #expect(repo.hasDiscussions == expected)
+    }
+
     @Test("stargazers: 解析 starred_at、分页并使用专用 Accept")
     func stargazersDecodeTimestampAndPagination() async throws {
         let client = makeClient()

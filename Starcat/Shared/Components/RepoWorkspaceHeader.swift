@@ -101,3 +101,17 @@ struct RepoWorkspaceSearchField: View {
         }
     }
 }
+
+extension View {
+    /// 保留退出命令回调，并像 Skills 底栏一样注册取消快捷键，提供不依赖输入焦点的 Esc 入口。
+    /// 两条入口复用页面自己的动作，草稿保存、退出放大和任务清理仍由原工作区负责。
+    func workspaceEscapeAction(_ action: @escaping () -> Void) -> some View {
+        onExitCommand(perform: action)
+            .background {
+                Button("common.close", action: action)
+                    .keyboardShortcut(.cancelAction)
+                    .hidden()
+                    .accessibilityHidden(true)
+            }
+    }
+}

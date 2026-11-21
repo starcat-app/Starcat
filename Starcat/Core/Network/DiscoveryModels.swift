@@ -21,7 +21,7 @@ struct DiscoveryRepoDTO: Codable, Identifiable, Hashable, Sendable {
     let stars: Int
     let forks: Int
     let watchers: Int
-    let subscribers: Int
+    let subscribers: Int?
     let openIssues: Int
     let ownerAvatar: String?
     let defaultBranch: String?
@@ -102,7 +102,7 @@ struct DiscoveryRepoDTO: Codable, Identifiable, Hashable, Sendable {
         stars: Int,
         forks: Int,
         watchers: Int,
-        subscribers: Int,
+        subscribers: Int?,
         openIssues: Int,
         ownerAvatar: String?,
         defaultBranch: String?,
@@ -181,7 +181,7 @@ struct DiscoveryRepoDTO: Codable, Identifiable, Hashable, Sendable {
         stars = try container.decode(Int.self, forKey: .stars)
         forks = try container.decode(Int.self, forKey: .forks)
         watchers = try container.decode(Int.self, forKey: .watchers)
-        subscribers = try container.decode(Int.self, forKey: .subscribers)
+        subscribers = try container.decodeIfPresent(Int.self, forKey: .subscribers)
         openIssues = try container.decode(Int.self, forKey: .openIssues)
         ownerAvatar = try container.decodeIfPresent(String.self, forKey: .ownerAvatar)
         defaultBranch = try container.decodeIfPresent(String.self, forKey: .defaultBranch)
@@ -439,7 +439,7 @@ extension DiscoveryRepoDTO {
             starredAt: nil,
             cachedAt: nil,
             ownerAvatar: ownerAvatar,
-            subscribersCount: subscribers,
+            subscribersCount: Repo.subscriberCount(fromFeed: subscribers),
             defaultBranch: defaultBranch,
             openIssuesCount: openIssues
         )

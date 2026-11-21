@@ -105,7 +105,7 @@ struct RepoIssuesWorkspaceContent: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
         .appLocaleEnvironment()
-        .onExitCommand {
+        .workspaceEscapeAction {
             viewModel.flushCreateDraft()
             if let onClose { onClose() } else { dismiss() }
         }

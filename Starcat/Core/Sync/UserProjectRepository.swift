@@ -135,6 +135,7 @@ struct GRDBUserProjectRepository: UserProjectRepositoryProtocol, Sendable {
                 // 项目同步只刷新 GitHub 元数据；Star 是另一条用户关系，必须以本地真值为准。
                 repo.isStarred = existingRepo?.isStarred == true
                 repo.starredAt = existingRepo?.isStarred == true ? existingRepo?.starredAt : nil
+                repo.subscribersCount = repo.subscribersCount ?? existingRepo?.subscribersCount
                 try repo.save(db)
 
                 let existingProject = try UserProject.fetchOne(

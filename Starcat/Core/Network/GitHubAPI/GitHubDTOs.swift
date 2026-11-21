@@ -227,6 +227,8 @@ struct GitHubRepoDTO: Decodable, Equatable {
     let watchersCount: Int
     /// 实际关注者数；GitHub 的 watchers_count 是 Star 数的历史别名。
     let subscribersCount: Int?
+    /// 仓库是否启用 Discussions。精简响应省略此字段时保持未知。
+    let hasDiscussions: Bool?
     let topics: [String]?
     let license: GitHubLicenseDTO?
     let homepage: String?
@@ -294,7 +296,8 @@ struct GitHubRepoDTO: Decodable, Equatable {
         isTemplate: Bool?,
         score: Double?,
         parent: GitHubForkParentDTO? = nil,
-        subscribersCount: Int? = nil
+        subscribersCount: Int? = nil,
+        hasDiscussions: Bool? = nil
     ) {
         self.id = id
         self.name = name
@@ -306,6 +309,7 @@ struct GitHubRepoDTO: Decodable, Equatable {
         self.forksCount = forksCount
         self.watchersCount = watchersCount
         self.subscribersCount = subscribersCount
+        self.hasDiscussions = hasDiscussions
         self.topics = topics
         self.license = license
         self.homepage = homepage
@@ -337,6 +341,7 @@ struct GitHubRepoDTO: Decodable, Equatable {
         case forksCount
         case watchersCount
         case subscribersCount
+        case hasDiscussions
         case topics
         case license
         case homepage
