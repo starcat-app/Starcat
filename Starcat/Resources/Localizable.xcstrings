@@ -814739,6 +814739,854 @@
         }
       }
     },
+    "watch.allActivity.description" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Benachrichtigungen zu allen Aktivitäten dieses Repositorys erhalten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Receive notifications for all activity in this repository."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Recibe notificaciones de toda la actividad de este repositorio."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Recevez les notifications de toute l’activité de ce dépôt."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Terima notifikasi untuk semua aktivitas di repositori ini."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ricevi notifiche per tutte le attività di questo repository."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "このリポジトリのすべてのアクティビティを通知します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 저장소의 모든 활동에 대한 알림을 받습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ontvang meldingen voor alle activiteiten in deze repository."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Otrzymuj powiadomienia o całej aktywności w tym repozytorium."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Receba notificações de toda atividade neste repositório."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Получать уведомления обо всех действиях в этом репозитории."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bu depodaki tüm etkinlikler için bildirim alın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Отримувати сповіщення про всю активність у цьому репозиторії."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nhận thông báo về mọi hoạt động trong kho lưu trữ này."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "接收该仓库所有活动的通知。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "接收此儲存庫所有活動的通知。"
+          }
+        }
+      }
+    },
+    "watch.custom.discussionsDisabled" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Diskussionen sind in diesem Repository deaktiviert."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discussions are turned off for this repository."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Los debates están desactivados en este repositorio."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les discussions sont désactivées dans ce dépôt."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Fitur diskusi tidak diaktifkan di repositori ini."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le discussioni sono disattivate in questo repository."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "このリポジトリではディスカッションが無効になっています。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 저장소에서는 토론이 비활성화되어 있습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Discussies zijn uitgeschakeld voor deze repository."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dyskusje są wyłączone w tym repozytorium."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "As discussões estão desativadas neste repositório."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Обсуждения в этом репозитории отключены."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bu depoda tartışmalar devre dışı."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Обговорення в цьому репозиторії вимкнено."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tính năng thảo luận chưa được bật cho kho lưu trữ này."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "此仓库未开启讨论。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "此儲存庫未啟用討論。"
+          }
+        }
+      }
+    },
+    "watch.custom.event.discussions" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Diskussionen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discussions"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Debates"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Forums de discussion"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Diskusi"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Discussioni"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ディスカッション"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "토론"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Discussies"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dyskusje"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Discussões"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Обсуждения"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tartışmalar"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Обговорення"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Thảo luận"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "讨论"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "討論"
+          }
+        }
+      }
+    },
+    "watch.custom.event.pullRequests" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pull-Requests"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pull requests"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Solicitudes de incorporación de cambios"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Demandes de tirage"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Permintaan pull"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Richieste di pull"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "プルリクエスト"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "풀 리퀘스트"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pullverzoeken"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Żądania scalenia"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Solicitações de pull"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Запросы на слияние"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Çekme istekleri"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Запити на злиття"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yêu cầu kéo"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "拉取请求"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "提取要求"
+          }
+        }
+      }
+    },
+    "watch.custom.event.securityAlerts" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sicherheitswarnungen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security alerts"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Alertas de seguridad"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Alertes de sécurité"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Peringatan keamanan"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Avvisi di sicurezza"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "セキュリティアラート"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "보안 경고"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Beveiligingswaarschuwingen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Alerty bezpieczeństwa"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Alertas de segurança"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Оповещения безопасности"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Güvenlik uyarıları"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сповіщення безпеки"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cảnh báo bảo mật"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "安全警报"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "安全性警示"
+          }
+        }
+      }
+    },
+    "watch.custom.instructions" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wähle auf der Repository-Seite unter Watch → Custom die gewünschten Ereignisse aus."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the repository page, choose Watch → Custom to select events."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "En la página del repositorio, elige los eventos en Watch → Custom."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sur la page du dépôt, choisissez les événements dans Watch → Custom."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Di halaman repositori, pilih peristiwa melalui Watch → Custom."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nella pagina del repository, scegli gli eventi in Watch → Custom."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "リポジトリのページで Watch → Custom を開いてイベントを選びます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "저장소 페이지에서 Watch → Custom을 열고 이벤트를 선택하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kies op de repositorypagina de gebeurtenissen onder Watch → Custom."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Na stronie repozytorium wybierz zdarzenia w menu Watch → Custom."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Na página do repositório, escolha os eventos em Watch → Custom."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "На странице репозитория выберите события в меню Watch → Custom."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Depo sayfasında Watch → Custom menüsünden etkinlikleri seçin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "На сторінці репозиторію виберіть події в меню Watch → Custom."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Trên trang kho lưu trữ, chọn sự kiện trong Watch → Custom."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在仓库首页打开 Watch → Custom，即可选择要通知的事件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在儲存庫首頁開啟 Watch → Custom，即可選取要通知的事件。"
+          }
+        }
+      }
+    },
+    "watch.custom.openSettings" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Auf GitHub einstellen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configure on GitHub"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configurar en GitHub"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configurer sur GitHub"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Atur di GitHub"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configura su GitHub"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub で設定"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub에서 설정"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Instellen op GitHub"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ustaw w GitHubie"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configurar no GitHub"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Настроить на GitHub"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub’da yapılandır"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Налаштувати на GitHub"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Thiết lập trên GitHub"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在 GitHub 设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在 GitHub 設定"
+          }
+        }
+      }
+    },
+    "watch.custom.title" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Benutzerdefinierte Benachrichtigungen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom notifications"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Notificaciones personalizadas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Notifications personnalisées"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Notifikasi kustom"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Notifiche personalizzate"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "通知のカスタマイズ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "맞춤 알림"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aangepaste meldingen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Powiadomienia niestandardowe"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Notificações personalizadas"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Настраиваемые уведомления"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Özel bildirimler"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Власні сповіщення"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Thông báo tùy chỉnh"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "自定义通知"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "自訂通知"
+          }
+        }
+      }
+    },
     "watch.ignore" : {
       "localizations" : {
         "de" : {
@@ -814843,6 +815691,196 @@
             "value" : "忽略"
           }
         }
+      }
+    },
+    "watch.ignore.description" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Benachrichtigungen für dieses Repository stummschalten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mute notifications from this repository."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Silencia las notificaciones de este repositorio."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Désactivez les notifications de ce dépôt."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bisukan notifikasi dari repositori ini."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Silenzia le notifiche da questo repository."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "このリポジトリの通知をすべてミュートします。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 저장소의 알림을 받지 않습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Demp meldingen van deze repository."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wycisz powiadomienia z tego repozytorium."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Silencie as notificações deste repositório."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Отключить уведомления из этого репозитория."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bu deponun bildirimlerini sessize alın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Вимкнути сповіщення з цього репозиторію."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tắt thông báo từ kho lưu trữ này."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "不接收该仓库的通知。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "不接收此儲存庫的通知。"
+          }
+        }
+      }
+    },
+    "watch.listFailed" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Die Beobachterliste konnte nicht geöffnet werden. Versuche es erneut." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn’t open the watcher list. Try again." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "No se pudo abrir la lista de observadores. Inténtalo de nuevo." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossible d’ouvrir la liste des personnes qui suivent le dépôt. Réessayez." } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Daftar pengamat tidak dapat dibuka. Coba lagi." } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossibile aprire l’elenco degli osservatori. Riprova." } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "ウォッチしているユーザーの一覧を開けませんでした。もう一度お試しください。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "구독자 목록을 열 수 없습니다. 다시 시도해 주세요." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "De lijst met volgers kon niet worden geopend. Probeer het opnieuw." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Nie udało się otworzyć listy obserwujących. Spróbuj ponownie." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Não foi possível abrir a lista de observadores. Tente novamente." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Не удалось открыть список наблюдателей. Попробуйте ещё раз." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "İzleyenler listesi açılamadı. Tekrar deneyin." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Не вдалося відкрити список спостерігачів. Спробуйте ще раз." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Không thể mở danh sách người theo dõi. Vui lòng thử lại." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "暂时无法查看关注者名单，请重试。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "暫時無法查看關注者名單，請再試一次。" } }
+      }
+    },
+    "watch.listRestriction" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub zeigt die Liste der Beobachter nur Administratoren und Mitwirkenden des Repositorys." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub shows the watcher list only to repository administrators and collaborators." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub solo muestra la lista de observadores a los administradores y colaboradores del repositorio." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub réserve la liste des observateurs aux administrateurs et aux collaborateurs du dépôt." } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub hanya menampilkan daftar pengamat kepada administrator dan kolaborator repositori." } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub mostra l’elenco degli osservatori solo agli amministratori e ai collaboratori del repository." } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub でウォッチしているユーザーの一覧を閲覧できるのは、リポジトリの管理者とコラボレーターのみです。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub에서 구독자 목록은 저장소 관리자와 협업자만 볼 수 있습니다." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub toont de lijst met volgers alleen aan beheerders en medewerkers van de repository." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub udostępnia listę obserwujących tylko administratorom i współpracownikom repozytorium." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "O GitHub mostra a lista de observadores apenas aos administradores e colaboradores do repositório." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub показывает список наблюдателей только администраторам и участникам репозитория." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub, izleyenler listesini yalnızca depo yöneticilerine ve iş ortaklarına gösterir." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub показує список спостерігачів лише адміністраторам і співавторам репозиторію." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub chỉ hiển thị danh sách người theo dõi cho quản trị viên và cộng tác viên của kho lưu trữ." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub 仅向仓库管理员和协作者开放关注者名单。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub 僅向儲存庫管理員和協作者開放關注者名單。" } }
+      }
+    },
+    "watch.listUnavailable" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Keine Beobachter anzuzeigen. GitHub zeigt die Liste nur Administratoren und Mitwirkenden des Repositorys." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No watchers to show. GitHub limits this list to repository administrators and collaborators." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "No hay observadores que mostrar. GitHub solo permite que los administradores y colaboradores del repositorio vean la lista." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Aucune personne à afficher. GitHub réserve cette liste aux administrateurs et aux collaborateurs du dépôt." } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Tidak ada pengamat yang dapat ditampilkan. GitHub hanya menampilkan daftar ini kepada administrator dan kolaborator repositori." } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Nessun osservatore da mostrare. GitHub riserva l’elenco agli amministratori e ai collaboratori del repository." } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "表示できるユーザーはいません。GitHub では、一覧を閲覧できるのはリポジトリの管理者とコラボレーターのみです。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "표시할 구독자가 없습니다. GitHub에서는 저장소 관리자와 협업자만 목록을 볼 수 있습니다." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Geen volgers om weer te geven. Op GitHub kunnen alleen beheerders en medewerkers van de repository deze lijst bekijken." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Brak obserwujących do wyświetlenia. Na GitHubie listę widzą tylko administratorzy i współpracownicy repozytorium." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Nenhum observador para mostrar. No GitHub, apenas administradores e colaboradores do repositório podem ver a lista." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Нет наблюдателей для отображения. GitHub открывает список только администраторам и участникам репозитория." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Gösterilecek izleyen yok. GitHub’da listeyi yalnızca depo yöneticileri ve iş ortakları görebilir." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Немає спостерігачів для показу. На GitHub цей список доступний лише адміністраторам і співучасникам репозиторію." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Không có người theo dõi để hiển thị. Trên GitHub, chỉ quản trị viên và cộng tác viên của kho lưu trữ mới xem được danh sách." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "没有可显示的关注者。GitHub 仅向仓库管理员和协作者开放名单。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "沒有可顯示的關注者。GitHub 僅向儲存庫管理員和協作者開放名單。" } }
+      }
+    },
+    "watch.loadFailed" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Die Beobachtungseinstellungen konnten nicht geladen werden. Versuche es erneut." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn’t load watch settings. Try again." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "No se pudo cargar la configuración de seguimiento. Inténtalo de nuevo." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossible de charger les paramètres de suivi. Réessayez." } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Pengaturan pemantauan tidak dapat dimuat. Coba lagi." } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossibile caricare le impostazioni di monitoraggio. Riprova." } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "ウォッチ設定を読み込めませんでした。もう一度お試しください。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "구독 설정을 불러올 수 없습니다. 다시 시도해 주세요." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "De volginstellingen konden niet worden geladen. Probeer het opnieuw." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Nie udało się wczytać ustawień obserwowania. Spróbuj ponownie." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Não foi possível carregar as configurações de acompanhamento. Tente novamente." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Не удалось загрузить настройки наблюдения. Попробуйте ещё раз." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "İzleme ayarları yüklenemedi. Tekrar deneyin." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Не вдалося завантажити налаштування спостереження. Спробуйте ще раз." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Không thể tải cài đặt theo dõi. Vui lòng thử lại." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "无法读取关注设置，请重试。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "無法讀取關注設定，請再試一次。" } }
       }
     },
     "watch.loading" : {
@@ -815055,6 +816093,154 @@
             "value" : "參與和提及"
           }
         }
+      }
+    },
+    "watch.participating.description" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Benachrichtigungen erhalten, wenn du teilnimmst oder per @ erwähnt wirst."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get notified when you participate or are @mentioned."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Recibe avisos cuando participes o te mencionen con @."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Recevez un avis quand vous participez ou êtes mentionné avec @."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Terima notifikasi saat Anda berpartisipasi atau disebut dengan @."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ricevi una notifica quando partecipi o vieni menzionato con @."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "参加している会話や、@メンションされたときに通知します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "대화에 참여하거나 @멘션을 받으면 알림을 받습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ontvang een melding als je deelneemt of met @ wordt genoemd."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Otrzymuj powiadomienia, gdy bierzesz udział w rozmowie lub ktoś oznaczy Cię za pomocą @."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Receba um aviso ao participar ou ser mencionado com @."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Получать уведомления при участии в обсуждении или упоминании через @."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Katıldığınızda veya @ ile sizden bahsedildiğinde bildirim alın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Отримувати сповіщення, коли ви берете участь у розмові або вас згадують через @."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nhận thông báo khi bạn tham gia hoặc được nhắc đến bằng @."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "参与对话或被 @提及时接收通知。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "參與對話或被 @提及時接收通知。"
+          }
+        }
+      }
+    },
+    "watch.updateFailed" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Die Beobachtungseinstellungen konnten nicht aktualisiert werden. Versuche es erneut." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn’t update watch settings. Try again." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "No se pudo actualizar la configuración de seguimiento. Inténtalo de nuevo." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossible de mettre à jour les paramètres de suivi. Réessayez." } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Pengaturan pemantauan tidak dapat diperbarui. Coba lagi." } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossibile aggiornare le impostazioni di monitoraggio. Riprova." } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "ウォッチ設定を更新できませんでした。もう一度お試しください。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "구독 설정을 업데이트할 수 없습니다. 다시 시도해 주세요." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "De volginstellingen konden niet worden bijgewerkt. Probeer het opnieuw." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Nie udało się zaktualizować ustawień obserwowania. Spróbuj ponownie." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Não foi possível atualizar as configurações de acompanhamento. Tente novamente." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Не удалось обновить настройки наблюдения. Попробуйте ещё раз." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "İzleme ayarları güncellenemedi. Tekrar deneyin." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Не вдалося оновити налаштування спостереження. Спробуйте ще раз." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Không thể cập nhật cài đặt theo dõi. Vui lòng thử lại." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "无法更新关注设置，请重试。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "無法更新關注設定，請再試一次。" } }
+      }
+    },
+    "watch.updateSuccess" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Die Beobachtungseinstellungen wurden übernommen." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Watch settings applied." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Se aplicó la configuración de seguimiento." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Paramètres de suivi appliqués." } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Pengaturan pemantauan telah diterapkan." } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Impostazioni di monitoraggio applicate." } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "ウォッチ設定が反映されました。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "구독 설정이 적용되었습니다." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Volginstellingen toegepast." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Zastosowano ustawienia obserwowania." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Configurações de acompanhamento aplicadas." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Настройки наблюдения применены." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "İzleme ayarları uygulandı." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Налаштування спостереження застосовано." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Đã áp dụng cài đặt theo dõi." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "关注设置已生效。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "關注設定已生效。" } }
       }
     },
     "watch.viewOnGithub" : {

@@ -305,6 +305,20 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// 内容可能先于 VM 写入求值 → 空内容的小圆圈浮层（2026-11-01 dong4j 反馈）。
     @State private var repoIssuesVM: RepoIssuesViewModel?
 
+    @State private var subscriberCountRefreshRequest: (fullName: String, scope: RepoDetailDatabaseScope, id: UUID)?
+
+    /// 刷新信号只对点击时的仓库和账号有效，切换详情后不会继承上一页的主动刷新。
+    private var subscriberCountRefresh: RepoSubscriberCountRefresh {
+        let scope = RepoDetailDatabaseScope(dependencies)
+        let fullName = repo.fullName
+        let request = subscriberCountRefreshRequest
+        let id = request?.fullName == fullName && request?.scope == scope ? request?.id : nil
+        return RepoSubscriberCountRefresh(id: id) {
+            guard RepoDetailDatabaseScope(dependencies) == scope else { return }
+            subscriberCountRefreshRequest = (fullName, scope, UUID())
+        }
+    }
+
     // v2.2 修订（2026-06-16, dong4j）：原 `@State private var showSecurityScoreSheet`
     // 已下沉到 `RepoMetadataHeaderView` —— OpenSSF 入口图标从右上 trailing actions
     // 迁移到 hero `full_name` 同行，sheet state 跟随入口本地化，不再由 Scaffold 维护。
@@ -460,6 +474,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                 updateDetailViewportHeight(newHeight)
             }
         }
+        .environment(\.repoSubscriberCountRefresh, subscriberCountRefresh)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // 根节点 tint：必须在 `CollapsibleRepoMetadataPanel` 外，否则 `.clipped()` 裁掉
         // 向上延伸；滚 README 折叠 hero 时同步淡出。
@@ -882,6 +897,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                     libraryState: libraryState,
                     onLanguageTapped: onLanguageTapped,
                     showsContributorsStat: showsContributorsStat,
+                    loadsMissingSubscriberCount: viewData.loadsMissingSubscriberCount,
                     // 工作台加载后优先使用不含 PR 的精确计数，尚未加载时沿用本地元数据。
                     openIssuesCount: repoIssuesVM?.openCount ?? repo.openIssuesCount,
                     onIssuesTapped: issuesEntryAction,

@@ -499,7 +499,7 @@ enum AppEndpoints {
             static func repoReleases(owner: String, repo: String) -> String {
                 "/repos/\(owner)/\(repo)/releases"
             }
-            /// `GET/PUT/DELETE /repos/{owner}/{repo}/subscription` —— release 订阅。
+            /// `GET/PUT/DELETE /repos/{owner}/{repo}/subscription` —— 当前用户的仓库通知设置。
             static func repoSubscription(owner: String, repo: String) -> String {
                 "/repos/\(owner)/\(repo)/subscription"
             }

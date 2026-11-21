@@ -68,6 +68,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
     let onLanguageTapped: ((String) -> Void)?
     /// 默认展示 Hero 贡献者列。目前所有详情场景都开。
     let showsContributorsStat: Bool
+    let loadsMissingSubscriberCount: Bool
     /// 入口是否显示与工作台状态仍由 Scaffold 决定，Hero 只负责胶囊排列。
     let openIssuesCount: Int?
     let onIssuesTapped: (() -> Void)?
@@ -95,6 +96,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         libraryState: LibraryState = .outsideLibrary,
         onLanguageTapped: ((String) -> Void)? = nil,
         showsContributorsStat: Bool = true,
+        loadsMissingSubscriberCount: Bool = true,
         openIssuesCount: Int? = nil,
         onIssuesTapped: (() -> Void)? = nil,
         onStarTapped: @escaping () async throws -> Void,
@@ -108,6 +110,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         self.libraryState = libraryState
         self.onLanguageTapped = onLanguageTapped
         self.showsContributorsStat = showsContributorsStat
+        self.loadsMissingSubscriberCount = loadsMissingSubscriberCount
         self.openIssuesCount = openIssuesCount
         self.onIssuesTapped = onIssuesTapped
         self.onStarTapped = onStarTapped
@@ -325,7 +328,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
             // 自己的 fork 出上游 / Contribute / Sync 菜单。见 ForksMenu。
             ForksMenu(repo: repo)
 
-            WatchersMenu(repo: repo)
+            WatchersMenu(repo: repo, loadsMissingSubscriberCount: loadsMissingSubscriberCount)
 
             RepoDateStatItem(label: "repo.stats.created", value: repo.createdAt, systemImage: "calendar.badge.plus")
             RepoDateStatItem(label: "repo.stats.updated", value: repo.updatedAt, systemImage: "clock.arrow.circlepath")
