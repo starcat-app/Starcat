@@ -120,9 +120,9 @@ actor LayaDecisionRuntimeStore {
 
     func evaluate(
         state: String,
-        questions: [String: String],
+        questions: [String: LayaTextQuestion],
         modelDirectory: URL
-    ) async throws -> [String: LayaNoulPrediction] {
+    ) async throws -> [String: LayaPrediction] {
         let context = logContext(directory: modelDirectory, feature: "decision")
         return try await withAdmission(
             context: context,
@@ -139,7 +139,7 @@ actor LayaDecisionRuntimeStore {
                     "Laya decision inference started.",
                     fields: ["questionCount": String(questions.count)]
                 )
-                let result = try await runtime.predictNoulBatch(
+                let result = try await runtime.predictBatch(
                     state: state,
                     questions: questions
                 )
@@ -348,24 +348,28 @@ final class LayaDecisionEngine: DecisionEngineProviding {
     }
 
     func evaluate(_ request: DecisionEvaluationRequest) async throws -> DecisionEvaluationResponse {
+        guard request.assets == nil, request.questions.values.allSatisfy({ $0.type != .box }) else {
+            throw DecisionInputError("The selected Laya model supports text only; images and box questions require Jev")
+        }
         guard let directory = modelManager.installedDirectoryURL else {
             throw DecisionEngineError.engineUnavailable(
                 .laya,
                 reason: "Laya multilingual model is not installed"
             )
         }
-        guard request.assets == nil, request.questions.values.allSatisfy({ $0.type == .noul }) else {
-            throw DecisionInputError("Unsupported question or image for the selected Laya runtime")
+        let questions = try request.questions.mapValues {
+            try LayaTextQuestion($0, legacyNoul: request.operation != .external)
         }
-        let prompts = request.questions.mapValues(\.legacyNoulPrompt)
         let predictions = try await runtimeStore.evaluate(
             state: request.state.localPromptText,
-            questions: prompts,
+            questions: questions,
             modelDirectory: directory
         )
-        let answers = predictions.mapValues {
-            DecisionAnswer(type: "noul", noul: $0.trueProbability)
-        }
-        return DecisionEvaluationResponse(answers: answers)
+        let inputTokens = predictions.values.reduce(0) { $0 + $1.inputTokenCount }
+        return DecisionEvaluationResponse(
+            answers: predictions.mapValues(\.answer),
+            model: LayaDecisionModelCatalog.multilingual.id,
+            usage: TypeSafeUsage(inputTokens: inputTokens, outputTokens: 0)
+        )
     }
 }
