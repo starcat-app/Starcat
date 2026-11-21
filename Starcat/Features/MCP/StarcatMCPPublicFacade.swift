@@ -16,7 +16,7 @@ import MCP
 final class StarcatMCPPublicFacade {
     private weak var dependencies: AppDependencies?
     private weak var facade: StarcatMCPFacade?
-    let tasks = StarcatMCPTaskStore()
+    let tasks: StarcatMCPTaskStore
     private var sessionChanging = false
     /// 导出只返回随机身份；分块读取 App 生成的文件，不接受客户端提供本机文件路径。
     var diagnosticExports: [String: (url: URL, createdAt: Date)] = [:]
@@ -26,13 +26,19 @@ final class StarcatMCPPublicFacade {
     private let signedInUserID: () -> Int64?
 
     /// 标签查询只依赖当前身份和数据库，隔离库可以经过相同的账户校验与读取路径。
-    init(database: any DatabaseManaging, signedInUserID: @escaping () -> Int64?) {
+    /// 隔离库场景不传 tasks，使用独立任务存储；let 属性只能在 designated init 初始化。
+    init(database: any DatabaseManaging, signedInUserID: @escaping () -> Int64?,
+         tasks: StarcatMCPTaskStore = StarcatMCPTaskStore()) {
         self.database = database
         self.signedInUserID = signedInUserID
+        self.tasks = tasks
     }
 
     convenience init(dependencies: AppDependencies, facade: StarcatMCPFacade) {
-        self.init(database: dependencies.database, signedInUserID: { [weak dependencies] in dependencies?.authSession.state.user?.id })
+        // 界面启动的评估与公共调用共享任务身份及切号屏障。
+        self.init(database: dependencies.database,
+                  signedInUserID: { [weak dependencies] in dependencies?.authSession.state.user?.id },
+                  tasks: dependencies.publicMCPTasks)
         self.dependencies = dependencies
         self.facade = facade
     }
@@ -100,6 +106,8 @@ final class StarcatMCPPublicFacade {
              "get_cache_statistics", "clear_cache", "list_managed_skills", "import_skill", "update_skill",
              "remove_skill", "check_skill_updates", "set_public_settings", "export_diagnostics", "read_export_chunk":
             return try await callLocalOperation(name: name, arguments: arguments, app: app)
+        case "get_skill_evaluation", "export_skill_evaluation", "start_skill_evaluation":
+            return try await callSkillEvaluation(name: name, arguments: arguments, app: app)
         case "evaluate_system_one":
             let input = try DecisionSystemOneInput.decode(from: .object(arguments))
             if dryRun {

@@ -62,11 +62,32 @@ final class StarcatMCPTaskStore {
         jobs.values.contains { $0.kind == kind && !["succeeded", "failed", "cancelled"].contains($0.state) }
     }
 
+    func isActive(id: String) -> Bool { jobs[id]?.task != nil }
+
+    /// 领域服务可同步清理自己的索引，任务保留时间仍由这里统一决定。
+    func retainedTaskIDs() -> Set<String> {
+        prune()
+        return Set(jobs.keys)
+    }
+
     /// 执行闭包必须复用领域服务，禁止把业务规则放进任务轮询或状态投影。
     func start(
         kind: String,
         supportsCancellation: Bool = true,
+        onFinish: @escaping @MainActor (String) -> Void = { _ in },
         operation: @escaping @MainActor () async throws -> Value
+    ) throws -> Value {
+        try startReportingProgress(kind: kind, supportsCancellation: supportsCancellation, onFinish: onFinish) { _ in
+            try await operation()
+        }
+    }
+
+    /// 批量执行器可以记录已提交的部分结果。只有任务真实退出后，调用方才可读取结果。
+    func startReportingProgress(
+        kind: String,
+        supportsCancellation: Bool = true,
+        onFinish: @escaping @MainActor (String) -> Void = { _ in },
+        operation: @escaping @MainActor (_ publish: @MainActor (Value) -> Void) async throws -> Value
     ) throws -> Value {
         prune()
         guard !changingAccount else {
@@ -82,10 +103,13 @@ final class StarcatMCPTaskStore {
         )
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
-            self.jobs[id]?.state = "running"
             do {
                 try Task.checkCancellation()
-                let result = try await operation()
+                self.jobs[id]?.state = "running"
+                let result = try await operation { progress in
+                    // 取消请求可以与一次已经提交的写入交错，仍须保留该次写入的结果。
+                    self.jobs[id]?.result = progress
+                }
                 try Task.checkCancellation()
                 self.jobs[id]?.result = result
                 self.jobs[id]?.state = "succeeded"
@@ -100,6 +124,8 @@ final class StarcatMCPTaskStore {
             }
             self.jobs[id]?.finishedAt = self.now()
             self.jobs[id]?.task = nil
+            // 排队即取消也必须通知观察者，并且状态与结果已经进入终态。
+            onFinish(id)
         }
         jobs[id]?.task = task
         return try status(id: id)

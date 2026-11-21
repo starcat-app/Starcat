@@ -40,6 +40,189 @@ struct StarcatMCPPublicCapabilityTests {
         #expect(throws: StarcatPublicCapabilityError.self) { try StarcatMCPAccess.requireWrite(settings) }
     }
 
+    @Test("Skill 评估仅进入 Direct 的工具目录，读与导出无网络，开始默认预览")
+    func skillEvaluationCatalog() throws {
+        let names: Set<String> = ["get_skill_evaluation", "export_skill_evaluation", "start_skill_evaluation"]
+        let direct = StarcatMCPPublicCatalog.specs(for: .direct).filter { names.contains($0.name) }
+        #expect(Set(direct.map(\.name)) == names)
+        #expect(StarcatMCPPublicCatalog.specs(for: .appStore).allSatisfy { !names.contains($0.name) })
+        for spec in direct where spec.name != "start_skill_evaluation" {
+            #expect(spec.permission == "read")
+            #expect(spec.network == "none")
+        }
+        let start = try #require(direct.first { $0.name == "start_skill_evaluation" })
+        #expect(start.permission == "write")
+        #expect(start.task)
+        #expect(start.properties["dry_run"]?.objectValue?["default"] == .bool(true))
+        try StarcatMCPInputValidator.validate(.object(evaluationArguments()), schema: start.schema)
+        let invalidArguments: [[String: Value]] = [
+            ["targets": .array([])],
+            ["targets": .array([.object(["path": .string("/tmp/fixture")])])],
+            ["model": .object(["provider_id": .string("fixture"), "endpoint": .string("https://example.invalid/v1"), "api_key": .string("fixture")])],
+            ["destination": .string("/tmp/fixture")]
+        ]
+        for arguments in invalidArguments {
+            let input = evaluationArguments().merging(arguments) { _, new in new }
+            #expect(throws: StarcatMCPError.self) {
+                try StarcatMCPInputValidator.validate(.object(input), schema: start.schema)
+            }
+        }
+    }
+
+    @Test("仓库 Skill 必须来自指定账号仓库的固定提交证据")
+    func skillEvaluationPinnedCache() throws {
+        let sha = String(repeating: "a", count: 40)
+        let otherSHA = String(repeating: "b", count: 40)
+        let skill = RepoSkill(
+            repositoryID: 1, commitSHA: sha, directory: "notes/", name: "meeting-notes",
+            summary: "", manifest: "", files: [], installationIssue: nil
+        )
+        let scan = RepoSkillScan(
+            repositoryID: 1, commitSHA: sha, sourcePushedAt: nil, sourceBranch: "main",
+            checkedAt: .now, complete: true, skills: [skill], diagnostics: [],
+            manifestTotal: nil, manifestChecked: nil, version: RepoSkillScan.rulesVersion
+        )
+        let target: Value = .object(["repo_id": .int(1), "commit_sha": .string(sha), "skill_id": .string(skill.id)])
+        let parsed = try StarcatMCPSkillEvaluationRequest(["mode": .string("security"), "targets": .array([target])])
+        #expect(parsed.targets == [.repository(id: 1, commit: sha, skillID: skill.id)])
+        #expect(try StarcatMCPSkillEvaluationRequest.cachedSkill(in: scan, repoID: 1, commit: sha, skillID: skill.id) == skill)
+        #expect(throws: StarcatMCPError.self) {
+            try StarcatMCPSkillEvaluationRequest.cachedSkill(in: scan, repoID: 2, commit: sha, skillID: skill.id)
+        }
+        #expect(throws: StarcatMCPError.self) {
+            try StarcatMCPSkillEvaluationRequest.cachedSkill(in: scan, repoID: 1, commit: otherSHA, skillID: skill.id)
+        }
+        #expect(throws: StarcatMCPError.self) {
+            try StarcatMCPSkillEvaluationRequest.cachedSkill(in: nil, repoID: 1, commit: sha, skillID: skill.id)
+        }
+        let invalidTargetLists: [[Value]] = [
+            [target, target],
+            [.object(["repo_id": .int(1), "commit_sha": .string("main"), "skill_id": .string(skill.id)])],
+            [.object(["library_id": .string("/tmp/fixture")])],
+            [.object(["repo_id": .int(1), "commit_sha": .string(sha), "skill_id": .string(skill.id), "library_id": .string(UUID().uuidString)])]
+        ]
+        for invalidTargets in invalidTargetLists {
+            #expect(throws: StarcatMCPError.self) {
+                try StarcatMCPSkillEvaluationRequest(["mode": .string("quick"), "targets": .array(invalidTargets)])
+            }
+        }
+        #expect(throws: StarcatMCPError.self) {
+            try StarcatMCPSkillEvaluationRequest(["mode": .string("similarity"), "targets": .array([target])])
+        }
+    }
+
+    @Test("缓存报告及 JSON 导出限于所选仓库提交和本机 UUID")
+    func skillEvaluationPinnedReports() throws {
+        let sha = String(repeating: "a", count: 40)
+        let repo = Repo(
+            id: 1, owner: "sample", name: "meeting-notes", fullName: "sample/meeting-notes",
+            description: nil, language: nil, starsCount: 0, forksCount: 0, watchersCount: 0,
+            topics: nil, license: nil, homepage: nil, htmlUrl: "https://github.com/sample/meeting-notes",
+            cloneUrl: nil, sshUrl: nil, isPrivate: false, isFork: false, isArchived: false,
+            isStarred: true, pushedAt: nil, createdAt: nil, updatedAt: nil, starredAt: nil,
+            cachedAt: nil, defaultBranch: "main"
+        )
+        let skill = RepoSkill(
+            repositoryID: 1, commitSHA: sha, directory: "notes/", name: "meeting-notes",
+            summary: "", manifest: "", files: [], installationIssue: nil
+        )
+        let repoTarget = SkillEvaluationTarget.repository(repo, skill)
+        let libraryTarget = SkillEvaluationTarget.library(UUID())
+        func cached(_ subject: SkillEvaluationSubject, version: String, stale: Bool) -> SkillEvaluationCached {
+            SkillEvaluationCached(
+                report: SkillEvaluationRecord(
+                    id: UUID(), mode: .quick, subjects: [subject], names: [skill.name],
+                    versions: [version], model: nil, createdAt: .now, state: .passed, checks: [], toolVersion: "1.0.1"
+                ),
+                stale: stale
+            )
+        }
+        let exact = cached(repoTarget.identity, version: sha, stale: false)
+        let previous = cached(repoTarget.identity, version: String(repeating: "b", count: 40), stale: true)
+        let library = cached(libraryTarget.identity, version: "fixture-content", stale: true)
+        let other = cached(.library(UUID()), version: "outside-scope", stale: false)
+        let reports = StarcatMCPSkillEvaluationRequest.matchingReports(
+            [exact, previous, library, other], targets: [repoTarget, libraryTarget]
+        )
+        #expect(reports.map { $0.report.id } == [exact.report.id, library.report.id])
+        #expect(reports.map(\.stale) == [false, true])
+        let data = try SkillEvaluationService.export(reports)
+        let text = String(decoding: data, as: UTF8.self)
+        #expect(text.contains(sha))
+        #expect(text.contains("fixture-content"))
+        #expect(!text.contains("outside-scope"))
+    }
+
+    @Test("静态安全评估默认预览，显式执行只生成一个可由公共工具取消的批量句柄")
+    func skillEvaluationPreviewAndTask() async throws {
+        var arguments = evaluationArguments(mode: "security", count: 2)
+        let request = try StarcatMCPSkillEvaluationRequest(arguments)
+        let tasks = StarcatMCPTaskStore()
+        var starts = 0
+        let start: () throws -> Value = {
+            starts += 1
+            return try tasks.start(kind: "start_skill_evaluation") {
+                try await Task.sleep(for: .seconds(600))
+                return .null
+            }
+        }
+        #expect(try request.model(nil, profiles: []) == nil)
+        #expect(throws: StarcatMCPError.self) { try request.model(.object([:]), profiles: []) }
+        let preview = try request.start(arguments: arguments, model: nil, apply: start, preview: { $0 })
+        #expect(preview.objectValue?["may_download_scanner"] == .bool(true))
+        #expect(preview.objectValue?["requires_model_consent"] == .bool(false))
+        #expect(preview.objectValue?["targets"]?.arrayValue?.count == 2)
+        #expect(starts == 0)
+        arguments["dry_run"] = .bool(false)
+        let handle = try request.start(arguments: arguments, model: nil, apply: start, preview: { $0 })
+        let id = try #require(handle.objectValue?["task_id"]?.stringValue)
+        #expect(starts == 1)
+        #expect(try tasks.status(id: id).objectValue?["state"] == .string("queued"))
+        #expect(try tasks.cancel(id: id).objectValue?["state"] == .string("cancelling"))
+        await tasks.cancelAllAndWait()
+    }
+
+    @Test("AI 预览验证已配置端点，执行需要显式同意")
+    func skillEvaluationConsent() throws {
+        var arguments = evaluationArguments(mode: "rubric")
+        let request = try StarcatMCPSkillEvaluationRequest(arguments)
+        let endpoint = "https://example.invalid/v1"
+        let profile = AIProviderProfile(
+            id: "fixture", provider: .openAICompatible, baseURL: endpoint,
+            models: [AIModelDescriptor(providerID: "fixture", name: "fixture-chat", capability: .chat, isEnabled: true)]
+        )
+        let fields: [String: Value] = ["provider_id": .string("fixture"), "endpoint": .string(endpoint), "chat": .string("fixture-chat")]
+        #expect(throws: StarcatMCPError.self) {
+            try request.model(.object(fields.merging(["endpoint": .string("https://other.invalid/v1")]) { _, new in new }), profiles: [profile])
+        }
+        let model = try request.model(.object(fields), profiles: [profile])
+        #expect(model?.endpoint == endpoint)
+        var applied = false
+        let start: () -> Value = {
+            applied = true
+            return .null
+        }
+        let preview = try request.start(arguments: arguments, model: model, apply: start, preview: { $0 })
+        #expect(preview.objectValue?["model_endpoint"] == .string(endpoint))
+        #expect(preview.objectValue?["chat_model"] == .string("fixture-chat"))
+        #expect(preview.objectValue?["requires_model_consent"] == .bool(true))
+        arguments["dry_run"] = .bool(false)
+        #expect(throws: StarcatPublicCapabilityError.self) {
+            try request.start(arguments: arguments, model: model, apply: start, preview: { $0 })
+        }
+        #expect(!applied)
+        arguments["consent"] = .bool(true)
+        _ = try request.start(arguments: arguments, model: model, apply: start, preview: { $0 })
+        #expect(applied)
+    }
+
+    private func evaluationArguments(mode: String = "quick", count: Int = 1) -> [String: Value] {
+        [
+            "mode": .string(mode),
+            "targets": .array((0..<count).map { _ in .object(["library_id": .string(UUID().uuidString)]) })
+        ]
+    }
+
     @Test("仓库 Skill 文件导出使用写权限和默认预览，不接受客户端路径")
     func skillFileExportContract() throws {
         let spec = try #require(StarcatMCPPublicCatalog.specs.first { $0.name == "export_repo_skill_file" })
