@@ -33,4 +33,4 @@
 
 - [ ] 实机验收从侧栏打开、Logo 先出现、首批入场与追加、两种右下角浮卡、点击高亮、搜索和切号，核对键盘、VoiceOver、明暗主题与减少动态效果。
 - [ ] 在两个规模样本上测量首节点可读时间、入场耗时、点击到高亮及稳定后 10 秒的重绘与 CPU。[复测方法](实现方案.md#5000-个-star-的数据读取实测)
-- [ ] 验收通过后，按[双端收尾约定](../任务录入规范.md)在 #211 记录英文交付证据并关闭，同步 Project 与 `HOM-242`，回读双方状态。
+- [x] 2026-11-21 经 dong4j 确认开发完成，已发布 [#211 英文交付记录](https://github.com/starcat-app/Starcat/issues/211#issuecomment-7063418049)。按[双端收尾约定](../任务录入规范.md)回读确认，GitHub 关闭原因为 `completed`，Starcat Development Board 为 `Done`，Multica `HOM-242` 为 `done`。
