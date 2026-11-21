@@ -71,10 +71,23 @@ struct SkillWorkspaceColumnLayoutTests {
         let chromeState = WorkspaceChromeState()
         chromeState.isRightColumnPresented = inspectorPresented
         let reference = WorkspaceSceneWindowReference()
+        // 独立测试窗口不继承 App Scene 的环境；详情正文需要设置和会话来渲染真实 WebView。
+        let keychain = InMemoryKeychain()
+        let settings = AppSettings(defaults: defaults, keychain: keychain)
+        let session = AuthSession(
+            oauthService: MockGithubOAuthService(simulatedDelay: 0),
+            apiClient: MockGitHubAPIClient(),
+            keychain: keychain
+        )
+        // 详情页的刷新命令修饰器会读取命令路由；用独立实例隔离，不污染进程级共享路由。
+        let commandRouter = StarcatCommandRouter()
         let controller = NSHostingController(rootView: SkillWorkspaceView(
             viewModel: model, chromeState: chromeState, columnWidths: widths
         )
         .defaultAppStorage(defaults)
+        .environment(settings)
+        .environment(session)
+        .starcatCommandRouterEnvironment(commandRouter)
         .environment(\.locale, Locale(identifier: "zh-Hans"))
         .modifier(WorkspaceWindowSizing(
             reference: reference,
