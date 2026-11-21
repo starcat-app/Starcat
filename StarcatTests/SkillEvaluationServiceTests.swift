@@ -7,12 +7,166 @@
 
 import Foundation
 import MCP
+import Synchronization
 import Testing
 @testable import Starcat
 
 @MainActor
 @Suite("Skill 评估共享任务")
 struct SkillEvaluationServiceTests {
+    @Test("两处入口合并探测，坏的保存路径会回退，误选不会替换可用工具")
+    func sharedDiscoveryAndManualSelection() async throws {
+        try await withFixture { fixture in
+            let tool = try SkillEvaluationTestTool.executable()
+            let wrong = URL(fileURLWithPath: "/usr/bin/true")
+            fixture.defaults.set(wrong.path, forKey: "skillEvaluation.executable")
+            let service = fixture.service
+            service.refreshTool()
+            service.refreshTool()
+            try await waitUntil { service.toolReady }
+            #expect(service.toolState == .ready(tool.standardizedFileURL))
+            #expect(fixture.discoveryCalls.withLock { $0 } == 1)
+
+            let selected = fixture.root.appendingPathComponent("existing tool")
+            try FileManager.default.createSymbolicLink(at: selected, withDestinationURL: tool)
+            try await service.chooseExecutable {
+                #expect(!service.canUseTool)
+                #expect(!service.canChangeTool)
+                service.refreshTool()
+                await #expect(throws: SkillEvaluationFailure.self) {
+                    try await service.chooseExecutable { wrong }
+                }
+                return selected
+            }
+            #expect(fixture.discoveryCalls.withLock { $0 } == 1)
+            try await service.chooseExecutable { nil }
+            await #expect(throws: SkillEvaluationFailure.self) { try await service.chooseExecutable { wrong } }
+            #expect(service.toolState == .ready(selected))
+            #expect(fixture.defaults.string(forKey: "skillEvaluation.executable") == selected.path)
+
+            // 另一个入口重新打开时后台复核，已就绪的界面不退回加载态。
+            service.refreshTool()
+            #expect(service.toolState == .ready(selected))
+            try await waitUntil { service.canChangeTool }
+            #expect(service.toolState == .ready(selected))
+        }
+    }
+
+    @Test("取消和失败后可回看完整安装日志，只有接受重试才替换")
+    func installationCancellationAndRetry() async throws {
+        let downloads = Mutex(0)
+        try await withFixture(offersTool: false, download: { url in
+            let attempt = downloads.withLock { count in count += 1; return count }
+            if attempt == 1 {
+                do { try await Task.sleep(for: .seconds(30)) }
+                catch { throw URLError(.cancelled) }
+            }
+            let archive = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try Data("checksum fixture".utf8).write(to: archive)
+            let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (archive, response)
+        }) { fixture in
+            let service = fixture.service
+            let skill = try await fixture.addSkill("notes", id: firstID)
+            service.refreshTool()
+            try await waitUntil { service.toolState == .unavailable(.missing) }
+
+            service.installTool()
+            try await waitUntil { downloads.withLock { $0 } == 1 }
+            let cancelledLog = try #require(service.toolInstallLog)
+            #expect(cancelledLog.text.contains("GET https://"))
+            service.installTool()
+            #expect(service.toolInstallLog === cancelledLog)
+            service.refreshTool()
+            #expect(service.toolState == .installing(.downloading))
+            #expect(!service.canChangeTool)
+            expectFailure("busy") {
+                try service.start(targets: [skill.target], mode: .quick, model: nil, consent: false)
+            }
+            service.cancelToolInstall()
+            #expect(service.toolState == .cancelling)
+            service.installTool()
+            #expect(service.toolInstallLog === cancelledLog)
+            try await waitUntil { service.toolState == .unavailable(.installCancelled) }
+
+            let cancelledText = cancelledLog.text
+            #expect(cancelledText.contains("Cancellation requested"))
+            #expect(cancelledText.contains("Removed incomplete installation"))
+            #expect(cancelledText.contains("Installation cancelled"))
+            service.refreshTool()
+            try await waitUntil { service.canChangeTool }
+            #expect(service.toolState == .unavailable(.installCancelled))
+            #expect(service.toolInstallLog === cancelledLog)
+            #expect(service.toolInstallLog?.text == cancelledText)
+
+            service.installTool()
+            let failedLog = try #require(service.toolInstallLog)
+            #expect(failedLog.id != cancelledLog.id)
+            #expect(!failedLog.text.contains("Cancellation requested"))
+            try await waitUntil { service.toolState == .unavailable(.installFailed) }
+            #expect(downloads.withLock { $0 } == 2)
+            let failedText = failedLog.text
+            #expect(failedText.contains("HTTP 200"))
+            #expect(failedText.contains("SHA-256 actual:"))
+            #expect(failedText.contains("Removed incomplete installation"))
+            #expect(failedText.contains("Installation failed: installChecksum"))
+            #expect(!FileManager.default.fileExists(atPath: fixture.installer.executable.deletingLastPathComponent().path))
+
+            service.refreshTool()
+            try await waitUntil { service.canChangeTool }
+            #expect(service.toolState == .unavailable(.installFailed))
+            #expect(service.toolInstallLog === failedLog)
+            #expect(service.toolInstallLog?.text == failedText)
+        }
+    }
+
+    @Test("安装成功后，重新打开评估入口仍可回读版本核验原文")
+    func completedInstallationLogRemainsAvailable() async throws {
+        try await withFixture(offersTool: false, download: { _ in
+            Issue.record("已有工具核验通过时无需下载")
+            throw URLError(.resourceUnavailable)
+        }) { fixture in
+            let service = fixture.service
+            service.refreshTool()
+            try await waitUntil { service.toolState == .unavailable(.missing) }
+
+            // 模拟另一进程在探测结束后完成安装，用真实版本探测验证日志路径且不联网。
+            let executable = fixture.installer.executable
+            try FileManager.default.createDirectory(at: executable.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createSymbolicLink(at: executable, withDestinationURL: SkillEvaluationTestTool.executable())
+            service.installTool()
+            try await waitUntil { service.toolReady }
+            #expect(service.toolState == .ready(executable))
+            let log = try #require(service.toolInstallLog)
+            let text = log.text
+            #expect(text.contains("--version"))
+            #expect(text.contains("skillevaluator, version \(SkillEvaluationRunner.version)"))
+            #expect(text.contains("exit: 0"))
+            #expect(text.contains("Installation succeeded"))
+
+            service.refreshTool()
+            try await waitUntil { service.canChangeTool }
+            service.installTool()
+            #expect(service.toolInstallLog === log)
+            #expect(service.toolInstallLog?.text == text)
+        }
+    }
+
+    @Test("App Store 下探测、手选和安装均不可用")
+    func setupIsDirectOnly() async throws {
+        try await withFixture(channel: .appStore, offersTool: false) { fixture in
+            let service = fixture.service
+            service.refreshTool()
+            service.installTool()
+            await #expect(throws: (any Error).self) {
+                try await service.chooseExecutable { URL(fileURLWithPath: "/usr/bin/true") }
+            }
+            #expect(!service.canChangeTool)
+            #expect(fixture.discoveryCalls.withLock { $0 } == 0)
+            #expect(!FileManager.default.fileExists(atPath: fixture.installer.executable.path))
+        }
+    }
+
     @Test("批量进行中可回接同一任务；取消后公共任务与缓存保留已完成项")
     func batchCancellationAndReattachment() async throws {
         try await withFixture { fixture in
@@ -296,8 +450,11 @@ struct SkillEvaluationServiceTests {
     }
 
     /// 即使断言提前退出，也先排空任务和 SQLite，再删除本次测试的隔离数据。
-    private func withFixture(_ test: @MainActor (EvaluationServiceFixture) async throws -> Void) async throws {
-        let fixture = try EvaluationServiceFixture()
+    private func withFixture(
+        channel: DistributionChannel = .direct, offersTool: Bool = true, download: SkillEvaluationInstaller.Download? = nil,
+        _ test: @MainActor (EvaluationServiceFixture) async throws -> Void
+    ) async throws {
+        let fixture = try EvaluationServiceFixture(channel: channel, offersTool: offersTool, download: download)
         do {
             try await test(fixture)
         } catch {
@@ -343,8 +500,10 @@ private final class EvaluationServiceFixture {
     let cacheRoot: URL
     let defaults: UserDefaults
     let library: SkillLibraryStore
+    let installer: SkillEvaluationInstaller
     let tasks = StarcatMCPTaskStore()
     let pause = EvaluationVerificationPause()
+    let discoveryCalls = Mutex(0)
     var account = "account-a"
     var profile = AIProviderProfile(
         id: "fixture-provider", provider: .openAICompatible, baseURL: "https://model.invalid/v1",
@@ -356,13 +515,15 @@ private final class EvaluationServiceFixture {
     )
     private(set) var keyReads: [String] = []
     private let suiteName: String
+    private let channel: DistributionChannel
+    private let availableTools: [URL]
 
     var selection: SkillEvaluationSelection {
         .init(providerID: profile.id, endpoint: profile.baseURL, chat: "fixture-chat", embedding: nil)
     }
 
     private(set) lazy var service = SkillEvaluationService(
-        gate: .init(channel: .direct), tasks: tasks, cache: .init(root: cacheRoot), defaults: defaults,
+        gate: .init(channel: channel), tasks: tasks, cache: .init(root: cacheRoot), defaults: defaults,
         account: { [unowned self] in account },
         providers: { [unowned self] in [profile] },
         readKey: { [unowned self] in
@@ -370,10 +531,15 @@ private final class EvaluationServiceFixture {
             return "fixture-key"
         },
         source: { [library] _ in .init(store: library, downloader: EvaluationServiceBlob()) },
-        verifyTarget: { [pause] in try await pause.verify($0) }
+        verifyTarget: { [pause] in try await pause.verify($0) },
+        installer: installer,
+        installedCandidates: { [unowned self, availableTools] in
+            discoveryCalls.withLock { $0 += 1 }
+            return availableTools
+        }
     )
 
-    init() throws {
+    init(channel: DistributionChannel, offersTool: Bool, download: SkillEvaluationInstaller.Download?) throws {
         suiteName = "test.starcat.skill-evaluation." + UUID().uuidString
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             throw EvaluationServiceFixtureError.missingFixture
@@ -381,16 +547,14 @@ private final class EvaluationServiceFixture {
         self.defaults = defaults
         root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(suiteName)
         cacheRoot = root.appendingPathComponent("cache")
+        self.channel = channel
+        availableTools = offersTool ? [try SkillEvaluationTestTool.executable()] : []
+        let installationRoot = root.appendingPathComponent("installed tool")
+        installer = download.map { .init(root: installationRoot, download: $0) } ?? .init(root: installationRoot)
         library = try SkillLibraryStore(
             distributionGate: .init(channel: .direct), paths: .init(root: root.appendingPathComponent("library"))
         )
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
-        do {
-            try service.setExecutable(SkillEvaluationTestTool.executable())
-        } catch {
-            try? FileManager.default.removeItem(at: root)
-            throw error
-        }
     }
 
     func addSkill(_ name: String, id: UUID) async throws -> (target: SkillEvaluationTarget, manifest: URL) {

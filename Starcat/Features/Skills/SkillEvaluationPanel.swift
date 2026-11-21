@@ -87,7 +87,7 @@ struct SkillEvaluationPanel: View {
         var text: Text {
             switch self {
             case .service(let message): Text(verbatim: message)
-            case .tool: Text("skills.evaluation.error.tool")
+            case .tool: Text("skills.evaluation.error.setup")
             case .cancel: Text("skills.evaluation.error.cancel")
             case .export: Text("skills.evaluation.error.export")
             }
@@ -121,6 +121,7 @@ struct SkillEvaluationPanel: View {
             footer
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .task { service.refreshTool() }
         .task(id: query) {
             guard !Task.isCancelled else { return }
             if !hasRestoredTask {
@@ -187,6 +188,11 @@ struct SkillEvaluationPanel: View {
 
     private var overview: some View {
         VStack(alignment: .leading, spacing: 16) {
+            toolSetup
+            if let log = service.toolInstallLog {
+                SkillEvaluationInstallLogView(log: log)
+                    .id(log.id)
+            }
             controls
             taskFeedback
             if mode != .similarity || items.count >= 2 {
@@ -195,6 +201,80 @@ struct SkillEvaluationPanel: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 首次使用的操作跟状态一起显示。模式和筛选留在原位，便于缺少工具时翻阅历史报告。
+    private var toolSetup: some View {
+        Group {
+            switch service.toolState {
+            case .checking:
+                toolProgress("skills.evaluation.setup.checking")
+            case .ready:
+                EmptyView()
+            case .unavailable(let issue):
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(toolIssueTitle(issue), systemImage: "wrench.and.screwdriver")
+                        .font(interfaceScale.font(.body).weight(.semibold))
+                    Text("skills.evaluation.setup.location")
+                        .font(interfaceScale.font(.caption))
+                        .foregroundStyle(.secondary)
+
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 8) { setupActions(issue) }
+                            .fixedSize(horizontal: true, vertical: false)
+                        VStack(alignment: .leading, spacing: 6) { setupActions(issue) }
+                    }
+                    .disabled(!service.canChangeTool || filePanel != nil)
+                }
+            case .installing(let stage):
+                VStack(alignment: .leading, spacing: 8) {
+                    toolProgress(toolStageTitle(stage))
+                    Button("skills.evaluation.setup.cancel", action: service.cancelToolInstall)
+                }
+            case .cancelling:
+                toolProgress("skills.evaluation.setup.cancelling")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: service.toolState)
+    }
+
+    @ViewBuilder
+    private func setupActions(_ issue: SkillEvaluationToolState.Issue) -> some View {
+        Button(issue == .installFailed || issue == .installCancelled
+               ? "skills.evaluation.setup.retry" : "skills.evaluation.setup.install", action: service.installTool)
+            .buttonStyle(.borderedProminent)
+        Button("skills.evaluation.tool.choose", action: chooseTool)
+    }
+
+    private func toolProgress(_ title: LocalizedStringKey) -> some View {
+        HStack(spacing: 8) {
+            if !reduceMotion {
+                ProgressView().controlSize(.small).accessibilityHidden(true)
+            }
+            Text(title)
+                .font(interfaceScale.font(.body))
+                .foregroundStyle(.secondary)
+                .contentTransition(.opacity)
+        }
+    }
+
+    private func toolIssueTitle(_ issue: SkillEvaluationToolState.Issue) -> LocalizedStringKey {
+        switch issue {
+        case .missing: "skills.evaluation.setup.missing"
+        case .incompatible: "skills.evaluation.setup.incompatible"
+        case .installFailed: "skills.evaluation.setup.failed"
+        case .installCancelled: "skills.evaluation.setup.cancelled"
+        }
+    }
+
+    private func toolStageTitle(_ stage: SkillEvaluationInstaller.Stage) -> LocalizedStringKey {
+        switch stage {
+        case .downloading: "skills.evaluation.setup.downloading"
+        case .preparingPython: "skills.evaluation.setup.preparing"
+        case .installingPackage: "skills.evaluation.setup.installing"
+        case .verifying: "skills.evaluation.setup.verifying"
+        }
     }
 
     private var controls: some View {
@@ -216,7 +296,7 @@ struct SkillEvaluationPanel: View {
                 Text("skills.evaluation.mode.similarityNote").foregroundStyle(.secondary)
             default:
                 modelControls
-                    .disabled(taskID != nil)
+                    .disabled(taskID != nil || !service.canUseTool)
             }
 
             if items.count > 1 {
@@ -417,12 +497,20 @@ struct SkillEvaluationPanel: View {
                     start(items: confirmation.items, mode: confirmation.mode, model: confirmation.model, consent: true)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!service.canUseTool || filePanel != nil)
             } else if let report = selectedReport {
                 Spacer()
                 Button("skills.evaluation.report.export") { export([report]) }
             } else {
-                Button("skills.evaluation.tool.choose", action: chooseTool)
-                    .disabled(taskID != nil || filePanel != nil)
+                if service.toolReady {
+                    // 就绪后手选是次要操作。使用图标为窄窗的评估和取消按钮保留空间。
+                    Button(action: chooseTool) {
+                        Label("skills.evaluation.tool.choose", systemImage: "folder")
+                            .labelStyle(.iconOnly)
+                    }
+                    .help("skills.evaluation.tool.choose")
+                    .disabled(!service.canChangeTool || filePanel != nil)
+                }
                 Spacer(minLength: 8)
                 Button {
                     export(visibleReports)
@@ -501,7 +589,7 @@ struct SkillEvaluationPanel: View {
     }
 
     private var canStart: Bool {
-        !loadFailed && records[mode] != nil && !filteredItems.isEmpty
+        service.canUseTool && filePanel == nil && !loadFailed && records[mode] != nil && !filteredItems.isEmpty
             && (mode != .similarity || filteredItems.count >= 2)
             && (!mode.requiresAI || selectedModel != nil)
     }
@@ -578,7 +666,7 @@ struct SkillEvaluationPanel: View {
     private func start(
         items: [SkillEvaluationPanelItem], mode: SkillEvaluationMode, model: SkillEvaluationSelection?, consent: Bool
     ) {
-        guard taskID == nil else { return }
+        guard taskID == nil, service.canUseTool else { return }
         let targets = items.map(\.target)
         attachIfRunning(targets: targets, mode: mode)
         guard taskID == nil else { return }
@@ -648,18 +736,33 @@ struct SkillEvaluationPanel: View {
     }
 
     private func chooseTool() {
-        guard filePanel == nil else { return }
+        guard filePanel == nil, service.canChangeTool else { return }
+        Task {
+            do {
+                try await service.chooseExecutable { await pickTool() }
+            } catch let failure as SkillEvaluationFailure where failure.code == "busy" {
+                actionError = .service(failure.localizedDescription)
+            } catch {
+                actionError = .tool
+            }
+        }
+    }
+
+    /// 原生选择器和验证期间都保留共享服务的手选状态。关窗后忽略已失去归属的选择。
+    private func pickTool() async -> URL? {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
         panel.showsHiddenFiles = true
+        panel.message = String.l10n("skills.evaluation.error.setup")
         filePanel = panel
-        panel.begin { response in
-            guard filePanel === panel else { return }
-            filePanel = nil
-            guard response == .OK, let url = panel.url else { return }
-            do { try service.setExecutable(url) } catch { actionError = serviceError(error, fallback: .tool) }
+        let response = await withCheckedContinuation { continuation in
+            panel.begin { continuation.resume(returning: $0) }
         }
+        guard filePanel === panel else { return nil }
+        filePanel = nil
+        return response == .OK ? panel.url : nil
     }
 
     private func export(_ reports: [SkillEvaluationCached]) {

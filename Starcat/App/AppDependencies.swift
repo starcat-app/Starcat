@@ -1154,8 +1154,22 @@ final class AppDependencies {
         self.publicMCPTasks = publicTasks
         // 只有 Direct 可建立本机库句柄。SkillLibraryStore 到首次读写才真正打开数据库。
         let evaluationLibrary = try? SkillLibraryStore(distributionGate: distributionGate)
+        var installPreview: (root: URL, preferences: UserDefaults)?
+        #if DEBUG
+        // 首装验收使用同一个安装器。只隔离工具目录、候选和偏好，仍可使用本机 Skill。
+        if distributionGate.isAvailable(.skillManagement),
+           ProcessInfo.processInfo.environment["STARCAT_PREVIEW_SKILL_EVALUATOR_INSTALL"] == "1" {
+            let name = "Starcat-SkillEvaluator-Preview-\(UUID().uuidString)"
+            if let preferences = UserDefaults(suiteName: name) {
+                installPreview = (FileManager.default.temporaryDirectory.appendingPathComponent(name, isDirectory: true),
+                                  preferences)
+            }
+        }
+        #endif
+        let discoversInstalledTools = installPreview == nil
         self.skillEvaluation = SkillEvaluationService(
             gate: distributionGate, tasks: publicTasks,
+            defaults: installPreview?.preferences ?? .standard,
             account: { db.currentUserId.map(String.init) ?? "_anonymous" },
             providers: { settings.aiProviderProfiles },
             readKey: { try KeychainManager.shared.loadAIKey(forProvider: $0) },
@@ -1174,6 +1188,12 @@ final class AppDependencies {
                       scan.commitSHA == skill.commitSHA, scan.skills.contains(skill) else {
                     throw SkillEvaluationFailure("input")
                 }
+            },
+            installer: installPreview.map { SkillEvaluationInstaller(root: $0.root) } ?? .init(),
+            installedCandidates: {
+                guard discoversInstalledTools else { return [] }
+                return SkillEvaluationRunner.installedCandidates(home: FileManager.default.homeDirectoryForCurrentUser,
+                                                                environment: ProcessInfo.processInfo.environment)
             }
         )
         self.projectReadmeAPI = ReadmeAPI(

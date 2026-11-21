@@ -22,10 +22,38 @@ struct SkillEvaluationFailure: LocalizedError, Sendable {
     }
 }
 
+/// 两处面板共享本机工具状态。报告读取仍按账号工作，不依赖工具就绪。
+enum SkillEvaluationToolState: Equatable {
+    enum Issue: Equatable {
+        case missing, incompatible, installFailed, installCancelled
+    }
+
+    case checking
+    case unavailable(Issue)
+    case ready(URL)
+    case installing(SkillEvaluationInstaller.Stage)
+    case cancelling
+
+    var needsTool: Bool {
+        if case .unavailable = self { return true }
+        return false
+    }
+
+    var isInstalling: Bool {
+        switch self {
+        case .installing, .cancelling: true
+        default: false
+        }
+    }
+}
+
 /// MainActor 只拥有任务与账号状态。复制、文件指纹、子进程及缓存写入均离开主线程。
 @MainActor @Observable
 final class SkillEvaluationService {
     private(set) var revision: UInt64 = 0
+    private(set) var toolState: SkillEvaluationToolState = .checking
+    /// 每次真正接受新安装才替换。面板关闭、探测及 GitHub 切号不会抹掉本机安装记录。
+    private(set) var toolInstallLog: SkillEvaluationInstallLog?
     private var changingAccount = false
     private var epoch: UInt64 = 0
     private let gate: DistributionGate
@@ -37,6 +65,10 @@ final class SkillEvaluationService {
     private let readKey: (String) throws -> String?
     private let source: (SkillEvaluationTarget) throws -> SkillEvaluationSnapshotter
     private let verifyTarget: (SkillEvaluationTarget) async throws -> Void
+    private let installer: SkillEvaluationInstaller
+    private let installedCandidates: @Sendable () -> [URL]
+    private var toolOperation: Task<Void, Never>?
+    private var selectingTool = false
     private var runs: [Run] = []
     private static let toolPreference = "skillEvaluation.executable"
 
@@ -63,7 +95,12 @@ final class SkillEvaluationService {
          defaults: UserDefaults = .standard, account: @escaping () -> String,
          providers: @escaping () -> [AIProviderProfile], readKey: @escaping (String) throws -> String?,
          source: @escaping (SkillEvaluationTarget) throws -> SkillEvaluationSnapshotter,
-         verifyTarget: @escaping (SkillEvaluationTarget) async throws -> Void) {
+         verifyTarget: @escaping (SkillEvaluationTarget) async throws -> Void,
+         installer: SkillEvaluationInstaller = .init(),
+         installedCandidates: @escaping @Sendable () -> [URL] = {
+             SkillEvaluationRunner.installedCandidates(home: FileManager.default.homeDirectoryForCurrentUser,
+                                                       environment: ProcessInfo.processInfo.environment)
+         }) {
         self.gate = gate
         self.tasks = tasks
         self.cache = cache
@@ -73,14 +110,120 @@ final class SkillEvaluationService {
         self.readKey = readKey
         self.source = source
         self.verifyTarget = verifyTarget
+        self.installer = installer
+        self.installedCandidates = installedCandidates
     }
 
-    /// 保留 GUI 明确选择的逻辑路径，venv 的入口可以是符号链接。每次运行仍探测真实版本。
-    func setExecutable(_ url: URL) throws {
-        try requireReady()
-        guard url.isFileURL, url.lastPathComponent == "skillevaluator" else { throw SkillEvaluationFailure("toolMissing") }
-        _ = try SkillEvaluationRunner.locate(override: url)
-        defaults.set(url.path, forKey: Self.toolPreference)
+    var toolReady: Bool {
+        if case .ready = toolState { return true }
+        return false
+    }
+
+    var canUseTool: Bool { toolReady && !selectingTool }
+
+    var canChangeTool: Bool {
+        gate.isAvailable(.skillManagement) && toolOperation == nil && !selectingTool
+            && !tasks.hasActive(kind: "skill_evaluation")
+    }
+
+    /// 使用应用级任务合并两个面板的探测。已就绪时保留操作区，发起评估时还会复核可执行文件。
+    func refreshTool() {
+        guard gate.isAvailable(.skillManagement), toolOperation == nil, !selectingTool else { return }
+        let previous = toolState
+        if !toolReady { toolState = .checking }
+        let preferred = preferredExecutables
+        toolOperation = Task {
+            defer { toolOperation = nil }
+            do {
+                toolState = .ready(try await locateTool(preferred: preferred))
+            } catch {
+                // 从另一个入口重开仍保留重试原因。若期间检测到可用工具，则直接转为就绪。
+                switch previous {
+                case .unavailable(.installFailed), .unavailable(.installCancelled): toolState = previous
+                default: toolState = .unavailable(Self.toolIssue(error))
+                }
+            }
+        }
+    }
+
+    /// 从弹出选择器起即占用工具配置，避免另一窗口的探测或安装打断手选。
+    /// 只在验证通过后保存逻辑路径，便于包管理器更新链接。
+    func chooseExecutable(_ pick: @MainActor () async -> URL?) async throws {
+        try gate.requireDirect(.skillManagement)
+        guard canChangeTool else { throw SkillEvaluationFailure("busy") }
+        selectingTool = true
+        defer { selectingTool = false }
+        guard let url = await pick() else { return }
+        let previous = toolState
+        toolState = .checking
+        do {
+            try await SkillEvaluationRunner.verifyExecutable(url)
+            try Task.checkCancellation()
+            let selected = url.standardizedFileURL
+            defaults.set(selected.path, forKey: Self.toolPreference)
+            toolState = .ready(selected)
+        } catch {
+            toolState = previous
+            throw error
+        }
+    }
+
+    /// 用户点击后才启动。安装对当前 macOS 用户有效，与 GitHub 账号无关。
+    func installTool() {
+        guard canChangeTool, toolState.needsTool else { return }
+        let log = SkillEvaluationInstallLog()
+        log.append(.detail("Installing SkillEvaluator \(SkillEvaluationRunner.version) for the current macOS user"))
+        toolInstallLog = log
+        toolState = .installing(.downloading)
+        toolOperation = Task {
+            defer { toolOperation = nil }
+            do {
+                let executable = try await installer.install(progress: { stage in
+                    // 取消可能和安装阶段同时到达主线程，不能让迟到的阶段覆盖取消状态。
+                    if !Task.isCancelled { self.toolState = .installing(stage) }
+                }, onLog: { log.append($0) })
+                log.append(.detail("Installation succeeded: \(executable.path)"))
+                toolState = .ready(executable)
+            } catch {
+                // URLSession 可能将用户取消报告为 URLError.cancelled。
+                let cancelled = Task.isCancelled || error is CancellationError
+                let cause: String
+                if let failure = error as? SkillEvaluationFailure {
+                    cause = failure.code
+                } else if error is CancellationError {
+                    cause = "CancellationError"
+                } else {
+                    let underlying = error as NSError
+                    cause = "\(underlying.domain) \(underlying.code): \(underlying.localizedDescription)"
+                }
+                let outcome = cancelled ? "Installation cancelled" : "Installation failed"
+                log.append(.detail("\(outcome): \(cause)"))
+                toolState = .unavailable(cancelled ? .installCancelled : .installFailed)
+            }
+        }
+    }
+
+    func cancelToolInstall() {
+        guard case .installing = toolState else { return }
+        toolState = .cancelling
+        toolInstallLog?.append(.detail("Cancellation requested"))
+        toolOperation?.cancel()
+    }
+
+    /// 只从偏好读取逻辑路径。自动命中的位置重新探测，以便安装或卸载后自然切换。
+    private var preferredExecutables: [URL] {
+        let saved = defaults.string(forKey: Self.toolPreference)
+        return (saved.flatMap { $0.hasPrefix("/") ? URL(fileURLWithPath: $0) : nil }.map { [$0] } ?? [])
+            + [installer.executable]
+    }
+
+    @concurrent
+    private func locateTool(preferred: [URL]) async throws -> URL {
+        try await SkillEvaluationRunner.findExecutable(in: preferred + installedCandidates())
+    }
+
+    private static func toolIssue(_ error: Error) -> SkillEvaluationToolState.Issue {
+        (error as? SkillEvaluationFailure)?.code == "toolVersion" ? .incompatible : .missing
     }
 
     func profiles() -> [AIProviderProfile] {
@@ -128,13 +271,27 @@ final class SkillEvaluationService {
         let occupied = runs.contains { run in
             tasks.isActive(id: run.id) && run.targets.contains { selectedSubjects.contains($0.subject) }
         }
-        guard !occupied else { throw SkillEvaluationFailure("busy") }
+        guard !occupied, !selectingTool, !toolState.isInstalling else { throw SkillEvaluationFailure("busy") }
         _ = try selectedProfile(mode, model, consent)
-        let executable = try SkillEvaluationRunner.locate(override: defaults.string(forKey: Self.toolPreference).map(URL.init(fileURLWithPath:)))
+        // 先复核面板已确认的入口，避免每次评估都重新等待失效的旧路径。
+        let preferred = if case .ready(let executable) = toolState { [executable] + preferredExecutables }
+        else { preferredExecutables }
         let generation = epoch, scope = account()
         let task = try tasks.startReportingProgress(kind: "skill_evaluation", onFinish: { [weak self] _ in
             self?.revision &+= 1
         }) { [self] publish in
+            try ensureCurrent(generation, scope)
+            let executable: URL
+            do {
+                // 先登记任务再探测。公共调用取消时会等自己的探测进程退出，不依赖面板任务。
+                executable = try await locateTool(preferred: preferred)
+                try ensureCurrent(generation, scope)
+                if toolOperation == nil { toolState = .ready(executable) }
+            } catch {
+                try ensureCurrent(generation, scope)
+                if toolOperation == nil { toolState = .unavailable(Self.toolIssue(error)) }
+                throw StarcatPublicCapabilityError(code: "SKILL_EVALUATION_FAILED", message: error.localizedDescription)
+            }
             var completed: [Value] = [], failures: [Value] = []
             var result: Value = .object(["report_ids": .array([]), "failures": .array([])])
             for group in groups(sorted, mode: mode) {
@@ -194,7 +351,8 @@ final class SkillEvaluationService {
             }
         }
         let checks = try await SkillEvaluationRunner.run(executable: executable, mode: mode, inputs: inputs,
-                                                        workspace: workspace, model: model, apiKey: key)
+                                                        workspace: workspace, model: model, apiKey: key,
+                                                        scannerRuntime: installer.scannerRuntime)
         guard !checks.isEmpty else { throw SkillEvaluationFailure("invalidReport") }
         let state: SkillEvaluationState = checks.contains { $0.state == .incomplete } ? .incomplete
             : checks.contains { $0.state == .findings } ? .findings : .passed

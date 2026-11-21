@@ -14,30 +14,81 @@ struct SkillEvaluationRunner {
     static let maximumReportBytes = 8 * 1024 * 1024
     private static let systemPaths = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
 
-    /// GUI 的 PATH 常不含用户级 CLI。手动选择优先，失效时返回明确错误。
-    static func locate(override: URL?) throws -> URL {
-        let homeBin = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin")
-        let candidates = override.map { [$0] } ?? ([homeBin.path] + systemPaths).map {
-            URL(fileURLWithPath: $0).appendingPathComponent("skillevaluator")
+    /// Finder 启动时的 PATH 常缺 pipx、uv tool 和 pip --user 的用户目录。不执行 shell 读取配置。
+    static func installedCandidates(home: URL, environment: [String: String]) -> [URL] {
+        let python = home.appendingPathComponent("Library/Python", isDirectory: true)
+        let userPython = (try? FileManager.default.contentsOfDirectory(atPath: python.path)) ?? []
+        var configuredBins = ["UV_TOOL_BIN_DIR", "PIPX_BIN_DIR", "XDG_BIN_HOME"].compactMap { environment[$0] }
+        // uv 在仅配置 XDG_DATA_HOME 时把入口放在其同级 bin，Finder 的 PATH 也可能不含这个目录。
+        if let dataHome = environment["XDG_DATA_HOME"], dataHome.hasPrefix("/") {
+            configuredBins.append(URL(fileURLWithPath: dataHome).deletingLastPathComponent().appendingPathComponent("bin").path)
         }
-        for candidate in candidates where candidate.isFileURL {
-            let resolved = candidate.resolvingSymlinksInPath().standardizedFileURL
-            guard let values = try? resolved.resourceValues(forKeys: [.isRegularFileKey]),
-                  values.isRegularFile == true,
-                  FileManager.default.isExecutableFile(atPath: resolved.path) else { continue }
-            return resolved
+        let userBins = [home.appendingPathComponent(".local/bin").path, home.appendingPathComponent("bin").path]
+            + userPython.filter { $0.first == "3" && $0.allSatisfy { $0.isASCII && ($0.isNumber || $0 == ".") } }
+                .sorted(by: >).map { python.appendingPathComponent("\($0)/bin").path }
+        let searchPath = (environment["PATH"] ?? "").components(separatedBy: ":")
+        return (configuredBins + userBins + systemPaths + ["/opt/local/bin"] + searchPath)
+            .filter { $0.hasPrefix("/") }
+            .map { URL(fileURLWithPath: $0, isDirectory: true).appendingPathComponent("skillevaluator") }
+    }
+
+    /// 保存路径或链接失效时继续搜寻。返回逻辑路径，执行和去重按实际入口处理。
+    @concurrent
+    static func findExecutable(in candidates: [URL]) async throws -> URL {
+        var tried: Set<URL> = []
+        for candidate in candidates {
+            try Task.checkCancellation()
+            guard let executable = try? resolveExecutable(candidate), tried.insert(executable).inserted else { continue }
+            do {
+                try await verifyVersion(executable)
+                return candidate.standardizedFileURL
+            } catch {
+                // 错误版本、启动失败或探测超时只淘汰当前候选。
+                try Task.checkCancellation()
+            }
         }
-        throw SkillEvaluationFailure("toolMissing")
+        try Task.checkCancellation()
+        throw SkillEvaluationFailure(tried.isEmpty ? "toolMissing" : "toolVersion")
+    }
+
+    /// 文件选择器只验证用户实际选中的路径，不能将误选当成自动探测成功。
+    @concurrent
+    static func verifyExecutable(_ url: URL, onLog: SkillEvaluationInstallLog.Sink? = nil) async throws {
+        try await verifyVersion(resolveExecutable(url), onLog: onLog)
+    }
+
+    private static func resolveExecutable(_ url: URL) throws -> URL {
+        guard url.isFileURL else { throw SkillEvaluationFailure("toolMissing") }
+        let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
+        guard let values = try? resolved.resourceValues(forKeys: [.isRegularFileKey]),
+              values.isRegularFile == true,
+              FileManager.default.isExecutableFile(atPath: resolved.path) else {
+            throw SkillEvaluationFailure("toolMissing")
+        }
+        return resolved
+    }
+
+    @concurrent
+    private static func verifyVersion(_ executable: URL, onLog: SkillEvaluationInstallLog.Sink? = nil) async throws {
+        let job = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "starcat-skill-probe-\(UUID().uuidString)", isDirectory: true
+        )
+        try makeDirectory(job)
+        defer { try? FileManager.default.removeItem(at: job) }
+        let home = job.appendingPathComponent("home", isDirectory: true)
+        try makeDirectory(home)
+        try await checkVersion(executable, environment: baseEnvironment(executable, home: home, job: job),
+                               cwd: job, job: job, onLog: onLog)
     }
 
     /// 每次探测精确版本。探测进程只收到基础环境和版本参数。
     @concurrent
     static func run(
         executable: URL, mode: SkillEvaluationMode, inputs: [SkillEvaluationInput],
-        workspace: URL, model: SkillEvaluationSelection?, apiKey: String?
+        workspace: URL, model: SkillEvaluationSelection?, apiKey: String?, scannerRuntime: URL? = nil
     ) async throws -> [SkillEvaluationCheck] {
         do {
-            return try await evaluate(executable, mode, inputs, workspace, model, apiKey)
+            return try await evaluate(executable, mode, inputs, workspace, model, apiKey, scannerRuntime)
         } catch is CancellationError {
             throw CancellationError()
         } catch let failure as SkillEvaluationFailure {
@@ -51,7 +102,7 @@ struct SkillEvaluationRunner {
     @concurrent
     private static func evaluate(
         _ executable: URL, _ mode: SkillEvaluationMode, _ inputs: [SkillEvaluationInput],
-        _ workspace: URL, _ model: SkillEvaluationSelection?, _ apiKey: String?
+        _ workspace: URL, _ model: SkillEvaluationSelection?, _ apiKey: String?, _ scannerRuntime: URL?
     ) async throws -> [SkillEvaluationCheck] {
         try Task.checkCancellation()
         guard workspace.isFileURL, inputs.allSatisfy({ $0.root.isFileURL }) else {
@@ -59,7 +110,7 @@ struct SkillEvaluationRunner {
         }
         let requestedExecutable = try physicalURL(executable.standardizedFileURL.deletingLastPathComponent())
             .appendingPathComponent(executable.lastPathComponent)
-        let executable = try physicalURL(locate(override: executable))
+        let executable = try physicalURL(resolveExecutable(executable))
         let workspace = try physicalURL(workspace)
         let roots = try inputs.map { try physicalURL($0.root) }
         let requiredCount = mode == .similarity ? roots.count >= 2 : roots.count == 1
@@ -80,26 +131,13 @@ struct SkillEvaluationRunner {
         try makeDirectory(home)
         try makeDirectory(output)
 
-        // 不继承宿主 PATH。受信任的安装目录可为 venv 提供 uv/Python。
-        let bin = executable.deletingLastPathComponent().path
-        guard !bin.contains(":") else { throw SkillEvaluationFailure("input") }
-        var environment = [
-            "PATH": ([bin] + systemPaths).joined(separator: ":"),
-            "HOME": home.path, "TMPDIR": job.path,
-            "PYTHON_DOTENV_DISABLED": "1", "PYTHONNOUSERSITE": "1", "PYTHONUTF8": "1",
-            "UV_NO_CONFIG": "1", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
-            "GIT_CEILING_DIRECTORIES": workspace.path,
-        ]
-        let versionFile = job.appendingPathComponent("version")
-        let probe = try await SkillEvaluationChild.run(
-            executable, arguments: ["--version"], environment: environment, cwd: cwd,
-            stdout: versionFile, watchedFile: versionFile, byteLimit: 512, timeout: .seconds(10),
-            budgetError: "toolVersion"
-        )
-        let versionData = try readRegularFile(versionFile, limit: 512, errorCode: "toolVersion")
-        guard probe == 0, String(data: versionData, encoding: .utf8)?
-            .trimmingCharacters(in: .newlines) == "skillevaluator, version \(version)" else {
-            throw SkillEvaluationFailure("toolVersion")
+        var environment = try baseEnvironment(executable, home: home, job: job)
+        environment["GIT_CEILING_DIRECTORIES"] = workspace.path
+        try await checkVersion(executable, environment: environment, cwd: cwd, job: job)
+        if mode == .security, let scannerRuntime {
+            let uvCache = try prepareScannerCache(scannerRuntime, home: home)
+            environment["SKILLEVALUATOR_RUNTIME_DIR"] = scannerRuntime.path
+            environment["UV_CACHE_DIR"] = uvCache.path
         }
 
         var target = roots[0]
@@ -149,6 +187,56 @@ struct SkillEvaluationRunner {
         }
         try Task.checkCancellation()
         return checks
+    }
+
+    /// SkillEvaluator 重建扫描器环境，只转发 HOME 等少量变量。uv 仍可从临时 HOME 找到同一份缓存。
+    private static func prepareScannerCache(_ runtime: URL, home: URL) throws -> URL {
+        let manager = FileManager.default
+        let cache = runtime.appendingPathComponent("uv-cache", isDirectory: true)
+        try manager.createDirectory(at: cache, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let homeCache = home.appendingPathComponent(".cache", isDirectory: true)
+        try makeDirectory(homeCache)
+        try manager.createSymbolicLink(at: homeCache.appendingPathComponent("uv"), withDestinationURL: cache)
+        return cache
+    }
+
+    /// 版本探测和真实任务共用干净的环境。真实任务在探测通过后才加入所选模型的凭据。
+    private static func baseEnvironment(_ executable: URL, home: URL, job: URL) throws -> [String: String] {
+        let bin = executable.deletingLastPathComponent()
+        guard !bin.path.contains(":") else { throw SkillEvaluationFailure("toolVersion") }
+        var environment = [
+            "PATH": ([bin.path] + systemPaths).joined(separator: ":"),
+            "HOME": home.path, "TMPDIR": job.path,
+            "PYTHON_DOTENV_DISABLED": "1", "PYTHONUTF8": "1",
+            "UV_NO_CONFIG": "1", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CEILING_DIRECTORIES": job.path,
+        ]
+        // pip --user 的启动器依赖与 bin 同级的 lib。只恢复这个安装目录，HOME 仍指向任务目录。
+        let base = bin.deletingLastPathComponent()
+        let library = base.deletingLastPathComponent()
+        if bin.lastPathComponent == "bin", base.lastPathComponent == ".local"
+            || (library.lastPathComponent == "Python" && library.deletingLastPathComponent().lastPathComponent == "Library") {
+            environment["PYTHONUSERBASE"] = base.path
+        } else {
+            environment["PYTHONNOUSERSITE"] = "1"
+        }
+        return environment
+    }
+
+    @concurrent
+    private static func checkVersion(_ executable: URL, environment: [String: String], cwd: URL, job: URL,
+                                     onLog: SkillEvaluationInstallLog.Sink? = nil) async throws {
+        let versionFile = job.appendingPathComponent("version")
+        let probe = try await SkillEvaluationChild.run(
+            executable, arguments: ["--version"], environment: environment, cwd: cwd,
+            stdout: versionFile, watchedFile: versionFile, byteLimit: 512, timeout: .seconds(10),
+            budgetError: "toolVersion", onLog: onLog
+        )
+        let versionData = try readRegularFile(versionFile, limit: 512, errorCode: "toolVersion")
+        guard probe == 0, String(data: versionData, encoding: .utf8)?
+            .trimmingCharacters(in: .newlines) == "skillevaluator, version \(version)" else {
+            throw SkillEvaluationFailure("toolVersion")
+        }
     }
 
     /// 固定命令表。Tier 1 显式关闭自动模型阶段。
@@ -256,16 +344,53 @@ enum SkillEvaluationChild {
     @concurrent
     static func run(
         _ executable: URL, arguments: [String], environment: [String: String], cwd: URL,
-        stdout: URL?, watchedFile: URL, byteLimit: Int, timeout: Duration, budgetError: String
+        stdout: URL? = nil, watchedFile: URL? = nil, byteLimit: Int = 0, timeout: Duration, budgetError: String = "failed",
+        onLog: SkillEvaluationInstallLog.Sink? = nil
     ) async throws -> Int32 {
         try Task.checkCancellation()
-        let pid = try spawn(executable, arguments, environment, cwd, stdout)
-        let deadline = ContinuousClock.now.advanced(by: timeout)
+        // 安装 cwd 是私有临时目录。普通评估仍沿用原来的重定向，尤其不能记录模型进程输出。
+        let captureID = onLog.map { _ in ".setup-output-\(UUID().uuidString)" }
+        let capturedOut = captureID.map { cwd.appendingPathComponent("\($0).stdout") }
+        let capturedErr = captureID.map { cwd.appendingPathComponent("\($0).stderr") }
+        let stdout = stdout ?? capturedOut
+        defer {
+            for path in [capturedOut, capturedErr].compactMap({ $0 }) {
+                try? FileManager.default.removeItem(at: path)
+            }
+        }
+        let pid: pid_t
         do {
+            if let onLog {
+                await onLog(.detail("cwd: \(cwd.path)"))
+                let command = ([executable.path] + arguments).map(shellArgument).joined(separator: " ")
+                await onLog(.detail("$ \(command)"))
+                try Task.checkCancellation()
+            }
+            pid = try spawn(executable, arguments, environment, cwd, stdout, capturedErr)
+        } catch let error as POSIXError {
+            if onLog != nil { throw error }
+            throw SkillEvaluationFailure("failed")
+        }
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        var output: SkillEvaluationOutputReader?
+        var errors: SkillEvaluationOutputReader?
+        var failure: (any Error)?
+        do {
+            if onLog != nil, let stdout, let capturedErr {
+                output = try SkillEvaluationOutputReader(stdout)
+                errors = try SkillEvaluationOutputReader(capturedErr)
+            }
             while true {
                 try Task.checkCancellation()
+                if let onLog {
+                    let out = try output?.read() ?? ""
+                    let err = try errors?.read() ?? ""
+                    // 保留每路程序原文。两路独立写入，按本轮读到的顺序合并。
+                    if !out.isEmpty { await onLog(.output(.stdout, out)) }
+                    if !err.isEmpty { await onLog(.output(.stderr, err)) }
+                }
                 var info = stat()
-                if lstat(watchedFile.path, &info) == 0,
+                if let watchedFile, lstat(watchedFile.path, &info) == 0,
                    info.st_mode & S_IFMT != S_IFREG || info.st_size > byteLimit {
                     throw SkillEvaluationFailure(budgetError)
                 }
@@ -273,21 +398,42 @@ enum SkillEvaluationChild {
                 // WNOWAIT 保留组长 PID，确保发给 -pid 的信号只属于这次任务。
                 let code = waitid(P_PID, id_t(pid), &child, WEXITED | WNOHANG | WNOWAIT)
                 if code == 0, child.si_pid == pid { break }
-                if code != 0, errno != EINTR { throw SkillEvaluationFailure("failed") }
+                if code != 0, errno != EINTR {
+                    if onLog != nil { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+                    throw SkillEvaluationFailure("failed")
+                }
                 guard ContinuousClock.now < deadline else { throw SkillEvaluationFailure("timeout") }
                 try await Task.sleep(for: .milliseconds(25))
             }
         } catch {
-            _ = await finish(pid)
-            throw error
+            failure = error
         }
-        let status = await finish(pid)
+        let termination = await finish(pid)
+        if let onLog {
+            // waitid 发现退出时，最后一批输出可能还没有读过；取消也要先关闭整组写端再读完。
+            let streams: [(SkillEvaluationInstallLog.Stream, SkillEvaluationOutputReader?)] = [
+                (.stdout, output), (.stderr, errors)
+            ]
+            for (stream, reader) in streams {
+                guard let reader else { continue }
+                do {
+                    while let chunk = try reader.read() { await onLog(.output(stream, chunk)) }
+                    let tail = reader.finish()
+                    if !tail.isEmpty { await onLog(.output(stream, tail)) }
+                } catch {
+                    if failure == nil { failure = error }
+                }
+            }
+            if let signal = termination.signal { await onLog(.detail("signal: \(signal)")) }
+            else { await onLog(.detail("exit: \(termination.status)")) }
+        }
+        if let failure { throw failure }
         try Task.checkCancellation()
-        return status
+        return termination.status
     }
 
     /// 即使组长先退出也终止同组后代，等退出后才允许调用方清理临时数据。
-    private static func finish(_ pid: pid_t) async -> Int32 {
+    private static func finish(_ pid: pid_t) async -> (status: Int32, signal: Int32?) {
         _ = Darwin.kill(-pid, SIGKILL)
         var status: Int32 = 0
         var result: pid_t = 0
@@ -296,8 +442,9 @@ enum SkillEvaluationChild {
             if result == 0 { await pauseForExit() }
         } while result == 0 || (result < 0 && errno == EINTR)
         while Darwin.kill(-pid, 0) == 0 { await pauseForExit() }
-        guard result == pid, status & 0x7f == 0 else { return -1 }
-        return (status >> 8) & 0xff
+        guard result == pid else { return (-1, nil) }
+        let signal = status & 0x7f
+        return signal == 0 ? ((status >> 8) & 0xff, nil) : (-1, signal)
     }
 
     /// 清理也必须在取消后等待，因此延迟独立于调用 Task 的取消状态。
@@ -309,7 +456,7 @@ enum SkillEvaluationChild {
 
     private static func spawn(
         _ executable: URL, _ arguments: [String], _ environment: [String: String],
-        _ cwd: URL, _ stdout: URL?
+        _ cwd: URL, _ stdout: URL?, _ stderr: URL?
     ) throws -> pid_t {
         var attributes: posix_spawnattr_t?
         try require(posix_spawnattr_init(&attributes))
@@ -331,7 +478,10 @@ enum SkillEvaluationChild {
             try require(posix_spawn_file_actions_addchdir_np(&actions, cwd.path))
         }
         try require(posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0))
-        try require(posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0))
+        try require(posix_spawn_file_actions_addopen(
+            &actions, STDERR_FILENO, stderr?.path ?? "/dev/null",
+            stderr == nil ? O_WRONLY : O_WRONLY | O_CREAT | O_EXCL, 0o600
+        ))
         try require(posix_spawn_file_actions_addopen(
             &actions, STDOUT_FILENO, stdout?.path ?? "/dev/null",
             stdout == nil ? O_WRONLY : O_WRONLY | O_CREAT | O_EXCL, 0o600
@@ -352,6 +502,50 @@ enum SkillEvaluationChild {
     }
 
     private static func require(_ result: Int32) throws {
-        guard result == 0 else { throw SkillEvaluationFailure("failed") }
+        guard result == 0 else { throw POSIXError(POSIXErrorCode(rawValue: result) ?? .EIO) }
     }
+
+    /// 参数按 shell 的字面量规则展示。实际执行仍直接传 argv，不调用 shell。
+    private static func shellArgument(_ argument: String) -> String {
+        if !argument.isEmpty, argument.range(of: #"[^A-Za-z0-9_@%+=:,./-]"#, options: .regularExpression) == nil {
+            return argument
+        }
+        return "'" + argument.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+}
+
+/// 常规文件允许子进程独立写入。安装轮询每路读取一批，避免等待主线程渲染时阻塞子进程。
+private final class SkillEvaluationOutputReader {
+    private let handle: FileHandle
+    private var pending = Data()
+
+    init(_ file: URL) throws { handle = try FileHandle(forReadingFrom: file) }
+
+    deinit { try? handle.close() }
+
+    /// read 的块边界可能切开 UTF-8 字符；仅推迟不完整的后缀，未换行的内容仍可实时显示。
+    func read() throws -> String? {
+        // 文件暂时读到尾部时保留 pending。只有等写端退出后，才把残缺字节解码为替换字符。
+        guard let bytes = try handle.read(upToCount: 32 * 1_024), !bytes.isEmpty else { return nil }
+        pending.append(bytes)
+        var emitCount = pending.count
+        if !pending.isEmpty {
+            var start = pending.endIndex - 1
+            while start > pending.startIndex, pending.endIndex - start < 4, pending[start] & 0xC0 == 0x80 {
+                start -= 1
+            }
+            let expectedLength = switch pending[start] {
+            case 0xC2...0xDF: 2
+            case 0xE0...0xEF: 3
+            case 0xF0...0xF4: 4
+            default: 1
+            }
+            if pending.endIndex - start < expectedLength { emitCount = start - pending.startIndex }
+        }
+        let text = String(decoding: pending.prefix(emitCount), as: UTF8.self)
+        pending.removeFirst(emitCount)
+        return text
+    }
+
+    func finish() -> String { String(decoding: pending, as: UTF8.self) }
 }

@@ -247,6 +247,79 @@ struct SkillEvaluationRunnerTests {
         #expect(Darwin.kill(-pid, 0) == -1)
     }
 
+    @MainActor
+    @Test("命令退出前就能收到两路原文，跨次写入的 UTF-8 和尾部在退出或取消后都完整", arguments: [false, true])
+    func streamsInstallationOutput(cancel: Bool) async throws {
+        let path = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: path) }
+        let proceed = path.appendingPathComponent("proceed")
+        let written = path.appendingPathComponent("written")
+        let log = SkillEvaluationInstallLog()
+        var stdout = "", stderr = ""
+        // 按文件信号暂停，证明两路前缀能在子进程存活时收到。再补齐故意拆开的 UTF-8 字符。
+        let script = #"""
+        printf 'stdout: \342'
+        printf 'stderr before exit\n\n' >&2
+        while [ ! -f "$1" ]; do /bin/sleep 0.02; done
+        printf '\230\203  '
+        printf 'stderr tail' >&2
+        [ "$3" = exit ] && exit 23
+        : > "$2"
+        /bin/sleep 30
+        """#
+        let task = Task {
+            try await SkillEvaluationChild.run(
+                URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", script, "fixture", proceed.path, written.path, cancel ? "cancel" : "exit"],
+                environment: ["PATH": "/usr/bin:/bin", "HOME": path.path],
+                cwd: path, timeout: .seconds(8), onLog: { event in
+                    log.append(event)
+                    if case .output(let stream, let chunk) = event {
+                        switch stream {
+                        case .stdout: stdout += chunk
+                        case .stderr: stderr += chunk
+                        }
+                    }
+                }
+            )
+        }
+        do {
+            try await waitForOutput { stdout == "stdout: " && stderr == "stderr before exit\n\n" }
+            #expect(log.text.contains("$ /bin/sh -c"))
+            #expect(log.text.contains("[stdout]\n"))
+            #expect(log.text.contains("[stderr]\n"))
+            #expect(!log.text.contains("exit: "))
+            try Data().write(to: proceed)
+            if cancel {
+                try await waitForOutput { FileManager.default.fileExists(atPath: written.path) }
+                task.cancel()
+                await #expect(throws: CancellationError.self) { try await task.value }
+                #expect(log.text.hasSuffix("signal: \(SIGKILL)\n"))
+            } else {
+                #expect(try await task.value == 23)
+                #expect(log.text.hasSuffix("exit: 23\n"))
+            }
+            #expect(stdout == "stdout: ☃  ")
+            #expect(stderr == "stderr before exit\n\nstderr tail")
+            #expect(try FileManager.default.contentsOfDirectory(atPath: path.path).allSatisfy {
+                !$0.hasPrefix(".setup-output-")
+            })
+        } catch {
+            task.cancel()
+            _ = await task.result
+            throw error
+        }
+    }
+
+    @MainActor
+    private func waitForOutput(_ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while !condition(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(condition())
+    }
+
     // 只保留真实 JSON 中解析器读取的形状，故意把私密标记放进原文和诊断字段。
     private func row(
         _ id: String, tier: Int = 1, status: String = "passed", findings: [[String: Any]] = [],
