@@ -6,7 +6,7 @@ import Observation
 /// 取消订阅后仍可能有回调在主队列等候。每次绑定或重试推进代次，丢弃旧账户的结果。
 @MainActor @Observable final class TagGraphViewModel {
     static let rootID = "app:starcat"
-    private static let firstPageSize = 10
+    private static let firstPageSize = 30
     private static let pageSize = 50
 
     private var index: TagGraphPresentationIndex?

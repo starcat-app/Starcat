@@ -23,16 +23,16 @@ struct TagGraphPresentationTests {
     @Test("Per-tag pages follow canvas acknowledgements and deduplicate shared repositories")
     func incrementalPages() async throws {
         let sample = try TagGraphFixture()
-        try await sample.db.insertRepoFixtures(count: 63)
+        try await sample.db.insertRepoFixtures(count: 93)
         try await sample.tags.create(.fixture(id: "agent", name: "Agent"))
         try await sample.tags.create(.fixture(id: "rag", name: "RAG"))
         try await sample.db.writer.write { db in
             try db.execute(sql: """
                 INSERT INTO repo_tags (repo_id, tag_id, created_at)
                 SELECT id, 'agent', '2026-11-21' FROM repos;
-                INSERT INTO repo_tags VALUES (12, 'rag', '2026-11-21');
+                INSERT INTO repo_tags VALUES (32, 'rag', '2026-11-21');
                 UPDATE repos SET starred_at = NULL;
-                UPDATE repos SET starred_at = '2026-11-21T01:00:00Z' WHERE id = 63;
+                UPDATE repos SET starred_at = '2026-11-21T01:00:00Z' WHERE id = 93;
                 UPDATE tags SET created_at = '2026-11-21T01:00:00Z' WHERE id = 'agent';
                 """)
         }
@@ -47,34 +47,34 @@ struct TagGraphPresentationTests {
             model.reportProgress(revision: revision ?? model.revision, selectedID: agent,
                                  selectionRevision: selection ?? model.selectionRevision, count: count)
         }
-        #expect(agentRepos() == ["repo:63"] + (1...9).map { "repo:\($0)" })
-        #expect(model.totalCount(for: agent) == 63 && model.totalCount(for: rag) == 1)
+        #expect(agentRepos() == ["repo:93"] + (1...29).map { "repo:\($0)" })
+        #expect(model.totalCount(for: agent) == 93 && model.totalCount(for: rag) == 1)
         let date = try #require(ISO8601DateFormatter().date(from: "2026-11-21T01:00:00Z"))
         #expect(model.tagCreationDate(agent) == date)
         model.select(agent)
         model.loadMore(agent)
-        #expect(agentRepos().count == 10)
+        #expect(agentRepos().count == 30)
         let initialRevision = model.revision
-        report(10)
+        report(30)
         model.loadMore(agent)
-        #expect(agentRepos().count == 60)
+        #expect(agentRepos().count == 80)
         #expect(model.displayed?.edges.filter { $0.source == rag }.count == 1)
-        #expect(model.displayed?.nodes.filter { $0.id == "repo:12" }.count == 1)
-        report(60, revision: initialRevision)
-        #expect(model.renderedMembershipCount == 10 && model.isRevealing(agent))
+        #expect(model.displayed?.nodes.filter { $0.id == "repo:32" }.count == 1)
+        report(80, revision: initialRevision)
+        #expect(model.renderedMembershipCount == 30 && model.isRevealing(agent))
         model.loadMore(agent)
-        #expect(agentRepos().count == 60)
+        #expect(agentRepos().count == 80)
 
         let initialSelection = model.selectionRevision
         model.select(rag)
         model.select(agent)
-        report(60, selection: initialSelection)
+        report(80, selection: initialSelection)
         #expect(model.renderedMembershipCount == 0)
-        report(60)
+        report(80)
         model.loadMore(agent)
-        #expect(agentRepos().count == 63)
+        #expect(agentRepos().count == 93)
         #expect(model.hasMore(for: agent))
-        report(63)
+        report(93)
         #expect(!model.hasMore(for: agent) && !model.isRevealing(agent))
 
         model.bind(reader: sample.db.writer) { true }
@@ -85,9 +85,9 @@ struct TagGraphPresentationTests {
         #expect(model.selectedID == "repo:61")
         #expect(agentRepos() == initialPage + ["repo:61"])
         model.select(agent)
-        report(11)
+        report(31)
         model.loadMore(agent)
-        #expect(agentRepos().count == 61)
+        #expect(agentRepos().count == 81)
         #expect(agentRepos().contains("repo:61"))
     }
 }
