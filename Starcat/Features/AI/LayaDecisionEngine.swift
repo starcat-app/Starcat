@@ -354,14 +354,17 @@ final class LayaDecisionEngine: DecisionEngineProviding {
                 reason: "Laya multilingual model is not installed"
             )
         }
-        let prompts = request.questions.mapValues(\.localPromptText)
+        guard request.assets == nil, request.questions.values.allSatisfy({ $0.type == .noul }) else {
+            throw DecisionInputError("Unsupported question or image for the selected Laya runtime")
+        }
+        let prompts = request.questions.mapValues(\.legacyNoulPrompt)
         let predictions = try await runtimeStore.evaluate(
             state: request.state.localPromptText,
             questions: prompts,
             modelDirectory: directory
         )
         let answers = predictions.mapValues {
-            DecisionNoulAnswer(probability: $0.trueProbability)
+            DecisionAnswer(type: "noul", noul: $0.trueProbability)
         }
         return DecisionEvaluationResponse(answers: answers)
     }

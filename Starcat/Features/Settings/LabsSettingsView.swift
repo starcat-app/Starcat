@@ -309,7 +309,7 @@ struct LabsSettingsTab: View {
                 let response = try await engine.evaluate(DecisionEvaluationRequest(
                     state: .text("Starcat is a native macOS application for managing GitHub stars."),
                     questions: [
-                        "demo": DecisionNoulQuestion(
+                        "demo": .noul(
                             instructions: "Does this text describe a software product?",
                             criteria: nil
                         )
@@ -319,7 +319,7 @@ struct LabsSettingsTab: View {
                 let elapsed = startedAt.duration(to: clock.now)
                 let milliseconds = Int(elapsed.components.seconds) * 1_000
                     + Int(elapsed.components.attoseconds / 1_000_000_000_000_000)
-                guard let noul = response.answers["demo"]?.probability else {
+                guard let noul = response.answers["demo"]?.noul else {
                     throw ConnectionProbeError.missingAnswer
                 }
                 layaTestState = .succeeded(

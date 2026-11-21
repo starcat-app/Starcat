@@ -75,37 +75,26 @@ final class JevDecisionEngine: DecisionEngineProviding {
             throw TypeSafeClientError.missingAPIKey
         }
 
-        let questions = request.questions.mapValues { question in
-            TypeSafeQuestion.noul(
-                instructions: question.instructions.typeSafeValue,
-                criteria: question.criteria.map {
-                    TypeSafeNoulCriteria(true: $0.true, false: $0.false)
-                }
-            )
-        }
         let response = try await client.evaluate(
             state: request.state,
             model: access.modelID,
-            questions: questions,
+            questions: request.questions,
+            assets: request.assets,
             apiKey: access.apiKey,
             api: access.api,
-            operation: request.operation.typeSafeValue
+            operation: request.operation
         )
 
-        var answers: [String: DecisionNoulAnswer] = [:]
+        var answers: [String: DecisionAnswer] = [:]
         answers.reserveCapacity(request.questions.count)
-        for questionID in request.questions.keys {
-            guard let answer = response.answers[questionID],
-                  answer.type == "noul",
-                  let probability = answer.noul,
-                  probability.isFinite,
-                  (0...1).contains(probability)
+        for (questionID, question) in request.questions {
+            guard let answer = response.answers[questionID], answer.matches(question)
             else {
                 throw TypeSafeClientError.invalidAnswer(questionID: questionID)
             }
-            answers[questionID] = DecisionNoulAnswer(probability: probability)
+            answers[questionID] = answer
         }
-        return DecisionEvaluationResponse(answers: answers)
+        return DecisionEvaluationResponse(answers: answers, model: response.model ?? access.modelID, usage: response.usage)
     }
 
     // MARK: - 凭据 / 模型解析
@@ -169,33 +158,5 @@ final class JevDecisionEngine: DecisionEngineProviding {
     private static func resolvedNativeModelID(settings: AppSettings) -> String {
         let trimmed = settings.typesafeModelID.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? defaultModelID : trimmed
-    }
-}
-
-private extension DecisionQuestionInstructions {
-    var typeSafeValue: TypeSafeQuestionInstructions {
-        switch self {
-        case .text(let value):
-            return .text(value)
-        case .object(let value):
-            return .object(value)
-        }
-    }
-}
-
-private extension DecisionEvaluationOperation {
-    var typeSafeValue: TypeSafeEvaluationOperation {
-        switch self {
-        case .unspecified:
-            return .unspecified
-        case .githubListGrouping:
-            return .githubListGrouping
-        case .tagReuse:
-            return .tagReuse
-        case .connectionTest:
-            return .connectionTest
-        case .searchIntent:
-            return .searchIntent
-        }
     }
 }

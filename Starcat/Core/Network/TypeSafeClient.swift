@@ -5,8 +5,7 @@
 //  TypeSafe AI(Jev)结构化决策 REST 客户端 —— 实验性功能(Labs)。
 //
 //  设计约束:
-//  - Jev 不是 LLM:不生成文本,只对结构化 state 回答类型化问题(Noul 二元概率 /
-//    Choice 多选一),本客户端只覆盖 POC 需要的 Noul 原语与通用请求骨架;
+//  - Jev 对结构化 state 回答类型化问题，直接复用 App 的 System One 契约；
 //  - 官方只有 Python / TypeScript SDK,Swift 侧按 `OpenSSFScoreAPI` 的独立公开
 //    API actor 模板手写:自带 URLSession、领域错误枚举,不复用 GitHubAPIClient;
 //  - 瞬时传输失败、408、429 与 5xx 的退避重试收口在本 actor 内；上层队列不再
@@ -16,7 +15,7 @@
 //
 //  已知坑(来自官方 docs.typesafe.ai/models):
 //  - `jev-latest` alias 会随版本漂移,阈值调好后行为可能被 silently 改变;
-//    调用方应使用固定版本 ID(如 jev-1.13.0);
+//    调用方应使用固定版本 ID;
 //  - 限流(429)动态变化且可能不经通知调整,重试必须尊重 Retry-After。
 //
 
@@ -94,7 +93,7 @@ extension TypeSafeClientError: LocalizedError {
         case let .decoding(message):
             return "Jev decision API response decoding failed: \(message)"
         case let .invalidAnswer(questionID):
-            return "Jev decision API returned an invalid Noul answer for \(questionID)"
+            return "Jev decision API returned an invalid answer for \(questionID)"
         }
     }
 }
@@ -106,95 +105,13 @@ extension TypeSafeClientError: LocalizedError {
 private struct TypeSafeSystemOneRequestBody<State: Encodable>: Encodable {
     let state: State
     let model: String
-    let questions: [String: TypeSafeQuestion]
-}
-
-/// Noul(true/false 语义)问题的可选判据。
-///
-/// criteria 不填时由模型按 instructions 自行解释;填上后概率语义被钉死,
-/// 官方 cookbook(如 rerank)推荐显式给 true/false 描述以保证跨请求可比。
-struct TypeSafeNoulCriteria: Encodable, Equatable {
-    var `true`: String?
-    var `false`: String?
-
-    init(true: String?, false: String?) {
-        self.true = `true`
-        self.false = `false`
-    }
-}
-
-/// TypeSafe question 的 instructions 既可以是普通文本，也可以是结构化对象。
-///
-/// 业务字段来自用户配置时使用 object，把固定问题与动态数据分开编码，避免引号、换行或
-/// 类似指令的内容破坏问题边界。当前 Starcat 只需要字符串键值，不提前实现任意 JSON 树。
-enum TypeSafeQuestionInstructions: Encodable, Equatable, ExpressibleByStringLiteral {
-    case text(String)
-    case object([String: String])
-
-    init(stringLiteral value: String) {
-        self = .text(value)
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case .text(let value):
-            try container.encode(value)
-        case .object(let value):
-            try container.encode(value)
-        }
-    }
-}
-
-/// 问题原语。POC 只实现 Noul(独立二元隶属判断,天然支持「零或多个」语义);
-/// Choice / Score 留待后续按需补充,不预先铺代码。
-enum TypeSafeQuestion: Encodable, Equatable {
-    case noul(instructions: TypeSafeQuestionInstructions, criteria: TypeSafeNoulCriteria?)
-
-    private enum CodingKeys: String, CodingKey {
-        case type
-        case instructions
-        case criteria
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        switch self {
-        case let .noul(instructions, criteria):
-            try container.encode("noul", forKey: .type)
-            try container.encode(instructions, forKey: .instructions)
-            // criteria 整体可省;给出时 true/false 各自可省。
-            if let criteria {
-                try container.encode(criteria, forKey: .criteria)
-            }
-        }
-    }
+    let questions: [String: DecisionQuestion]
+    let assets: [String: DecisionImageAsset]?
 }
 
 // MARK: - 响应 DTO
 
-/// `POST /v1/systemone` 响应。
-///
-/// answers 以调用方自定义的 question id 为键;usage 只进入无业务正文的聚合诊断日志。
-struct TypeSafeSystemOneResponse: Decodable, Equatable {
-    let model: String?
-    let answers: [String: TypeSafeAnswer]
-    let usage: TypeSafeUsage?
-}
-
-/// 单个问题的答案。
-///
-/// Noul 答案只有概率数值;官方文档注明 confidence 仅 Choice / Score 返回,
-/// 因此这里全部按可选解码,读取方各自判空。
-struct TypeSafeAnswer: Decodable, Equatable {
-    let type: String?
-    let noul: Double?
-    let choice: String?
-    let probabilities: [String: Double]?
-    let confidence: Double?
-}
-
-struct TypeSafeUsage: Decodable, Equatable {
+struct TypeSafeUsage: Codable, Equatable, Sendable {
     let inputTokens: Int?
     let outputTokens: Int?
 
@@ -205,14 +122,6 @@ struct TypeSafeUsage: Decodable, Equatable {
 }
 
 /// 聚合指标的固定业务分类。只允许代码内枚举值，禁止把用户输入作为日志维度。
-enum TypeSafeEvaluationOperation: String, Sendable {
-    case unspecified
-    case githubListGrouping = "github_list_grouping"
-    case tagReuse = "tag_reuse"
-    case connectionTest = "connection_test"
-    case searchIntent = "search_intent"
-}
-
 /// Jev 结构化决策的承载 API。
 ///
 /// 两条路径共享请求 / 响应协议，但 URL 与模型命名空间不同；用枚举让调用方显式选择，
@@ -285,16 +194,17 @@ actor TypeSafeClient {
     func evaluate<State: Encodable>(
         state: State,
         model: String,
-        questions: [String: TypeSafeQuestion],
+        questions: [String: DecisionQuestion],
+        assets: [String: DecisionImageAsset]? = nil,
         apiKey: String,
         api: TypeSafeDecisionAPI = .typeSafe,
-        operation: TypeSafeEvaluationOperation = .unspecified
-    ) async throws -> TypeSafeSystemOneResponse {
+        operation: DecisionEvaluationOperation = .unspecified
+    ) async throws -> DecisionEvaluationResponse {
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedKey.isEmpty else { throw TypeSafeClientError.missingAPIKey }
 
         let data = try encoder.encode(
-            TypeSafeSystemOneRequestBody(state: state, model: model, questions: questions)
+            TypeSafeSystemOneRequestBody(state: state, model: model, questions: questions, assets: assets)
         )
 
         // 两种 API 的 URL 都来自 AppEndpoints；基底可注入，测试能拦截两条路径，
@@ -313,6 +223,9 @@ actor TypeSafeClient {
         request.httpMethod = "POST"
         request.httpBody = data
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if api == .typeSafe, assets != nil || questions.values.contains(where: { $0.type == .box }) {
+            request.setValue("true", forHTTPHeaderField: "TypeSafe-Danger-Zone-Images")
+        }
         request.setValue("Bearer \(trimmedKey)", forHTTPHeaderField: "Authorization")
         request.setValue("Starcat/1.0", forHTTPHeaderField: "User-Agent")
 
@@ -350,8 +263,8 @@ actor TypeSafeClient {
         _ request: URLRequest,
         questionCount: Int,
         api: TypeSafeDecisionAPI,
-        operation: TypeSafeEvaluationOperation
-    ) async throws -> TypeSafeSystemOneResponse {
+        operation: DecisionEvaluationOperation
+    ) async throws -> DecisionEvaluationResponse {
         let startedAt = ContinuousClock.now
         var attemptCount = 0
         var failureCount = 0
@@ -417,7 +330,7 @@ actor TypeSafeClient {
     private static func logRequestMetrics(
         outcome: String,
         api: TypeSafeDecisionAPI,
-        operation: TypeSafeEvaluationOperation,
+        operation: DecisionEvaluationOperation,
         startedAt: ContinuousClock.Instant,
         questionCount: Int,
         attemptCount: Int,
@@ -461,10 +374,10 @@ actor TypeSafeClient {
         }
     }
 
-    private func sendOnce(_ request: URLRequest) async throws -> TypeSafeSystemOneResponse {
+    private func sendOnce(_ request: URLRequest) async throws -> DecisionEvaluationResponse {
         let data = try await sendData(request)
         do {
-            return try decoder.decode(TypeSafeSystemOneResponse.self, from: data)
+            return try decoder.decode(DecisionEvaluationResponse.self, from: data)
         } catch {
             throw TypeSafeClientError.decoding(error.localizedDescription)
         }

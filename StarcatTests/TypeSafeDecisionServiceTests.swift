@@ -68,7 +68,7 @@ struct TypeSafeClientTests {
             state: State(name: "starcat"),
             model: "jev-1.13.0",
             questions: [
-                "q1": .noul(instructions: "Is it software?", criteria: TypeSafeNoulCriteria(true: "yes", false: "no"))
+                "q1": .noul(instructions: "Is it software?", criteria: DecisionNoulCriteria(true: "yes", false: "no"))
             ],
             apiKey: "tsk-test"
         )
@@ -170,6 +170,90 @@ struct TypeSafeClientTests {
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer sk-or-test")
         let body = try JSONSerialization.jsonObject(with: #require(request.httpBody)) as? [String: Any]
         #expect(body?["model"] as? String == "typesafe/jev-1.14")
+    }
+
+    @Test("System One 完整题型混合批次使用统一 JSON 契约")
+    func mixedQuestionContract() async throws {
+        let client = makeClient()
+        URLProtocolStub.requestHandler = { request in
+            self.response(for: request, status: 200, body: """
+            {
+              "model": "jev-1.14.0",
+              "answers": {
+                "n": { "type": "noul", "noul": 0.91 },
+                "c": {
+                  "type": "choice", "choice": "calm", "confidence": 0.82,
+                  "probabilities": { "angry": 0.08, "calm": 0.82, "excited": 0.1 }
+                },
+                "s": {
+                  "type": "score", "score": 1.2, "confidence": 0.7,
+                  "legend": { "0": "low", "1": "medium", "2": "high" },
+                  "probabilities": { "0": 0.2, "1": 0.6, "2": 0.2 }
+                },
+                "b": {
+                  "type": "box", "confidence": null,
+                  "box": { "top": 0.1, "bottom": 0.8, "left": 0.2, "right": 0.7 }
+                }
+              },
+              "usage": { "input_tokens": 321, "output_tokens": 54 }
+            }
+            """)
+        }
+
+        let imageData = Data([
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+            0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+            0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+            0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+            0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+            0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
+        ]).base64EncodedString()
+
+        let response = try await client.evaluate(
+            state: AgentJSONValue.object(["image": .string("photo")]),
+            model: "jev-1.14.0",
+            questions: [
+                "n": .noul(instructions: "Is this a support request?", criteria: nil),
+                "c": DecisionQuestion(
+                    type: .choice,
+                    instructions: .string("What is the tone?"),
+                    criteria: .object([
+                        "angry": .string("An upset message"),
+                        "calm": .string("A polite message"),
+                        "excited": .string("An eager message"),
+                    ])
+                ),
+                "s": DecisionQuestion(
+                    type: .score,
+                    instructions: .string("How urgent is it?"),
+                    criteria: .array([.string("low"), .string("medium"), .string("high")])
+                ),
+                "b": DecisionQuestion(
+                    type: .box,
+                    instructions: .string("Locate the target in image."),
+                    criteria: nil
+                ),
+            ],
+            assets: ["photo": DecisionImageAsset(type: "image", format: "png", dataBase64: imageData)],
+            apiKey: "tsk-test"
+        )
+
+        let request = try #require(URLProtocolStub.receivedRequests.first)
+        #expect(request.value(forHTTPHeaderField: "TypeSafe-Danger-Zone-Images") == "true")
+        let body = try JSONSerialization.jsonObject(with: #require(request.httpBody)) as? [String: Any]
+        let questions = try #require(body?["questions"] as? [String: Any])
+        #expect((questions["s"] as? [String: Any])?["criteria"] as? [String] == ["low", "medium", "high"])
+        #expect((questions["b"] as? [String: Any])?["criteria"] == nil)
+        let assets = try #require(body?["assets"] as? [String: Any])
+        #expect((assets["photo"] as? [String: Any])?["data_base64"] as? String == imageData)
+
+        #expect(response.answers["n"]?.noul == 0.91)
+        #expect(response.answers["c"]?.choice == "calm")
+        #expect(response.answers["s"]?.score == 1.2)
+        #expect(response.answers["s"]?.legend == AgentJSONValue.object([
+            "0": .string("low"), "1": .string("medium"), "2": .string("high")
+        ]))
+        #expect(response.answers["b"]?.box == DecisionAnswer.Box(top: 0.1, bottom: 0.8, left: 0.2, right: 0.7))
     }
 
     @Test("无 criteria 的 Noul 问题不编码 criteria 键")
@@ -305,6 +389,111 @@ struct TypeSafeClientTests {
             )
         }
         #expect(URLProtocolStub.receivedRequests.count == 1)
+    }
+}
+
+// MARK: - System One 输入与答案校验
+
+@Suite("DecisionSystemOne contract")
+struct DecisionSystemOneTests {
+    private func decode(_ json: String) throws -> DecisionSystemOneInput {
+        try JSONDecoder().decode(DecisionSystemOneInput.self, from: Data(json.utf8))
+    }
+
+    @Test("混合题型转换成统一执行请求并忽略请求模型选型")
+    func evaluationRequestKeepsWireFields() throws {
+        let input = try decode("""
+        {
+          "model": "caller-compatible-model",
+          "state": { "text": "checkout is blank", "image": "photo" },
+          "questions": {
+            "bug": { "type": "noul", "instructions": "Is this a bug?", "criteria": { "true": "broken behavior" } },
+            "team": { "type": "choice", "instructions": "Which team?", "criteria": { "frontend": "rendering" } },
+            "urgency": { "type": "score", "instructions": "How urgent?", "criteria": ["normal", "high"] }
+          },
+          "assets": {
+            "photo": { "type": "image", "format": "png", "data_base64": "iVBORw0KGgo=" }
+          }
+        }
+        """)
+
+        let request = try input.evaluationRequest()
+        #expect(request.operation == .external)
+        #expect(Set(request.assets?.keys.map { $0 } ?? []) == ["photo"])
+        #expect(request.questions["team"]?.criteria == AgentJSONValue.object(["frontend": .string("rendering")]))
+    }
+
+    @Test("非法 model、criteria、图片与 box 组合在执行前拒绝")
+    func rejectsInvalidInputBeforeExecution() throws {
+        let invalidBodies = [
+            #"{"model":"","state":"text","questions":{"q":{"type":"noul"}}}"#,
+            #"{"model":"m","state":"text","questions":{"q":{"type":"choice","criteria":{}}}}"#,
+            #"{"model":"m","state":"text","questions":{"q":{"type":"score","criteria":[]}}}"#,
+            #"{"model":"m","state":"text","questions":{"q":{"type":"box"}}}"#,
+            #"{"model":"m","state":"text","questions":{"q":{"type":"noul"}},"assets":{}}"#,
+            #"{"model":"m","state":"text","questions":{"q":{"type":"noul"}},"assets":{"a":{"type":"image","format":"png","data_base64":"!"}}}"#,
+            #"{"model":"m","state":"text","questions":{"q":{"type":"noul"}},"assets":{"unused":{"type":"image","format":"png","data_base64":"iVBORw0KGgo="}}}"#
+        ]
+        for body in invalidBodies {
+            let input = try decode(body)
+            #expect(throws: DecisionInputError.self) {
+                _ = try input.evaluationRequest()
+            }
+        }
+    }
+
+    @Test("答案必须匹配题目封闭集、范围与 score legend")
+    func answerValidation() throws {
+        let choice = DecisionQuestion(
+            type: .choice,
+            instructions: .string("tone"),
+            criteria: .object(["calm": .string("polite")])
+        )
+        let score = DecisionQuestion(
+            type: .score,
+            instructions: .string("urgency"),
+            criteria: .array([.string("low"), .string("high")])
+        )
+        let box = DecisionQuestion(type: .box, instructions: .string("target"), criteria: nil)
+
+        let validChoice = DecisionAnswer(
+            type: "choice", choice: "calm", confidence: 0.9, probabilities: ["calm": 1]
+        )
+        let validScore = DecisionAnswer(
+            type: "score",
+            score: 1,
+            confidence: 0.8,
+            probabilities: ["0": 0, "1": 1],
+            legend: .object(["0": .string("low"), "1": .string("high")])
+        )
+        let validBox = DecisionAnswer(
+            type: "box",
+            box: DecisionAnswer.Box(top: 0, bottom: 1, left: 0, right: 1),
+            confidence: nil
+        )
+        let outOfRangeChoice = DecisionAnswer(
+            type: "choice", choice: "missing", confidence: 0.9, probabilities: ["calm": 1]
+        )
+        let wrongLegendScore = DecisionAnswer(
+            type: "score",
+            score: 1,
+            confidence: 0.8,
+            probabilities: ["0": 0, "1": 1],
+            legend: .object(["0": .string("wrong"), "1": .string("high")])
+        )
+        let invalidBox = DecisionAnswer(
+            type: "box",
+            box: DecisionAnswer.Box(top: 0.8, bottom: 0.1, left: 0.1, right: 0.9),
+            confidence: nil
+        )
+
+        #expect(validChoice.matches(choice))
+        #expect(validScore.matches(score))
+        #expect(validBox.matches(box))
+        #expect(!outOfRangeChoice.matches(choice))
+        #expect(!wrongLegendScore.matches(score))
+        #expect(!invalidBox.matches(box))
+        #expect(!DecisionAnswer(type: "refusal").matches(box))
     }
 }
 
