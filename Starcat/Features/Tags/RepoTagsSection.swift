@@ -829,6 +829,7 @@ struct TagChip: View {
             }
             Text(verbatim: tag.name)
                 .font(.caption)
+                .foregroundStyle(.primary)
                 .lineLimit(1)
             if removable, let onRemove {
                 Button {
