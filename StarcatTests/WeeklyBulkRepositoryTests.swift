@@ -181,7 +181,9 @@ struct WeeklyBulkRepositoryTests {
             languageStore: WeeklyLanguageStore(api: api), bulkRepository: repository,
             hiddenSources: injectAtCreation ? hidden : []
         )
+        #expect(model.showsPresentationSkeleton)
         await model.loadForPresentation(hiddenSources: hidden)
+        #expect(!model.showsPresentationSkeleton)
         #expect(model.hiddenSources == hidden)
         #expect(Set(model.items.map(\.fullName)) == ["owner/weekly", "owner/shared"])
         #expect(model.total == 2)
@@ -346,6 +348,7 @@ struct WeeklyBulkRepositoryTests {
         model.changeHiddenSources(to: hidden.union(["hellogithub", "future-source"]))
         await allowWeeklyFilterTaskToFinish()
         #expect(model.items.isEmpty)
+        #expect(!model.showsPresentationSkeleton)
         #expect(model.total == 0)
         #expect(selection.total == 0)
         model.resetFilters()
