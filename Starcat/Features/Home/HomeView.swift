@@ -1493,7 +1493,7 @@ struct HomeView: View {
                 .allowsHitTesting(!isDailyRadarPreviewPresented)
                 .accessibilityHidden(isDailyRadarPreviewPresented)
         }
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage == .insights)
         .navigationSplitViewColumnWidth(
             min: contentColumnWidths.min,
             ideal: contentColumnWidths.ideal,

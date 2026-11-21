@@ -1488,12 +1488,7 @@ struct RepoListView: View {
         return "\(selection.fullName)|\(repoIdentity)"
     }
 
-    /// 中栏主体内容。
-    ///
-    /// 单独抽出是为了让 root page 分支保持清晰；
-    /// Manage 内部 `List` 仍用 `itemsRevision` 重建快照，避免排序/过滤时几千行逐个 move；
-    /// row 只做可视区域内的轻量 reveal。缓存命中分类不再跳过 row reveal：
-    /// 保留行级 0.22s 动画不会回到整栏卡顿，同时能恢复列表加载的生命感。
+    /// 顶级页签共享固定尺寸的中栏，分类切换在各页签的内容区处理。
     @ViewBuilder
     private var contentBody: some View {
         @Bindable var vm = viewModel
@@ -1522,7 +1517,7 @@ struct RepoListView: View {
                     onRepoCountChange: { navigationMetrics.applyTrendingRepoCount($0) },
                     onLinuxDoRepoCountChange: { navigationMetrics.applyLinuxDoRepoCount($0) }
                 )
-                .transition(.opacity)
+                .transition(MiddleListPageFade())
             } else if selectedPage == .activity {
                 ActivityView(
                     viewModel: $activityViewModel,
@@ -1540,14 +1535,14 @@ struct RepoListView: View {
                         }
                     }
                 )
-                .transition(.opacity)
+                .transition(MiddleListPageFade())
             } else {
                 // Manage：顶栏（排序 + 同步）始终可见，排序作用于当前侧边栏分类子集。
                 manageCategoryContent(vm)
-                    .transition(.opacity)
+                    .transition(MiddleListPageFade())
             }
         }
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: selectedPage)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: selectedPage)
     }
 
     /// 账号 / 用户数据库边界必须硬失效，禁止跨用户复用 Explore / Activity 快照。
@@ -1599,31 +1594,27 @@ struct RepoListView: View {
             Group {
                 if viewModel.selection.isSmartCollectionsSurface {
                     SmartCollectionsOverviewView()
-                } else if viewModel.isGitHubStarListSwitchLoading && viewModel.items.isEmpty {
-                    // 无缓存瞬切：空白会闪一帧「什么都没有」，与 VM 注释里的骨架屏意图对齐。
-                    RepoSkeletonListView(rowCount: 10)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if shouldShowInitialStarsLoading {
-                    // 首次 stars 同步尚未写入列表时，与分类切换同款骨架，不用 ProgressView。
-                    RepoSkeletonListView(rowCount: 10)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if viewModel.isLoading && viewModel.items.isEmpty {
-                    RepoSkeletonListView(rowCount: 10)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let error = viewModel.loadError, viewModel.items.isEmpty {
-                    emptyState(systemImage: "exclamationmark.triangle", title: "error.loadFailed", subtitleText: error)
-                } else if viewModel.items.isEmpty {
-                    if selectedPage == .manage,
-                       viewModel.selection == .githubStarListUngrouped || viewModel.selection == .untagged {
-                        // 分类数量变成 0 也不能隐藏正在应用或待确认的任务入口。
-                        listWithOptionalBanner {
-                            emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
-                        }
-                    } else {
-                        emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
-                    }
                 } else {
-                    listWithOptionalBanner { unifiedListContent($bindableVM.selectedRepoID) }
+                    MiddleListPresentation(
+                        showsSkeleton: shouldShowInitialStarsLoading || (viewModel.isLoading && viewModel.items.isEmpty),
+                        rowCount: 10
+                    ) {
+                        if let error = viewModel.loadError, viewModel.items.isEmpty {
+                            emptyState(systemImage: "exclamationmark.triangle", title: "error.loadFailed", subtitleText: error)
+                        } else if viewModel.items.isEmpty {
+                            if selectedPage == .manage,
+                               viewModel.selection == .githubStarListUngrouped || viewModel.selection == .untagged {
+                                // 分类数量变成 0 也不能隐藏正在应用或待确认的任务入口。
+                                listWithOptionalBanner {
+                                    emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
+                                }
+                            } else {
+                                emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
+                            }
+                        } else {
+                            listWithOptionalBanner { unifiedListContent($bindableVM.selectedRepoID) }
+                        }
+                    }
                 }
             }
             .overlay(alignment: .top) {

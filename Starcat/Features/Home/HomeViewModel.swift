@@ -97,20 +97,16 @@ final class HomeViewModel {
                 DispatchQueue.main.async { [weak self] in
                     self?.skipListRowReveal = false
                 }
-            } else if isGitHubStarListSwitchLoading {
-                isGitHubStarListSwitchLoading = false
             }
-
             if effectiveGlobalFilterState.wikiAvailabilityFilter == .unknown,
                !effectiveGlobalFilterState.hasInsightsDrillDownFilters,
-               let cached = listCache[selection], !cached.isExpired {
-                if isGitHubStarListSwitchLoading { isGitHubStarListSwitchLoading = false }
+               let cached = listCache[selection] {
                 self.rawItems = cached.rawItems
                 self.statusMap = cached.statusMap
                 self.libraryStateMap = cached.libraryStateMap
                 self.applyView()             // items / itemsRevision 同步就位
                 if self.isLoading { self.isLoading = false }
-                if self.isRefreshing { self.isRefreshing = false }    // 只用缓存瞬切；真实变更路径再显式 force refresh。
+                isRefreshing = cached.isExpired
                 if self.loadError != nil { self.loadError = nil }
                 #if DEBUG
                 AppLog.ui.notice("[switch-cat] T0' eager cache load done (items=\(self.items.count)) +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
@@ -124,29 +120,15 @@ final class HomeViewModel {
                 AppLog.ui.notice("[switch-cat] T0' eager DB snapshot load done (items=\(self.items.count)) +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
                 #endif
             } else if isKnownEmptyGitHubStarListSelection {
-                if isGitHubStarListSwitchLoading { isGitHubStarListSwitchLoading = false }
                 // Sidebar 计数已经确认目标分组为空时，立即进入空态，避免先渲染上一组 repo。
                 reloadCoordinator.cancelAll()
-                rawItems = []
-                filteredSorted = []
-                visibleRepoTotalCount = 0
-                currentPage = 1
-                hasMore = false
-                statusMap = [:]
-                libraryStateMap = [:]
-                if !items.isEmpty {
-                    items = []
-                    itemsRevision &+= 1
-                }
+                clearCategoryItems()
                 if self.isLoading { self.isLoading = false }
                 if self.isRefreshing { self.isRefreshing = false }
                 if self.loadError != nil { self.loadError = nil }
             } else {
-                if selection.isGitHubStarListContext {
-                    isGitHubStarListSwitchLoading = true
-                }
-                // 无缓存或过期 → 切到骨架屏，等 reloadItems 拉新数据。
-                // 这里同步设 isLoading=true，避免「先渲列表壳一帧再渲骨架屏」的闪烁。
+                // 旧分类的行不能充当新分类的刷新快照。同步撤掉旧行，冷加载失败也能进入错误态。
+                clearCategoryItems()
                 if !self.isLoading { self.isLoading = true }
                 if self.isRefreshing { self.isRefreshing = false }
                 if self.loadError != nil { self.loadError = nil }
@@ -156,6 +138,21 @@ final class HomeViewModel {
             if !searchQuery.isEmpty { searchQuery = "" }
             // 切换分类时清除临时置顶卡片：置顶语义只对「定位时所在分类」的列表有意义。
             temporaryPinnedRepo = nil
+        }
+    }
+
+    /// 分类缺少可展示快照时使行、总量与分页游标同时失效，同分类刷新不走这里。
+    private func clearCategoryItems() {
+        rawItems = []
+        filteredSorted = []
+        visibleRepoTotalCount = 0
+        currentPage = 1
+        hasMore = false
+        statusMap = [:]
+        libraryStateMap = [:]
+        if !items.isEmpty {
+            items = []
+            itemsRevision &+= 1
         }
     }
 
@@ -220,12 +217,6 @@ final class HomeViewModel {
     /// DB 分页通常几十毫秒内返回；如果此时整页 row 随 `itemsRevision` 重播 opacity reveal，
     /// 用户会看到明显闪烁。这个旁路只覆盖仓库分组切换，排序 / 过滤仍保留原快照动画。
     private(set) var skipListRowReveal = false
-
-    /// GitHub Stars List 分组切换期间的短暂占位状态。
-    ///
-    /// 从 0 repo 分组切到有数据分组时，`items` 在 DB 返回前仍为空；若直接走通用 loading
-    /// 分支会闪一下骨架屏 / 空态。这里让 View 层显示透明占位，等 rows 到位后直接显示列表。
-    private(set) var isGitHubStarListSwitchLoading = false
 
     /// R-07（2026-06-15）：客户端分页 —— 当前已展示到第几页（1-based）。
     /// `items.count` ≈ `currentPage * pageSize`（最后一页可能不足）。
@@ -3071,12 +3062,7 @@ final class HomeViewModel {
                 // statusMap），则**只更新底层 rawItems / statusMap 引用，不调用 applyView**。
                 //
                 // 为什么这样做：
-                // - applyView 会无条件 `itemsRevision += 1`，这会触发：
-                //   ① `RepoListView.contentAnimationID` 变化 → 外层 `.transition` 重跑 0.22s 动画
-                //   ② 旧实现的 `List.id(itemsRevision)` → 完整重建 1800+ 行 View tree（~100ms）
-                //   ③ 每行 `listRowReveal` 重新走 0.22s stagger 入场动画
-                // - 用户感受：缓存命中分类后 ~140ms 看到数据，然后 ~735ms（bg fetch 完成）又跑一遍同样
-                //   的动画，叠加感受 ~1s 卡顿，但其实数据没变。
+                // - 保留快照和 revision 能让内存分页列表维持身份，避免相同结果重建列表或重读行徽标。
                 //
                 // 比较策略（fail-fast）：先比 ID 序列长度，再 zip 比每个 ID。statusMap 字典等值用 ==。
                 // 这两步对 1800+ 条数据测下来 < 5ms，远低于一次 applyView + UI 重建的代价。
@@ -3322,10 +3308,6 @@ final class HomeViewModel {
             else { return }
             self.isLoading = false
             self.isRefreshing = false
-            if self.isGitHubStarListSwitchLoading {
-                self.isGitHubStarListSwitchLoading = false
-            }
-
             switch result {
             case .success(let (
                 rowsWithSentinel,

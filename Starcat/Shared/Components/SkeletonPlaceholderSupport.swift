@@ -146,12 +146,19 @@ struct ListLoadingSkeleton: View {
     var rowCount = 6
     var rowHeight: CGFloat = 44
     var showsIcon = true
+    var showsSectionHeader = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let palette = SkeletonPalette.forColorScheme(colorScheme)
         SkeletonAnimatedPhase { phase in
             VStack(spacing: 0) {
+                if showsSectionHeader {
+                    SkeletonBlock(width: 48, height: 10, phase: phase, palette: palette)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                }
                 ForEach(0..<rowCount, id: \.self) { index in
                     HStack(spacing: 10) {
                         if showsIcon {
