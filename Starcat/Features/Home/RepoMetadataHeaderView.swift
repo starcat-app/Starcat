@@ -315,6 +315,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
                 isStarred: repo.isStarred,
                 count: repo.starsCount,
                 ghRepoId: repo.id,
+                repoFullName: repo.fullName,
                 helpKey: starHelpKey,
                 action: onStarTapped
             )
@@ -1193,6 +1194,7 @@ private extension Repo {
 struct RepoStatItem: View {
     let label: LocalizedStringKey
     let value: Int
+    let introductionKey: RepoStatCountKey
     let businessIcon: BusinessIcon.Symbol
     let tint: Color
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -1202,8 +1204,7 @@ struct RepoStatItem: View {
             HStack(spacing: 4) {
                 BusinessIcon(businessIcon, pointSize: 14 * interfaceScale.multiplier)
                     .foregroundStyle(tint)
-                Text(value, format: .number)
-                    .monospacedDigit()
+                RepoMetadataCountLabel(count: value, introductionKey: introductionKey)
                     .font(interfaceScale.font(.bodyEmphasis, weight: .medium))
             }
             Text(label)

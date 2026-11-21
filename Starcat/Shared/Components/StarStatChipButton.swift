@@ -66,6 +66,7 @@ struct StarStatChipButton: View {
     let isStarred: Bool
     let count: Int
     let ghRepoId: Int64
+    let repoFullName: String
     let helpKey: LocalizedStringKey
 
     /// 点击后执行的异步闭包。
@@ -112,8 +113,7 @@ struct StarStatChipButton: View {
         VStack(alignment: .center, spacing: 2) {
             HStack(spacing: 4) {
                 iconOrSpinner
-                Text(displayedCount, format: .number)
-                    .monospacedDigit()
+                RepoMetadataCountLabel(count: displayedCount, introductionKey: .init(repoFullName, .stars))
                     .font(interfaceScale.font(.bodyEmphasis, weight: .medium))
             }
             Text("repo.stats.stars")
