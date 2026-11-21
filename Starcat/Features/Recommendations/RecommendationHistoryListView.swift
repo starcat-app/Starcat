@@ -31,8 +31,13 @@ struct RecommendationHistoryListView: View {
         VStack(spacing: 0) {
             filterBar
             Divider()
-            content
-                .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: store.hasLoadedState)
+            MiddleListPresentation(
+                showsSkeleton: accountID != nil
+                    && (store.errorKey == nil || store.hasLoadedState)
+                    && (!store.hasLoadedState || !model.hasPreparedHistory(for: scope))
+            ) {
+                content
+            }
         }
         .task(id: scope) {
             model.activate(scope: scope)
@@ -77,21 +82,16 @@ struct RecommendationHistoryListView: View {
         if accountID == nil {
             ContentUnavailableView("sidebar.loginPrompt", systemImage: "person.crop.circle")
         } else if !store.hasLoadedState {
-            if store.errorKey != nil {
-                ContentUnavailableView {
-                    Label("error.loadFailed", systemImage: "exclamationmark.triangle")
-                } actions: {
-                    Button("action.retry") {
-                        Task {
-                            guard let accountID else { return }
-                            await store.loadPreferences(accountID: accountID, scopeRevision: dependencies.databaseScopeRevision)
-                            rebuild()
-                        }
+            ContentUnavailableView {
+                Label("error.loadFailed", systemImage: "exclamationmark.triangle")
+            } actions: {
+                Button("action.retry") {
+                    Task {
+                        guard let accountID else { return }
+                        await store.loadPreferences(accountID: accountID, scopeRevision: dependencies.databaseScopeRevision)
+                        rebuild()
                     }
                 }
-            } else {
-                RepoSkeletonListView(rowCount: 8)
-                    .transition(.opacity)
             }
         } else {
             if store.errorKey == "recommendations.daily.saveFailed" {
@@ -111,7 +111,6 @@ struct RecommendationHistoryListView: View {
                 }
             } else {
                 historyList
-                    .transition(.opacity)
             }
         }
     }
