@@ -24,12 +24,13 @@ enum InsightsScope: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// 洞察中心左栏二级主题。
+/// 洞察左栏的页面入口，每项对应一张完整页面。
 enum InsightsTopic: String, CaseIterable, Identifiable, Sendable {
     case overview
     case organization
     case technology
     case health
+    case knowledgeProfile
 
     var id: String { rawValue }
 
@@ -39,16 +40,18 @@ enum InsightsTopic: String, CaseIterable, Identifiable, Sendable {
         case .organization: return "insights.topic.organization"
         case .technology:   return "insights.topic.technology"
         case .health:       return "insights.topic.health"
+        case .knowledgeProfile: return "insights.profile.title"
         }
     }
 
-    /// 主题图标来源：统一走 Lucide 业务资产（概览 dashboard / 组织 building / 技术 code / 健康 gauge）。
+    /// 复用原有洞察图标，画像沿用其原入口的书本图标。
     var iconSource: BusinessIcon.Source {
         switch self {
         case .overview:     return .business(.dashboard)
         case .organization: return .business(.organization)
         case .technology:   return .business(.codeContext)
         case .health:       return .business(.repositoryHealth)
+        case .knowledgeProfile: return .system("books.vertical")
         }
     }
 
@@ -59,6 +62,7 @@ enum InsightsTopic: String, CaseIterable, Identifiable, Sendable {
         case .organization: return .orange
         case .technology:   return .purple
         case .health:       return .pink
+        case .knowledgeProfile: return .indigo
         }
     }
 
@@ -68,166 +72,86 @@ enum InsightsTopic: String, CaseIterable, Identifiable, Sendable {
         case .organization: return "insights.topic.organization.subtitle"
         case .technology:   return "insights.topic.technology.subtitle"
         case .health:       return "insights.topic.health.subtitle"
+        case .knowledgeProfile: return "insights.profile.classification"
         }
     }
 
-    /// 当前主题在中栏展示的分析视图。每个主题都有自己的摘要入口，
-    /// 避免左栏和中栏同时出现两个语义不清的“概览”。
-    var contentSelections: [InsightsSelection] {
-        switch self {
-        case .overview:
-            return [.overviewSummary]
-        case .organization:
-            return [.organizationSummary]
-        case .technology:
-            return [.technologySummary, .languages, .topics, .licenses]
-        case .health:
-            return [.healthSummary]
-        }
-    }
+    /// 取旧中栏各页内容的并集。共用的统计区块只在同一页出现一次。
+    func dashboardSections(for scope: InsightsScope) -> [InsightsDashboardSection] {
+        let actionSections = InsightsActionID.allCases
+            .filter { $0.topic == self && $0.isAvailable(in: scope) }
+            .map(InsightsDashboardSection.action)
 
-    /// 当前主题下真正需要用户处理的集合。索引完整性属于知识整理，
-    /// 不归入“技术分布”；概览只提供一个聚合入口，避免重复列出全部动作。
-    func attentionSelections(for scope: InsightsScope) -> [InsightsSelection] {
         switch self {
         case .overview:
-            return [.allActions]
-        case .organization:
             return [
-                .untagged,
-                .unread,
-                .missingReadme,
-                .missingIndexableContent,
-                .indexIssues
-            ].filter { $0.isAvailable(in: scope) }
-        case .technology:
-            return []
-        case .health:
-            return [
-                .healthPending,
-                .openSSFPending,
-                .maintenanceRisk,
-                .securityRisk
+                .metrics, .rhythm, .organizationProgress, .knowledgeCoverage,
+                .priorityRepositories, .assetCleanup, .languages, .allActions, .healthCoverage
             ]
+        case .organization:
+            return [.organizationProgress, .rhythm, .knowledgeCoverage, .priorityRepositories, .assetCleanup]
+                + actionSections
+        case .technology:
+            return [.languages, .topics, .licenses]
+        case .health:
+            return [.healthCoverage] + actionSections
+        case .knowledgeProfile:
+            return []
         }
-    }
-
-    func selections(for scope: InsightsScope) -> [InsightsSelection] {
-        contentSelections + attentionSelections(for: scope)
-    }
-
-    var primarySelection: InsightsSelection {
-        contentSelections[0]
     }
 }
 
-/// 中栏当前选择的分析视图或待处理集合。
-///
-/// Selection 必须保持业务语义唯一，不能用同一个 `.summary` 代表四个主题的不同页面；
-/// 唯一 case 让三栏选择恢复、标题和 Detail 内容始终一一对应。
-enum InsightsSelection: String, CaseIterable, Identifiable, Sendable {
-    case overviewSummary
+/// 右侧统计页与首屏骨架共用区块顺序，待办的身份独立于实时数量。
+enum InsightsDashboardSection: Hashable, Sendable {
+    case metrics
+    case rhythm
+    case organizationProgress
+    case knowledgeCoverage
+    case priorityRepositories
+    case assetCleanup
+    case languages
+    case topics
+    case licenses
     case allActions
-    case organizationSummary
+    case healthCoverage
+    case action(InsightsActionID)
+}
+
+/// 待办项的稳定标识，用于分组展示及生成对应的 Manage 筛选。
+enum InsightsActionID: String, CaseIterable, Sendable {
     case untagged
     case unread
     case missingReadme
     case missingIndexableContent
     case indexIssues
-    case technologySummary
-    case languages
-    case topics
-    case licenses
-    case healthSummary
     case healthPending
     case openSSFPending
     case maintenanceRisk
     case securityRisk
 
-    var id: String { rawValue }
-
-    var titleKey: LocalizedStringKey {
-        switch self {
-        case .overviewSummary:        return "insights.selection.overviewSummary"
-        case .allActions:             return "insights.selection.allActions"
-        case .organizationSummary:    return "insights.selection.organizationSummary"
-        case .untagged:               return "insights.action.untagged"
-        case .unread:                 return "insights.action.unread"
-        case .missingReadme:          return "insights.action.missingReadme"
-        case .missingIndexableContent: return "insights.action.missingIndexableContent"
-        case .indexIssues:            return "insights.action.indexIssues"
-        case .technologySummary:      return "insights.selection.technologySummary"
-        case .languages:              return "insights.selection.languages"
-        case .topics:                 return "insights.selection.topics"
-        case .licenses:               return "insights.selection.licenses"
-        case .healthSummary:          return "insights.selection.healthSummary"
-        case .healthPending:          return "insights.action.healthPending"
-        case .openSSFPending:         return "insights.action.openSSFPending"
-        case .maintenanceRisk:        return "insights.action.maintenanceRisk"
-        case .securityRisk:           return "insights.action.securityRisk"
-        }
-    }
-
-    /// 分析入口与主侧栏共享业务语义；许可证必须走矢量资源，不能传给 SF Symbols。
     var iconSource: BusinessIcon.Source {
         switch self {
-        case .overviewSummary:         return .system("rectangle.3.group.fill")
-        case .allActions:              return .system("checklist")
-        case .organizationSummary:     return .system("chart.bar.xaxis")
         case .untagged:                return .business(.untagged)
         case .unread:                  return .system("book.closed.fill")
         case .missingReadme:           return .system("doc.questionmark.fill")
         case .missingIndexableContent: return .system("doc.text.magnifyingglass")
         case .indexIssues:             return .system("exclamationmark.magnifyingglass")
-        case .technologySummary:       return .system("chart.bar.fill")
-        case .languages:               return .business(.languages)
-        case .topics:                  return .system("square.grid.2x2.fill")
-        case .licenses:                return .business(.license)
-        case .healthSummary, .healthPending: return .business(.repositoryHealth)
+        case .healthPending:           return .business(.repositoryHealth)
         case .openSSFPending:          return .system("shield.lefthalf.filled")
         case .maintenanceRisk:         return .system("wrench.and.screwdriver.fill")
         case .securityRisk:            return .system("lock.trianglebadge.exclamationmark.fill")
         }
     }
 
-    var tintName: String {
-        switch self {
-        case .overviewSummary, .organizationSummary, .technologySummary, .healthSummary:
-            return "blue"
-        case .allActions:
-            return "purple"
-        case .untagged, .maintenanceRisk:
-            return "orange"
-        case .unread, .languages:
-            return "blue"
-        case .missingReadme, .missingIndexableContent, .licenses:
-            return "yellow"
-        case .indexIssues, .securityRisk:
-            return "red"
-        case .topics:
-            return "purple"
-        case .healthPending:
-            return "pink"
-        case .openSSFPending:
-            return "cyan"
-        }
-    }
-
     var topic: InsightsTopic {
         switch self {
-        case .overviewSummary, .allActions:
-            return .overview
-        case .organizationSummary,
-             .untagged,
+        case .untagged,
              .unread,
              .missingReadme,
              .missingIndexableContent,
              .indexIssues:
             return .organization
-        case .technologySummary, .languages, .topics, .licenses:
-            return .technology
-        case .healthSummary,
-             .healthPending,
+        case .healthPending,
              .openSSFPending,
              .maintenanceRisk,
              .securityRisk:
@@ -264,13 +188,12 @@ struct InsightsDistributionItem: Identifiable, Equatable, Sendable {
     let colorName: String
 }
 
-/// 需要处理的动作项。`selection` 是中栏下钻目标，不直接携带业务筛选闭包。
+/// 待办项包含统计值和展示说明，筛选条件由下钻路由统一生成。
 struct InsightsActionItem: Identifiable, Equatable, Sendable {
-    let id: InsightsSelection
+    let id: InsightsActionID
     let titleKey: String
     let detailKey: String
     let count: Int
-    let systemImage: String
     let tintName: String
 }
 

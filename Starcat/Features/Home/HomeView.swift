@@ -2,7 +2,7 @@
 //  HomeView.swift
 //  Starcat
 //
-//  登录后的主界面：NavigationSplitView 三栏。
+//  登录后的主界面：原生三栏承载仓库浏览，洞察与每日热点合用中右两栏。
 //
 //  布局（2026-06-23 调整 v11，默认外框约 1440×900，运行期硬下限仍为 content 1440×763）：
 //  Sidebar（240-320pt, ideal 260）│ RepoList（420-520pt, ideal 420）│ RepoDetail（自适应）
@@ -200,7 +200,7 @@ struct HomeView: View {
     /// 切换到 Trending 再回来时恢复，避免用户丢失浏览上下文。
     @State private var savedManageSelection: SidebarItem = .allStars
 
-    /// Tags 展开态提升到主窗口持有，跨窗口“查看标签”才能在导航后可靠展开该分组。
+    /// 跨窗口“查看标签”需要在进入星标后展开标签分组。
     @State private var tagsExpanded = false
 
     /// 去重「会话恢复 / 登录」激活路径：`handleAuthenticatedEntry` 在 onChange 与
@@ -224,13 +224,9 @@ struct HomeView: View {
     /// Activity 中栏当前选中的活动项，用于右侧详情页按类型分发。
     @State private var selectedActivityItem: ActivityItem?
 
-    /// 洞察中心保留二级主题、范围和中栏选择，跨顶级页面切换时不丢失浏览上下文。
+    /// 洞察下钻会切换到 Manage；主题与统计范围留在主窗口，返回时恢复原页。
     @State private var selectedInsightsTopic: InsightsTopic = .overview
     @State private var selectedInsightsScope: InsightsScope = .starred
-    @State private var selectedInsightsSelection: InsightsSelection = .overviewSummary
-    /// 仅协调洞察两栏顶栏的自然高度；不参与分栏宽度、选择或数据加载。
-    @State private var insightsHeaderHeight = InsightsColumnChrome.minimumHeaderHeight
-    /// 中栏和详情栏共用同一个快照状态，避免相同范围重复查询或短暂显示不同数字。
     @State private var myInsightsViewModel: MyInsightsViewModel
 
     /// W4 A2：TagManagementViewModel 实例，sheet 关掉再开时复用，
@@ -350,25 +346,17 @@ struct HomeView: View {
                 WorkspaceSceneWindowReader(reference: mainWindowReference, minimumContentSize: nil)
                     .frame(width: 0, height: 0)
             }
-            .onPreferenceChange(InsightsColumnHeaderHeightPreferenceKey.self) { contentHeight in
-                let height = InsightsColumnChrome.headerHeight(fitting: contentHeight)
-                if insightsHeaderHeight != height {
-                    insightsHeaderHeight = height
-                }
-            }
     }
 
     private var baseNavigation: AnyView {
-        // HomeView 的 modifier 链已经很长，新增后台任务监听后 Swift 6 容易在
-        // 巨型泛型链上 type-check 超时。分段 AnyView 只用于切断编译期泛型推断，
-        // 不改变三栏内容与状态流。
+        // 所有板块保留同一个分栏宿主。双栏页面只覆盖中右两栏，避免切换时重建侧栏和系统工具栏。
         AnyView(
             NavigationSplitView(columnVisibility: $columnVisibility) {
                 sidebarColumn
             } content: {
-                previewAwareContentColumn
+                anchoredContentColumn
             } detail: {
-                previewAwareDetailColumn
+                anchoredDetailColumn
             }
             .environment(viewModel)
             .environment(readmeVM)
@@ -377,7 +365,7 @@ struct HomeView: View {
     }
 
     private var navigationWithOverlays: AnyView {
-        AnyView(navigationWithDailyRadarPreview
+        AnyView(navigationWithContentWorkspace
         // 调试用：右上角浮动 W×H 胶囊，仅 DEBUG 包 + 设了 launch arg `-DebugLayoutOverlay YES` 时显示。
         // 详见 `Shared/Utilities/DebugFlags.swift` 的类型文档（含 Xcode Scheme / LLDB / defaults 三种切换方式）。
         .overlay(alignment: .topTrailing) {
@@ -386,7 +374,7 @@ struct HomeView: View {
             }
         }
         .overlayPreferenceValue(GettingStartedAnchorPreferenceKey.self) { anchors in
-            if !isDailyRadarPreviewPresented {
+            if !isContentWorkspacePresented {
                 gettingStartedOverlay(anchors: anchors)
             }
         }
@@ -401,9 +389,9 @@ struct HomeView: View {
         )
     }
 
-    /// 独立内容路由保持原仓库选择，退出后继续使用原有分栏状态。
-    private var isDailyRadarPreviewPresented: Bool {
-        showsDailyRadarPreview
+    /// 按当前板块判断覆盖层，切走探索时同步交接，不等待 `onChange` 清除日报标记。
+    private var isContentWorkspacePresented: Bool {
+        selectedSidebarPage == .insights || (selectedSidebarPage == .trending && showsDailyRadarPreview)
     }
 
     private var dailyRadarPreviewPresentation: Binding<Bool> {
@@ -422,7 +410,7 @@ struct HomeView: View {
     }
 
     @ViewBuilder
-    private var previewAwareContentColumn: some View {
+    private var anchoredContentColumn: some View {
         contentColumn
             .toast(
                 message: dailyRecommendationPreparationToast,
@@ -431,15 +419,15 @@ struct HomeView: View {
                 actionLabel: "common.cancel",
                 onAction: { showsDailyRecommendations = false }
             )
-            .anchorPreference(key: DailyRadarPreviewColumnAnchors.self, value: .bounds) {
+            .anchorPreference(key: MainWindowContentColumnAnchors.self, value: .bounds) {
                 [.content: $0]
             }
     }
 
     @ViewBuilder
-    private var previewAwareDetailColumn: some View {
+    private var anchoredDetailColumn: some View {
         detailColumn
-            .anchorPreference(key: DailyRadarPreviewColumnAnchors.self, value: .bounds) {
+            .anchorPreference(key: MainWindowContentColumnAnchors.self, value: .bounds) {
                 [.detail: $0]
             }
     }
@@ -447,7 +435,7 @@ struct HomeView: View {
     /// 两栏跨越不同 NavigationSplitView 宿主，必须在共同父层解析锚点后合并。
     /// 锚点只决定中右区域；窗口内的独立宿主将面板延伸至顶部并盖住该区域的 toolbar，
     /// 不改整窗 chrome / safe area，也不使用固定侧栏宽度或 toolbar 高度。
-    private var navigationWithDailyRadarPreview: AnyView {
+    private var navigationWithContentWorkspace: AnyView {
         AnyView(baseNavigation
             .disabled(showsFollowGraph || showsTagGraph)
             .accessibilityHidden(showsFollowGraph || showsTagGraph)
@@ -482,22 +470,16 @@ struct HomeView: View {
                     }
                 }
             }
-            .overlayPreferenceValue(DailyRadarPreviewColumnAnchors.self) { anchors in
+            .overlayPreferenceValue(MainWindowContentColumnAnchors.self) { anchors in
                 GeometryReader { proxy in
                     if let content = anchors[.content],
                        let detail = anchors[.detail] {
                         let bounds = proxy[content].union(proxy[detail])
-                        DailyRadarWindowOverlay(
-                            isPresented: showsDailyRadarPreview,
+                        MainWindowContentOverlay(
+                            isPresented: isContentWorkspacePresented,
                             reduceMotion: reduceMotion
                         ) {
-                            DailyRadarPreviewWorkspace(
-                                readmeTranslationService: dependencies.readmeTranslationService,
-                                model: dailyRadarModel,
-                                onExit: { showsDailyRadarPreview = false }
-                            )
-                            // overlay 不继承 baseNavigation 子树的环境，显式 Star 操作需要此宿主。
-                            .environment(viewModel)
+                            contentWorkspace
                         }
                         .frame(width: bounds.width, height: bounds.height)
                         .position(x: bounds.midX, y: bounds.midY)
@@ -510,6 +492,34 @@ struct HomeView: View {
                 }
             }
         )
+    }
+
+    @ViewBuilder
+    private var contentWorkspace: some View {
+        if selectedSidebarPage == .insights {
+            MyInsightsView(
+                topic: selectedInsightsTopic,
+                scope: $selectedInsightsScope,
+                viewModel: myInsightsViewModel,
+                openProfileRepository: openKnowledgeProfileRepository
+            )
+            .toast(
+                message: dailyRecommendationPreparationToast,
+                icon: "hourglass",
+                autoDismiss: false,
+                actionLabel: "common.cancel",
+                onAction: { showsDailyRecommendations = false }
+            )
+            .disabled(showsFollowGraph || showsTagGraph)
+            .accessibilityHidden(showsFollowGraph || showsTagGraph)
+        } else {
+            DailyRadarPreviewWorkspace(
+                readmeTranslationService: dependencies.readmeTranslationService,
+                model: dailyRadarModel,
+                onExit: { showsDailyRadarPreview = false }
+            )
+            .environment(viewModel)
+        }
     }
 
     /// 把全局搜索放进覆盖主窗口内容区的 child window，避免它和详情 README 共用 cursor rect。
@@ -1509,110 +1519,67 @@ struct HomeView: View {
             // 提供视觉承接；覆盖期间隔离鼠标、快捷键和辅助功能焦点。
             contentColumnBody
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .disabled(isDailyRadarPreviewPresented)
-                .allowsHitTesting(!isDailyRadarPreviewPresented)
-                .accessibilityHidden(isDailyRadarPreviewPresented)
+                .disabled(isContentWorkspacePresented)
+                .allowsHitTesting(!isContentWorkspacePresented)
+                .accessibilityHidden(isContentWorkspacePresented)
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage)
-        .navigationSplitViewColumnWidth(
-            min: contentColumnWidths.min,
-            ideal: contentColumnWidths.ideal,
-            max: contentColumnWidths.max
-        )
+        .navigationSplitViewColumnWidth(min: 420, ideal: 420, max: 520)
     }
 
-    /// 洞察中栏只承载少量分类，缩窄后把横向空间优先留给右侧数据面板。
-    ///
-    /// 其他页面仍需要容纳仓库列表、筛选和批量操作，因此继续使用原有范围，
-    /// 避免洞察的高密度布局选择改变主列表的尺寸契约。
-    private var contentColumnWidths: (min: CGFloat, ideal: CGFloat, max: CGFloat) {
-        if selectedSidebarPage == .insights {
-            return (min: 260, ideal: 260, max: 260)
-        }
-        return (min: 420, ideal: 420, max: 520)
-    }
-
-    /// 只用于洞察与其他顶级页面之间的切换。
-    ///
-    /// 中栏跨越洞察边界时会在同一帧改变宽度；旧页面若继续淡出，就会先按新宽度
-    /// 重排并出现卡片裁切。这里让旧页面立即移除，只保留新页面的进入动画。
-    /// 非洞察页面之间仍由 `detailContentTransition()` 负责原有转场。
-    private var insightsBoundaryTransition: AnyTransition {
-        let insertion: AnyTransition = reduceMotion
-            ? .opacity
-            : .opacity.combined(with: .offset(y: 14))
-        return .asymmetric(insertion: insertion, removal: .identity)
-    }
-
-    @ViewBuilder
     private var contentColumnBody: some View {
-        if selectedSidebarPage == .insights {
-            InsightsListView(
-                topic: $selectedInsightsTopic,
-                selection: $selectedInsightsSelection,
-                snapshot: myInsightsViewModel.snapshot,
-                headerHeight: insightsHeaderHeight
-            )
-            .transition(insightsBoundaryTransition)
-        } else {
-            // 外层只在进入/离开洞察时插入或移除；内层 ID 继续维持其他顶级页面
-            // 之间原有的淡入淡出，不把洞察的即时移除策略扩散出去。
-            ZStack(alignment: .topLeading) {
-                RepoListView(
-                    trendingRepository: trendingRepository,
-                    githubAPIClient: githubAPIClient,
-                    selectedPage: selectedSidebarPage,
-                    recommendationHistoryModel: recommendationHistoryModel,
-                    onShowDailyRecommendations: { showsDailyRecommendations = true },
-                    selectedExploreMode: $selectedExploreMode,
-                    selectedTrendingLanguage: $selectedTrendingLanguage,
-                    selectedTrendingRepoID: $selectedTrendingRepoID,
-                    selectedTrendingRepo: $selectedTrendingRepo,
-                    selectedDiscoveryLanguage: $selectedDiscoveryLanguage,
-                    selectedDiscoveryTopic: $selectedDiscoveryTopic,
-                    selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
-                    selectedDiscoveryRepoID: $selectedDiscoveryRepoID,
-                    selectedDiscoveryRepo: $selectedDiscoveryRepo,
-                    selectedWeeklyLanguage: $selectedWeeklyLanguage,
-                    selectedActivityCategory: $selectedActivityCategory,
-                    selectedActivityItem: $selectedActivityItem,
-                    undoStarAutoSelectRequestID: undoStarAutoSelectRequestID,
-                    onStartBatchAI: {
-                        requestBatchAIOptions(scope: .allUntagged)
-                    },
-                    onStartSelectedBatchAI: { repositories in
-                        Task {
-                            await requestSelectedBatchAIOptions(repositories: repositories)
-                        }
-                    },
-                    onStartSelectedGitHubStarListAIGrouping: { repositories in
-                        startSelectedGitHubStarListAIGrouping(repositories: repositories)
-                    },
-                    onShowBatchAIPanel: {
-                        presentBatchAIProgress()
-                    },
-                    onStartGitHubStarListAIGrouping: {
-                        startGitHubStarListAIGrouping()
-                    },
-                    onOpenSearchCenter: { scope in
-                        presentSearchCenterForGettingStarted(scope: scope)
-                    },
-                    onOpenKnowledgeRAGWorkspace: {
-                        openKnowledgeRAGWorkspaceForGettingStarted()
-                    },
-                    onOpenCompanionRepo: { repo in
-                        openCompanionRepository(repo)
-                    },
-                    onGenerateCompanionSummary: { repo in
-                        openCompanionRepository(repo, generateSummary: true)
-                    },
-                    onReturnToInsights: {
-                        selectSidebarRootPage(.insights)
-                    }
-                )
+        RepoListView(
+            trendingRepository: trendingRepository,
+            githubAPIClient: githubAPIClient,
+            selectedPage: selectedSidebarPage,
+            recommendationHistoryModel: recommendationHistoryModel,
+            onShowDailyRecommendations: { showsDailyRecommendations = true },
+            selectedExploreMode: $selectedExploreMode,
+            selectedTrendingLanguage: $selectedTrendingLanguage,
+            selectedTrendingRepoID: $selectedTrendingRepoID,
+            selectedTrendingRepo: $selectedTrendingRepo,
+            selectedDiscoveryLanguage: $selectedDiscoveryLanguage,
+            selectedDiscoveryTopic: $selectedDiscoveryTopic,
+            selectedDiscoveryPlatform: $selectedDiscoveryPlatform,
+            selectedDiscoveryRepoID: $selectedDiscoveryRepoID,
+            selectedDiscoveryRepo: $selectedDiscoveryRepo,
+            selectedWeeklyLanguage: $selectedWeeklyLanguage,
+            selectedActivityCategory: $selectedActivityCategory,
+            selectedActivityItem: $selectedActivityItem,
+            undoStarAutoSelectRequestID: undoStarAutoSelectRequestID,
+            onStartBatchAI: {
+                requestBatchAIOptions(scope: .allUntagged)
+            },
+            onStartSelectedBatchAI: { repositories in
+                Task {
+                    await requestSelectedBatchAIOptions(repositories: repositories)
+                }
+            },
+            onStartSelectedGitHubStarListAIGrouping: { repositories in
+                startSelectedGitHubStarListAIGrouping(repositories: repositories)
+            },
+            onShowBatchAIPanel: {
+                presentBatchAIProgress()
+            },
+            onStartGitHubStarListAIGrouping: {
+                startGitHubStarListAIGrouping()
+            },
+            onOpenSearchCenter: { scope in
+                presentSearchCenterForGettingStarted(scope: scope)
+            },
+            onOpenKnowledgeRAGWorkspace: {
+                openKnowledgeRAGWorkspaceForGettingStarted()
+            },
+            onOpenCompanionRepo: { repo in
+                openCompanionRepository(repo)
+            },
+            onGenerateCompanionSummary: { repo in
+                openCompanionRepository(repo, generateSummary: true)
+            },
+            onReturnToInsights: {
+                selectSidebarRootPage(.insights)
             }
-            .transition(insightsBoundaryTransition)
-        }
+        )
     }
 
     @ViewBuilder
@@ -1620,9 +1587,9 @@ struct HomeView: View {
         ZStack(alignment: .topLeading) {
             detailColumnBody
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .disabled(isDailyRadarPreviewPresented)
-                .allowsHitTesting(!isDailyRadarPreviewPresented)
-                .accessibilityHidden(isDailyRadarPreviewPresented)
+                .disabled(isContentWorkspacePresented)
+                .allowsHitTesting(!isContentWorkspacePresented)
+                .accessibilityHidden(isContentWorkspacePresented)
         }
         .modifier(RepoShareHost())
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage)
@@ -1631,13 +1598,8 @@ struct HomeView: View {
     @ViewBuilder
     private var detailColumnBody: some View {
         if selectedSidebarPage == .insights {
-            MyInsightsView(
-                topic: $selectedInsightsTopic,
-                scope: $selectedInsightsScope,
-                selection: $selectedInsightsSelection,
-                viewModel: myInsightsViewModel,
-                headerHeight: insightsHeaderHeight
-            )
+            // 整列只提供覆盖区的布局锚点，洞察期间不挂载仓库详情与 README WebView。
+            Color.clear
         } else if selectedSidebarPage == .activity, selectedActivityCategory == .undoStar {
             RepoDetailView(selectedTrendingRepo: nil)
         } else if selectedSidebarPage == .activity, selectedActivityCategory == .notification {
@@ -2066,17 +2028,10 @@ struct HomeView: View {
                 return
             }
 
-            let dto = try await dependencies.apiClient.repo(owner: target.owner, repo: target.name)
-            guard !dto.isPrivate else {
+            guard let transientRepo = try await fetchTransientPublicRepository(for: target) else {
                 repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
                 return
             }
-            let transientRepo = GRDBRepoRepository.repoFromDTO(
-                dto,
-                starredAt: nil,
-                cachedAt: ISO8601DateFormatter.shared.string(from: Date()),
-                isStarred: false
-            )
             openCompanionRepository(transientRepo, pinInList: false)
         } catch {
             AppLog.ui.error(
@@ -2084,6 +2039,46 @@ struct HomeView: View {
             )
             repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
         }
+    }
+
+    /// 画像点击只呈现详情窗口，范围和主题仍由当前画像持有。
+    @MainActor
+    private func openKnowledgeProfileRepository(_ target: RepositoryDeepLink) {
+        guard let repositoryID = target.repositoryID else { return }
+        let scopeRevision = dependencies.databaseScopeRevision
+        Task {
+            do {
+                let cachedRepo = try await dependencies.repoRepository.findById(repositoryID)
+                guard scopeRevision == dependencies.databaseScopeRevision else { return }
+                let resolvedRepo: Repo?
+                if let cachedRepo {
+                    resolvedRepo = cachedRepo
+                } else {
+                    resolvedRepo = try await fetchTransientPublicRepository(for: target)
+                }
+                guard scopeRevision == dependencies.databaseScopeRevision else { return }
+                guard let repo = resolvedRepo, repo.id == repositoryID else {
+                    repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
+                    return
+                }
+                RepoDetailWindowController.show(repo: repo, dependencies: dependencies, homeViewModel: viewModel)
+            } catch {
+                guard scopeRevision == dependencies.databaseScopeRevision else { return }
+                repositoryDeepLinkErrorMessage = String.l10n("repo.share.open.error.unavailable")
+            }
+        }
+    }
+
+    /// 缓存缺失时只补齐本次浏览所需的公开资料，不创建仓库归属。
+    private func fetchTransientPublicRepository(for target: RepositoryDeepLink) async throws -> Repo? {
+        let dto = try await dependencies.apiClient.repo(owner: target.owner, repo: target.name)
+        guard !dto.isPrivate else { return nil }
+        return GRDBRepoRepository.repoFromDTO(
+            dto,
+            starredAt: nil,
+            cachedAt: ISO8601DateFormatter.shared.string(from: Date()),
+            isStarred: false
+        )
     }
 
     /// Spotlight 条目来自当前用户数据库，只允许本地命中；这样既能打开 private repo，

@@ -2,7 +2,7 @@
 //  MyInsightsViewModelTests.swift
 //  StarcatTests
 //
-//  验证“我的洞察”首屏、范围切换原地刷新、刷新失败保留旧值及主动缓存失效状态。
+//  验证洞察快照的请求身份、同身份刷新及迟到结果保护。
 //
 
 import Foundation
@@ -19,12 +19,12 @@ struct MyInsightsViewModelTests {
             .snapshot(snapshot(scope: .starred, projects: 3))
         ])
         let viewModel = MyInsightsViewModel(provider: provider)
+        let request = request()
 
-        await viewModel.load(scope: .starred, embeddingModel: "embed-v1")
+        await viewModel.load(request)
 
-        #expect(viewModel.state == .loaded)
-        #expect(viewModel.hasContent)
-        #expect(viewModel.snapshot.metrics.first?.value == 3)
+        #expect(viewModel.state(for: request) == .loaded)
+        #expect(viewModel.snapshot(for: request)?.metrics.first?.value == 3)
     }
 
     @Test("刷新失败保留旧快照并显示 stale")
@@ -34,43 +34,48 @@ struct MyInsightsViewModelTests {
             .failure
         ])
         let viewModel = MyInsightsViewModel(provider: provider)
-        await viewModel.load(scope: .starred, embeddingModel: "embed-v1")
+        let request = request()
+        await viewModel.load(request)
 
-        await viewModel.refresh(scope: .starred, embeddingModel: "embed-v1")
+        await provider.setLoadGateEnabled(true)
+        let refreshTask = Task { await viewModel.refresh(request) }
+        await provider.waitForLoadStart()
+        #expect(viewModel.state(for: request) == .refreshing)
+        #expect(viewModel.snapshot(for: request)?.metrics.first?.value == 3)
+        await provider.releaseLoadGate()
+        await refreshTask.value
 
-        #expect(viewModel.state == .stale)
-        #expect(viewModel.snapshot.metrics.first?.value == 3)
+        #expect(viewModel.state(for: request) == .stale)
+        #expect(viewModel.snapshot(for: request)?.metrics.first?.value == 3)
         #expect(await provider.invalidateCount == 1)
     }
 
-    @Test("切换范围时进入 refreshing 并保留旧快照直到新数据返回")
-    func scopeSwitchKeepsSnapshotWhileRefreshing() async {
+    @Test("切换范围的首帧及查询中均无旧范围数据")
+    func scopeSwitchHidesPreviousSnapshot() async {
         let provider = MyInsightsProviderStub(outcomes: [
             .snapshot(snapshot(scope: .starred, projects: 3)),
             .snapshot(snapshot(scope: .knowledge, projects: 9))
         ])
         let viewModel = MyInsightsViewModel(provider: provider)
-        await viewModel.load(scope: .starred, embeddingModel: "embed-v1")
+        let starred = request()
+        let knowledge = request(scope: .knowledge)
+        await viewModel.load(starred)
+        #expect(viewModel.state(for: knowledge) == .idle)
+        #expect(viewModel.snapshot(for: knowledge) == nil)
 
-        // 仅对第二次 load 开闸门，便于断言中间态仍保留旧快照。
         await provider.setLoadGateEnabled(true)
-        let loadTask = Task {
-            await viewModel.load(scope: .knowledge, embeddingModel: "embed-v1")
-        }
+        let loadTask = Task { await viewModel.load(knowledge) }
 
         await provider.waitForLoadStart()
-        #expect(viewModel.state == .refreshing)
-        #expect(viewModel.isRefreshing)
-        #expect(!viewModel.isInitialLoading)
-        #expect(viewModel.hasContent)
-        #expect(viewModel.snapshot.metrics.first?.value == 3)
+        #expect(viewModel.state(for: knowledge) == .loading)
+        #expect(viewModel.snapshot(for: knowledge) == nil)
 
         await provider.releaseLoadGate()
         await loadTask.value
 
-        #expect(viewModel.state == .loaded)
-        #expect(viewModel.snapshot.scope == .knowledge)
-        #expect(viewModel.snapshot.metrics.first?.value == 9)
+        #expect(viewModel.state(for: knowledge) == .loaded)
+        #expect(viewModel.snapshot(for: knowledge)?.scope == .knowledge)
+        #expect(viewModel.snapshot(for: knowledge)?.metrics.first?.value == 9)
     }
 
     @Test("切换范围失败不会继续展示旧范围数字")
@@ -80,14 +85,52 @@ struct MyInsightsViewModelTests {
             .failure
         ])
         let viewModel = MyInsightsViewModel(provider: provider)
-        await viewModel.load(scope: .starred, embeddingModel: "embed-v1")
+        let starred = request()
+        let knowledge = request(scope: .knowledge)
+        await viewModel.load(starred)
 
-        await viewModel.load(scope: .knowledge, embeddingModel: "embed-v1")
+        await viewModel.load(knowledge)
 
-        #expect(viewModel.state == .failed)
-        #expect(!viewModel.hasContent)
-        #expect(viewModel.snapshot.scope == .knowledge)
-        #expect(viewModel.snapshot.metrics.isEmpty)
+        #expect(viewModel.state(for: knowledge) == .failed)
+        #expect(viewModel.snapshot(for: knowledge) == nil)
+        #expect(viewModel.snapshot(for: starred) == nil)
+    }
+
+    @Test("切库或更换向量模型立即隐藏旧数字，迟到结果不能覆盖当前账号")
+    func latestIdentityOwnsTheSnapshot() async {
+        let provider = MyInsightsProviderStub(outcomes: [
+            .snapshot(snapshot(scope: .knowledge, projects: 3)),
+            .snapshot(snapshot(scope: .knowledge, projects: 6)),
+            .snapshot(snapshot(scope: .knowledge, projects: 9))
+        ])
+        let viewModel = MyInsightsViewModel(provider: provider)
+        let original = request(scope: .knowledge)
+        let changedModel = request(scope: .knowledge, embeddingModel: "embed-v2")
+        let changedAccount = request(scope: .knowledge, accountID: 2, databaseRevision: 1, embeddingModel: "embed-v2")
+        await viewModel.load(original)
+        #expect(viewModel.snapshot(for: changedModel) == nil)
+        #expect(viewModel.snapshot(for: request(scope: .knowledge, databaseRevision: 1)) == nil)
+
+        await provider.setLoadGateEnabled(true)
+        let olderTask = Task { await viewModel.load(changedModel) }
+        await provider.waitForLoadStart()
+        await provider.setLoadGateEnabled(false)
+        await viewModel.load(changedAccount)
+        await provider.releaseLoadGate()
+        await olderTask.value
+
+        #expect(viewModel.snapshot(for: changedModel) == nil)
+        #expect(viewModel.snapshot(for: changedAccount)?.metrics.first?.value == 9)
+        #expect(viewModel.state(for: changedAccount) == .loaded)
+    }
+
+    private func request(
+        scope: InsightsScope = .starred,
+        accountID: Int64 = 1,
+        databaseRevision: UInt64 = 0,
+        embeddingModel: String = "embed-v1"
+    ) -> MyInsightsViewModel.Request {
+        .init(scope: scope, accountID: accountID, databaseRevision: databaseRevision, embeddingModel: embeddingModel)
     }
 
     private func snapshot(
@@ -126,7 +169,7 @@ struct MyInsightsViewModelTests {
     }
 }
 
-/// 可闸门的 stub：在 `load` 真正返回前让测试断言「仍保留旧快照 + refreshing」。
+/// 暂停指定请求的返回，让测试可验证切换中的可见快照及完成顺序。
 private actor MyInsightsProviderStub: MyInsightsSnapshotProviding {
     enum Outcome: Sendable {
         case snapshot(MyInsightsSnapshot)
@@ -167,6 +210,8 @@ private actor MyInsightsProviderStub: MyInsightsSnapshotProviding {
         scope: InsightsScope,
         embeddingModel: String
     ) async throws -> MyInsightsSnapshot {
+        guard !outcomes.isEmpty else { throw StubError.noOutcome }
+        let outcome = outcomes.removeFirst()
         if loadGateEnabled {
             signalLoadStart()
             await withCheckedContinuation { continuation in
@@ -175,10 +220,7 @@ private actor MyInsightsProviderStub: MyInsightsSnapshotProviding {
             didSignalLoadStart = false
         }
 
-        guard !outcomes.isEmpty else {
-            throw StubError.noOutcome
-        }
-        switch outcomes.removeFirst() {
+        switch outcome {
         case .snapshot(let snapshot):
             return snapshot
         case .failure:

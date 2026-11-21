@@ -17,249 +17,259 @@ import SwiftUI
 
 struct MyInsightsView: View {
 
-    @Binding var topic: InsightsTopic
+    let topic: InsightsTopic
     @Binding var scope: InsightsScope
-    @Binding var selection: InsightsSelection
     let viewModel: MyInsightsViewModel
-    var headerHeight: CGFloat = InsightsColumnChrome.minimumHeaderHeight
+    let openProfileRepository: (RepositoryDeepLink) -> Void
 
-    @Environment(\.locale) private var locale
+    /// 刷新同一画像也要重新读取，但计数器不参与画像内容本身的身份。
+    private struct ProfileLoad: Equatable {
+        let request: InsightsProfileRequest
+        let refresh: Int
+    }
+
+    @State private var profileLoader = InsightsProfileLoader()
+    @State private var profileRefresh = 0
+    @State private var profileDay = Date()
+    @Environment(\.timeZone) private var timeZone
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AppSettings.self) private var settings
 
-    private var snapshot: MyInsightsSnapshot {
-        viewModel.snapshot
+    private var request: MyInsightsViewModel.Request {
+        .init(
+            scope: scope,
+            accountID: dependencies.database.currentUserId,
+            databaseRevision: dependencies.databaseScopeRevision,
+            embeddingModel: settings.aiEmbeddingModel
+        )
+    }
+
+    private var snapshot: MyInsightsSnapshot? {
+        viewModel.snapshot(for: request)
+    }
+
+    private var statisticsState: MyInsightsLoadState {
+        viewModel.state(for: request)
+    }
+
+    private var profileLoad: ProfileLoad? {
+        guard topic == .knowledgeProfile, let profileRequest else { return nil }
+        return ProfileLoad(request: profileRequest, refresh: profileRefresh)
     }
 
     /// 与洞察内容的指标卡、图表和行动行保持相同节奏；刷新快照仍沿用已显示的内容。
     private var insightsSkeleton: some View {
         SkeletonAnimatedPhase { phase in
             let palette = SkeletonPalette.forColorScheme(colorScheme)
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 12) {
-                    ForEach(0..<4, id: \.self) { _ in
-                        VStack(alignment: .leading, spacing: 12) {
-                            SkeletonBlock(maxWidth: 64, height: 12, phase: phase, palette: palette)
-                            SkeletonBlock(maxWidth: 50, height: 26, phase: phase, palette: palette)
+            VStack(alignment: .leading, spacing: 16) {
+                ForEach(topic.dashboardSections(for: scope).prefix(3), id: \.self) { section in
+                    if section == .metrics {
+                        HStack(spacing: 12) {
+                            ForEach(0..<4, id: \.self) { _ in
+                                VStack(alignment: .leading, spacing: 12) {
+                                    SkeletonBlock(maxWidth: 64, height: 12, phase: phase, palette: palette)
+                                    SkeletonBlock(maxWidth: 50, height: 26, phase: phase, palette: palette)
+                                }
+                                .padding(16)
+                                .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
+                                .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 10))
+                            }
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 16) {
+                            SkeletonBlock(maxWidth: 144, height: 14, phase: phase, palette: palette)
+                            switch section {
+                            case .rhythm:
+                                SkeletonBlock(height: 158, cornerRadius: 6, phase: phase, palette: palette)
+                            case .healthCoverage:
+                                HStack(spacing: 24) {
+                                    SkeletonBlock(height: 44, phase: phase, palette: palette)
+                                    SkeletonBlock(height: 44, phase: phase, palette: palette)
+                                }
+                            case .action:
+                                HStack {
+                                    SkeletonBlock(width: 62, height: 30, phase: phase, palette: palette)
+                                    Spacer()
+                                    SkeletonBlock(width: 92, height: 24, phase: phase, palette: palette)
+                                }
+                            default:
+                                ForEach(0..<3, id: \.self) { _ in
+                                    HStack(spacing: 12) {
+                                        SkeletonBlock(width: 22, height: 22, phase: phase, palette: palette)
+                                        SkeletonBlock(height: 14, phase: phase, palette: palette)
+                                        SkeletonBlock(width: 40, height: 14, phase: phase, palette: palette)
+                                    }
+                                }
+                            }
                         }
                         .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 10))
                     }
                 }
-                SkeletonBlock(height: 156, cornerRadius: 10, phase: phase, palette: palette)
-                VStack(alignment: .leading, spacing: 20) {
-                    ForEach(0..<4, id: \.self) { _ in
-                        HStack(spacing: 12) {
-                            SkeletonBlock(width: 22, height: 22, phase: phase, palette: palette)
-                            SkeletonBlock(height: 14, phase: phase, palette: palette)
-                            SkeletonBlock(width: 40, height: 14, phase: phase, palette: palette)
-                        }
-                    }
-                }
-                .padding(16)
             }
-            .padding(.horizontal, 18)
-            .padding(.top, InsightsColumnChrome.contentTopPadding)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 
     var body: some View {
+        let statisticsRequest = topic == .knowledgeProfile ? nil : request
+        let profileLoad = self.profileLoad
+
         VStack(spacing: 0) {
             header
             Divider()
 
             ScrollView {
-                if viewModel.hasInitialError {
-                    ContentUnavailableView {
-                        Label("error.loadFailed", systemImage: "exclamationmark.triangle")
-                    } actions: {
-                        Button("action.retry") {
-                            refresh()
-                        }
+                Group {
+                    if topic == .knowledgeProfile {
+                        knowledgeProfile
+                    } else {
+                        statisticsPage
+                            .id(request)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 320)
-                } else if viewModel.isInitialLoading {
-                    insightsSkeleton
-                        .transition(.opacity)
-                } else {
-                    // 与 RepoDetail / Activity 同款：ZStack + .id + detailContentTransition，
-                    // 中栏切换「健康概览 / 安全风险」时淡化交接，保持卡片位置稳定。
-                    ZStack(alignment: .topLeading) {
-                        LazyVStack(spacing: 14) {
-                            if viewModel.showsStaleWarning {
-                                Label("error.loadFailed", systemImage: "exclamationmark.triangle.fill")
-                                    .font(interfaceScale.font(.caption))
-                                    .foregroundStyle(.secondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            selectedContent
-                        }
-                        .padding(.horizontal, 18)
-                        .padding(.top, InsightsColumnChrome.contentTopPadding)
-                        .padding(.bottom, 18)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                        // 刷新中略降透明度，新快照落地时不那么「硬切」。
-                        .opacity(viewModel.isRefreshing ? 0.72 : 1)
-                        .animation(.easeInOut(duration: 0.2), value: viewModel.isRefreshing)
-                        .id(selection)
-                        .detailContentTransition()
-                    }
-                    .animation(
-                        .easeOut(duration: reduceMotion ? 0.12 : 0.24),
-                        value: selection
-                    )
-                    .transition(.opacity)
                 }
+                .frame(maxWidth: 1120, alignment: .topLeading)
+                .padding(.horizontal, 24)
+                .padding(.top, InsightsColumnChrome.contentTopPadding)
+                .padding(.bottom, 24)
+                .frame(maxWidth: .infinity, alignment: .top)
             }
-            .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: viewModel.isInitialLoading)
+            .nativeDetailTransition(value: topic)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color(nsColor: .windowBackgroundColor))
-        .task(id: loadIdentity) {
-            await viewModel.load(
-                scope: scope,
-                embeddingModel: settings.aiEmbeddingModel
-            )
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in profileDay = Date() }
+        .onAppear { profileDay = Date() }
+        // 只替换展示子树，加载任务挂在稳定宿主。四个统计页切换时沿用当前查询。
+        .task(id: statisticsRequest) {
+            guard let statisticsRequest else { return }
+            await viewModel.load(statisticsRequest)
         }
+        .task(id: profileLoad) {
+            guard !Task.isCancelled, let profileLoad else { return }
+            await profileLoader.load(profileLoad.request) { try await $0.load(database: dependencies.database) }
+        }
+    }
+
+    private var statisticsPage: some View {
+        Group {
+            if let snapshot {
+                LazyVStack(spacing: 16) {
+                    if statisticsState == .stale {
+                        Label("error.loadFailed", systemImage: "exclamationmark.triangle.fill")
+                            .font(interfaceScale.font(.caption))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    MyInsightsDashboard(
+                        topic: topic,
+                        snapshot: snapshot,
+                        embeddingModel: request.embeddingModel
+                    )
+                }
+                .transition(.opacity)
+            } else if statisticsState == .failed {
+                ContentUnavailableView {
+                    Label("error.loadFailed", systemImage: "exclamationmark.triangle")
+                } actions: {
+                    Button("action.retry", action: refresh)
+                }
+                .frame(maxWidth: .infinity, minHeight: 320)
+            } else {
+                insightsSkeleton.transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: snapshot != nil)
     }
 
     /// 首次进入与范围切换/手动刷新共用右上角 SyncIconButton 转圈反馈。
     private var isLoadingFeedbackVisible: Bool {
-        viewModel.isInitialLoading || viewModel.isRefreshing
+        if topic == .knowledgeProfile {
+            guard let profileRequest else { return false }
+            return profileLoader.loading == profileRequest
+                || (profileLoader.displayed(for: profileRequest) == nil && profileLoader.failed != profileRequest)
+        }
+        return statisticsState == .idle || statisticsState == .loading || statisticsState == .refreshing
     }
 
-    /// 中栏选择和 Detail 内容保持一一对应。原型阶段曾让所有选择都显示同一张总览，
-    /// 用户无法判断分类是否真实生效；最终 UI 在这里按业务语义拆开内容。
+    private var profileRequest: InsightsProfileRequest? {
+        dependencies.database.currentUserId.map {
+            InsightsProfileRequest(accountID: $0, scope: scope, day: profileDay, timeZone: timeZone,
+                                   databaseRevision: dependencies.databaseScopeRevision)
+        }
+    }
+
+    /// 画像有独立的首次加载与失败状态，切号或换范围时先撤下旧数据及其明细窗口。
     @ViewBuilder
-    private var selectedContent: some View {
-        switch selection {
-        case .overviewSummary:
-            // 组间拉开、组内收紧：先认「总览 / 节奏整理 / 沉淀清理 / 技术行动」再读内容。
-            VStack(spacing: 24) {
-                metricGrid
-
-                VStack(spacing: 12) {
-                    rhythmSection
-                    organizationSection
-                }
-
-                VStack(spacing: 12) {
-                    knowledgeCoverageSection
-                    priorityRepositoriesSection
-                    assetCleanupSection
-                }
-
-                VStack(spacing: 12) {
-                    languageSection
-                    actionSection(snapshot.actionItems)
-                    coverageSection
+    private var knowledgeProfile: some View {
+        if let request = profileRequest {
+            VStack(alignment: .leading, spacing: 12) {
+                if let profile = profileLoader.displayed(for: request) {
+                    if profileLoader.failed == request {
+                        Label("error.loadFailed", systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.secondary)
+                    }
+                    InsightsKnowledgeProfileView(profile: profile, openRepository: openProfileRepository)
+                } else if profileLoader.failed == request {
+                    ContentUnavailableView {
+                        Label("error.loadFailed", systemImage: "exclamationmark.triangle")
+                    } actions: {
+                        Button("action.retry", action: refresh)
+                    }
+                } else {
+                    InsightsKnowledgeProfileSkeleton()
                 }
             }
-
-        case .allActions:
-            actionSection(snapshot.actionItems)
-
-        case .organizationSummary:
-            VStack(spacing: 24) {
-                VStack(spacing: 12) {
-                    organizationSection
-                    rhythmSection
-                }
-                VStack(spacing: 12) {
-                    knowledgeCoverageSection
-                    priorityRepositoriesSection
-                    assetCleanupSection
-                }
-                actionSection(organizationActions)
-            }
-
-        case .untagged,
-             .unread,
-             .missingReadme,
-             .missingIndexableContent,
-             .indexIssues:
-            VStack(spacing: 12) {
-                actionFocusSection
-                organizationSection
-            }
-
-        case .technologySummary:
-            VStack(spacing: 12) {
-                languageSection
-                topicSection
-                licenseSection
-            }
-
-        case .languages:
-            languageSection
-
-        case .topics:
-            topicSection
-
-        case .licenses:
-            licenseSection
-
-        case .healthSummary:
-            VStack(spacing: 12) {
-                coverageSection
-                actionSection(healthActions)
-            }
-
-        case .healthPending,
-             .openSSFPending,
-             .maintenanceRisk,
-             .securityRisk:
-            VStack(spacing: 12) {
-                actionFocusSection
-                coverageSection
-            }
+            .stableDetailTransition(value: profileLoader.displayed(for: request) != nil)
+            .id(request)
+        } else {
+            ContentUnavailableView("menubar.status.notSignedIn", systemImage: "person.crop.circle")
         }
     }
 
     private var header: some View {
-        InsightsColumnHeader(height: headerHeight) {
-            ViewThatFits(in: .horizontal) {
-                // 右侧控件贴标题行顶对齐；默认 center 会相对「标题+副标题」居中，头上留一大块空。
-                HStack(alignment: .top, spacing: 12) {
-                    headerTitle
-                    Spacer(minLength: 16)
-                    headerControls
-                }
-                VStack(alignment: .leading, spacing: 10) {
-                    headerTitle
-                    headerControls
-                }
-            }
-            .padding(.horizontal, 20)
+        InsightsColumnHeader {
+            headerTitle
+        } controls: {
+            headerControls
+        }
+        // 页头覆盖中右栏的系统工具栏，空白处沿用每日热点的原生窗口拖动。
+        .background {
+            Color.clear
+                .contentShape(Rectangle())
+                .gesture(WindowDragGesture())
+                .allowsWindowActivationEvents()
         }
     }
 
     private var headerTitle: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("insights.my.title")
-                // 与中栏主题标题同级，避免 workspaceTitle(20) vs panelTitle(17) 把分割线顶歪。
+            Text(topic.titleKey)
                 .font(interfaceScale.font(.panelTitle))
-                .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
 
-            HStack(spacing: 5) {
-                Text(selection.titleKey)
-                if viewModel.hasContent {
-                    Text("·")
-                    Text(snapshot.generatedAt, format: .dateTime.month().day().hour().minute())
+            Group {
+                if let displayedAt {
+                    Text(displayedAt, format: .dateTime.month().day().hour().minute())
+                } else {
+                    Text(topic.subtitleKey)
+                        .lineLimit(2)
                 }
             }
             .font(interfaceScale.font(.caption))
             .foregroundStyle(.secondary)
-            .lineLimit(1)
             .contentTransition(reduceMotion ? .identity : .opacity)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: selection)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: topic)
         }
+    }
+
+    private var displayedAt: Date? {
+        if topic == .knowledgeProfile { return profileLoader.displayed(for: profileRequest)?.facts.classifiedAt }
+        return snapshot?.generatedAt
     }
 
     private var headerControls: some View {
@@ -275,15 +285,19 @@ struct MyInsightsView: View {
 
             SyncIconButton(
                 isRefreshing: isLoadingFeedbackVisible,
-                disabled: isLoadingFeedbackVisible,
+                disabled: isLoadingFeedbackVisible || (topic == .knowledgeProfile && profileRequest == nil),
                 tooltip: String.l10n("insights.refresh")
             ) {
                 refresh()
             }
 
-            if canShareTechnologySummary {
+            if topic == .technology, let snapshot {
                 GrowthShareCopyButton {
-                    technologyShareText
+                    technologyShareText(
+                        Array(snapshot.languageItems.prefix(3))
+                        + Array(snapshot.topicItems.prefix(3))
+                        + Array(snapshot.licenseItems.prefix(3))
+                    )
                 }
             }
         }
@@ -291,38 +305,66 @@ struct MyInsightsView: View {
         .padding(.top, 1)
     }
 
-    /// 技术栈相关筛选才展示分享入口；其它洞察可能包含个人整理状态，不参与增长归因。
-    private var canShareTechnologySummary: Bool {
-        switch selection {
-        case .technologySummary, .languages, .topics, .licenses:
-            return true
-        default:
-            return false
+    private func refresh() {
+        if topic == .knowledgeProfile {
+            profileDay = Date()
+            profileRefresh += 1
+        } else {
+            let refreshRequest = request
+            Task { await viewModel.refresh(refreshRequest) }
+        }
+    }
+}
+
+/// 按左栏入口组合统计区块。展示和下钻共用已校验身份的快照及模型。
+private struct MyInsightsDashboard: View {
+    let topic: InsightsTopic
+    let snapshot: MyInsightsSnapshot
+    let embeddingModel: String
+
+    @Environment(\.locale) private var locale
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(AppDependencies.self) private var dependencies
+
+    private var scope: InsightsScope { snapshot.scope }
+
+    var body: some View {
+        ForEach(topic.dashboardSections(for: scope), id: \.self) { section in
+            sectionContent(section)
         }
     }
 
-    /// 聚合统计没有单一仓库，因此只输出当前分类前五项与 Starcat 开源仓库链接。
-    private var technologyShareText: String {
-        let items: [InsightsDistributionItem]
-        switch selection {
+    @ViewBuilder
+    private func sectionContent(_ section: InsightsDashboardSection) -> some View {
+        switch section {
+        case .metrics:
+            metricGrid
+        case .rhythm:
+            rhythmSection
+        case .organizationProgress:
+            organizationSection
+        case .knowledgeCoverage:
+            knowledgeCoverageSection
+        case .priorityRepositories:
+            priorityRepositoriesSection
+        case .assetCleanup:
+            assetCleanupSection
         case .languages:
-            items = snapshot.languageItems
+            languageSection
         case .topics:
-            items = snapshot.topicItems
+            topicSection
         case .licenses:
-            items = snapshot.licenseItems
-        case .technologySummary:
-            items = Array(snapshot.languageItems.prefix(3))
-                + Array(snapshot.topicItems.prefix(3))
-                + Array(snapshot.licenseItems.prefix(3))
-        default:
-            items = []
+            licenseSection
+        case .allActions:
+            allActionsSection
+        case .healthCoverage:
+            coverageSection
+        case .action(let id):
+            if let item = snapshot.actionItems.first(where: { $0.id == id }) {
+                actionDetailSection(item)
+            }
         }
-        let details = items.prefix(9).map { "\($0.title): \($0.count)" }
-        return GrowthAttribution.aggregateShareText(
-            title: "My technology stack in Starcat",
-            details: details
-        )
     }
 
     private var metricGrid: some View {
@@ -765,7 +807,14 @@ struct MyInsightsView: View {
             subtitle: subtitle,
             iconSource: iconSource,
             iconColor: iconColor,
-            chrome: .emphasized
+            chrome: .emphasized,
+            headerTrailing: {
+                if !items.isEmpty {
+                    GrowthShareCopyButton {
+                        technologyShareText(items)
+                    }
+                }
+            }
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
@@ -780,9 +829,8 @@ struct MyInsightsView: View {
                     )
                 }
             }
-            .accessibilityElement(children: .ignore)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel(Text(title))
-            .accessibilityValue(Text(verbatim: distributionAccessibilityValue(items)))
         }
     }
 
@@ -839,9 +887,9 @@ struct MyInsightsView: View {
         }
     }
 
-    private func actionSection(_ items: [InsightsActionItem]) -> some View {
+    private var allActionsSection: some View {
         InsightsSectionContainer(
-            title: "insights.section.actions",
+            title: "insights.selection.allActions",
             subtitle: scope == .knowledge
                 ? "insights.section.actions.knowledgeSubtitle"
                 : "insights.section.actions.starredSubtitle",
@@ -850,63 +898,56 @@ struct MyInsightsView: View {
             chrome: .emphasized
         ) {
             VStack(spacing: 0) {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                ForEach(Array(snapshot.actionItems.enumerated()), id: \.element.id) { index, item in
                     if index > 0 {
                         Divider().padding(.leading, 34)
                     }
                     actionRow(item)
-                        .listRowSurface(index: index, isSelected: selectedAction?.id == item.id)
+                        .listRowSurface(index: index)
                 }
             }
         }
     }
 
-    private var actionFocusSection: some View {
-        Group {
-            if let item = selectedAction {
-                InsightsSectionContainer(
-                    title: LocalizedStringKey(item.titleKey),
-                    subtitle: LocalizedStringKey(item.detailKey),
-                    systemImage: item.systemImage,
-                    iconColor: InsightsColor.resolve(item.tintName),
-                    chrome: .emphasized
-                ) {
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(item.count.formatted(.number.locale(locale)))
-                            .font(interfaceScale.font(size: 32, weight: .semibold))
-                            .monospacedDigit()
+    /// 原中栏的待办详情移到同一滚动页，保留统计数字和查看对应仓库的入口。
+    private func actionDetailSection(_ item: InsightsActionItem) -> some View {
+        let tint = InsightsColor.resolve(item.tintName)
+        let title = LocalizedStringKey(item.titleKey)
+        return InsightsSectionContainer(
+            title: title,
+            subtitle: LocalizedStringKey(item.detailKey),
+            iconSource: item.id.iconSource,
+            iconColor: tint,
+            chrome: .emphasized
+        ) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(item.count.formatted(.number.locale(locale)))
+                    .font(interfaceScale.font(size: 32, weight: .semibold))
+                    .monospacedDigit()
 
-                        Text("insights.action.repositoryCount")
-                            .font(interfaceScale.font(.body))
-                            .foregroundStyle(.secondary)
+                Text("insights.action.repositoryCount")
+                    .font(interfaceScale.font(.body))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                        Spacer(minLength: 12)
+                Spacer(minLength: 12)
 
-                        if canDrillDown(.action(item.id)) {
-                            Button {
-                                openDrillDown(.action(item.id))
-                            } label: {
-                                Label("insights.drilldown.viewAll", systemImage: "arrow.up.right")
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .tint(InsightsColor.resolve(item.tintName))
-                        }
-                    }
-
-                    Divider()
-
-                    Text("insights.action.detailHint")
-                        .font(interfaceScale.font(.body))
-                        .foregroundStyle(.secondary)
+                Button {
+                    openDrillDown(.action(item.id))
+                } label: {
+                    Label("insights.drilldown.viewAll", systemImage: "arrow.up.right")
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(tint)
+                .accessibilityHint(Text(title))
             }
         }
     }
 
     private var coverageSection: some View {
         InsightsSectionContainer(
-            title: "insights.section.coverage",
+            title: topic == .health ? "insights.selection.healthSummary" : "insights.section.coverage",
             subtitle: "insights.section.coverage.subtitle",
             iconSource: .business(.repositoryHealth),
             iconColor: .pink,
@@ -954,12 +995,11 @@ struct MyInsightsView: View {
 
     private func actionRow(_ item: InsightsActionItem) -> some View {
         Button {
-            topic = item.id.topic
-            selection = item.id
+            openDrillDown(.action(item.id))
         } label: {
             // 行图标与数量贴标题行，避免相对标题+说明整体居中。
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: item.systemImage)
+                BusinessIcon(source: item.id.iconSource, pointSize: interfaceScale.scaled(14))
                     .foregroundStyle(InsightsColor.resolve(item.tintName))
                     .frame(width: 22)
                     .padding(.top, 1)
@@ -970,7 +1010,7 @@ struct MyInsightsView: View {
                     Text(LocalizedStringKey(item.detailKey))
                         .font(interfaceScale.font(.caption))
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer(minLength: 12)
@@ -979,7 +1019,7 @@ struct MyInsightsView: View {
                     .font(interfaceScale.font(.bodyEmphasis))
                     .monospacedDigit()
 
-                Image(systemName: "chevron.right")
+                Image(systemName: "arrow.up.right")
                     .font(interfaceScale.font(.captionSmall, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .padding(.top, 3)
@@ -989,21 +1029,7 @@ struct MyInsightsView: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .listRowSelectionTint(isSelected: selection == item.id)
-    }
-
-    private var organizationActions: [InsightsActionItem] {
-        let allowed = Set(InsightsTopic.organization.attentionSelections(for: scope))
-        return snapshot.actionItems.filter { allowed.contains($0.id) }
-    }
-
-    private var healthActions: [InsightsActionItem] {
-        let allowed = Set(InsightsTopic.health.attentionSelections(for: scope))
-        return snapshot.actionItems.filter { allowed.contains($0.id) }
-    }
-
-    private var selectedAction: InsightsActionItem? {
-        snapshot.actionItems.first(where: { $0.id == selection })
+        .accessibilityHint(Text("insights.action.detailHint"))
     }
 
     private func status(for id: String) -> RepoStatus? {
@@ -1015,20 +1041,12 @@ struct MyInsightsView: View {
         }
     }
 
-    private func canDrillDown(_ target: InsightsDrillDownTarget) -> Bool {
-        InsightsDrillDownRouter.route(
-            scope: scope,
-            target: target,
-            embeddingModel: settings.aiEmbeddingModel
-        ) != nil
-    }
-
     /// 只发布类型化路由；Manage 负责安装临时筛选并展示返回洞察上下文。
     private func openDrillDown(_ target: InsightsDrillDownTarget) {
         guard let route = InsightsDrillDownRouter.route(
             scope: scope,
             target: target,
-            embeddingModel: settings.aiEmbeddingModel
+            embeddingModel: embeddingModel
         ) else { return }
         dependencies.mainWindowNavigationDispatcher.navigate(
             to: .manage(route.selection),
@@ -1042,6 +1060,10 @@ struct MyInsightsView: View {
             fullName: repository.fullName,
             repositoryID: repository.id
         ) else { return }
+        openRepository(link)
+    }
+
+    private func openRepository(_ link: RepositoryDeepLink) {
         dependencies.mainWindowNavigationDispatcher.navigate(
             to: .repository(link),
             returnPage: .insights
@@ -1118,20 +1140,29 @@ struct MyInsightsView: View {
         value.formatted(.percent.precision(.fractionLength(0)).locale(locale))
     }
 
-    private var loadIdentity: String {
-        [
-            scope.rawValue,
-            String(dependencies.databaseScopeRevision),
-            settings.aiEmbeddingModel
-        ].joined(separator: ":")
-    }
+}
 
-    private func refresh() {
-        Task { @MainActor in
-            await viewModel.refresh(
-                scope: scope,
-                embeddingModel: settings.aiEmbeddingModel
-            )
+/// 只复制可显示的技术统计与 Starcat 链接，分项和汇总入口使用同一格式。
+private func technologyShareText(_ items: [InsightsDistributionItem]) -> String {
+    GrowthAttribution.aggregateShareText(
+        title: "My technology stack in Starcat",
+        details: items.prefix(9).map { "\($0.title): \($0.count)" }
+    )
+}
+
+/// 两类洞察共享语义色，快照只保存可跨 actor 的颜色名称。
+enum InsightsColor {
+    static func resolve(_ name: String) -> Color {
+        switch name {
+        case "blue":      return .blue
+        case "cyan":      return .cyan
+        case "green":     return .green
+        case "orange":    return .orange
+        case "pink":      return .pink
+        case "purple":    return .purple
+        case "red":       return .red
+        case "yellow":    return .yellow
+        default:          return .secondary
         }
     }
 }

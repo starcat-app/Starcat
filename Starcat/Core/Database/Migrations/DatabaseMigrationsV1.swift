@@ -127,6 +127,27 @@ enum DatabaseMigrations {
         registerV27(into: &migrator)
         registerV28(into: &migrator)
         registerV29(into: &migrator)
+        registerV30(into: &migrator)
+    }
+
+    /// 每个账号有自己的库。采集起点与新账本原子创建，空账本也可以证明本机覆盖期。
+    /// 已运行专项预览版的账号库沿用原账本和采集起点。
+    private static func registerV30(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v30-knowledge-activity", merging: ["v28-knowledge-activity"]) { db, applied in
+            guard !applied.contains("v28-knowledge-activity") else { return }
+            try db.execute(sql: """
+                CREATE TABLE knowledge_activity_coverage (
+                    id INTEGER PRIMARY KEY CHECK (id = 1), started_at REAL NOT NULL
+                );
+                CREATE TABLE knowledge_activity (
+                    id INTEGER PRIMARY KEY, repo_id INTEGER NOT NULL, kind TEXT NOT NULL,
+                    occurred_at REAL NOT NULL, source TEXT NOT NULL
+                );
+                CREATE INDEX idx_knowledge_activity_time ON knowledge_activity(occurred_at);
+                """)
+            try db.execute(sql: "INSERT INTO knowledge_activity_coverage VALUES (1, ?)",
+                           arguments: [Date().timeIntervalSince1970])
+        }
     }
 
     /// 过去的精简快照可能将缺失计数写为零，旧行无法区分这两种情况。

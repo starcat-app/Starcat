@@ -83,25 +83,25 @@ struct SidebarView: View {
     @Environment(\.locale) private var locale
 
     /// 当前打开/收起 Languages 组的状态。
-    @State private var languagesExpanded: Bool = true
+    @State private var languagesExpanded = true
     /// W4 A6：Tags 组展开/收起状态，由主窗口持有以支持跨窗口导航后展开。
     /// 默认 **折叠**（2026-06-11 dong4j 体验优化）：tag 数量多时全展开会挤掉
     /// Languages / Activity / Trending 等同级 section 的视觉权重，初始折叠让用户
     /// 一眼看到全局结构，需要时再展开。会话内不持久化，重启 App 后仍回到折叠默认值。
     @Binding var tagsExpanded: Bool
     /// GitHub Stars List（Repository groups）展开/收起状态。默认折叠，与 Tags 一致。
-    @State private var githubStarListsExpanded: Bool = false
+    @State private var githubStarListsExpanded = false
     /// Trending 语言列表展开/收起状态。和 Manage 的 Languages 分开，避免互相影响。
-    @State private var trendingLanguagesExpanded: Bool = true
+    @State private var trendingLanguagesExpanded = true
     /// Explore 发现模块主题分类展开/收起状态。
-    @State private var exploreTopicsExpanded: Bool = true
+    @State private var exploreTopicsExpanded = true
     /// Explore 发现模块平台分类展开/收起状态。
-    @State private var explorePlatformsExpanded: Bool = true
+    @State private var explorePlatformsExpanded = true
     /// 每日热点子分类展开/收起状态；「全部主题」行常驻，仅子分类折叠（2026-11-04 对齐其他分组）。
-    @State private var dailyRadarCategoriesExpanded: Bool = true
+    @State private var dailyRadarCategoriesExpanded = true
     @State private var recommendationOlderDatesExpanded = false
     /// Activity 分类列表展开/收起状态。Activity 是独立 root，不能复用 Trending 的展开态。
-    @State private var activityCategoriesExpanded: Bool = true
+    @State private var activityCategoriesExpanded = true
     @Binding var selectedPage: SidebarRootPage
     @Binding var selectedExploreMode: ExploreMode
     @Binding var selectedTrendingLanguage: TrendingLanguage
@@ -1202,7 +1202,7 @@ struct SidebarView: View {
         }
     }
 
-    /// 洞察主题继续使用系统 Sidebar selection，不手绘选中背景。
+    /// 与其他侧栏菜单共用系统选中反馈和键盘导航。
     @ViewBuilder
     private var insightsSidebarContent: some View {
         Section("insights.sidebar.section") {
@@ -1220,7 +1220,7 @@ struct SidebarView: View {
                     .foregroundStyle(
                         SidebarSemanticIconStyle(semanticColor: topic.semanticIconColor)
                     )
-                        .frame(width: 16, height: 16)
+                    .frame(width: 16, height: 16)
                 }
                 .tag(topic)
             }
