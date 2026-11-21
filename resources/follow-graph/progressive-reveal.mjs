@@ -19,6 +19,19 @@ export class ProgressiveReveal {
 
   /** Reconcile the latest full snapshot without restarting already-visible avatars. */
   sync(nodes, links, root, now, reduced, relation = 'following') {
+    const neighbors = new Map();
+    const connect = (owner, neighbor) => {
+      if (!neighbors.has(owner)) neighbors.set(owner, []);
+      neighbors.get(owner).push(neighbor);
+    };
+    for (const link of links.values()) {
+      const source = typeof link.source === 'object' ? link.source.id : link.source;
+      const target = typeof link.target === 'object' ? link.target.id : link.target;
+      // Followers explore incoming links. Following and tag membership explore outgoing links.
+      if (relation === 'followers') connect(target, source);
+      else connect(source, target);
+    }
+    for (const targets of neighbors.values()) targets.sort(compareIDs);
     if (root !== this.root) {
       this.clear();
       this.root = root;
@@ -27,29 +40,27 @@ export class ProgressiveReveal {
       if (!nodes.has(id)) { this.visible.delete(id); this.births.delete(id); }
     }
     this.added = this.added.filter(id => nodes.has(id));
-    const outgoing = new Map();
-    for (const link of links.values()) {
-      const source = typeof link.source === 'object' ? link.source.id : link.source;
-      const target = typeof link.target === 'object' ? link.target.id : link.target;
-      // Exploration follows incoming edges for followers; keep actual links untouched.
-      const owner = relation === 'followers' ? target : source;
-      const neighbor = relation === 'followers' ? source : target;
-      if (!outgoing.has(owner)) outgoing.set(owner, []);
-      outgoing.get(owner).push(neighbor);
-    }
-    for (const targets of outgoing.values()) targets.sort(compareIDs);
-    this.parents = new Map([[root, null]]);
-    const ordered = nodes.has(root) ? [root] : [];
-    for (let i = 0; i < ordered.length; i++) {
-      for (const id of outgoing.get(ordered[i]) || []) {
-        if (nodes.has(id) && !this.parents.has(id)) {
-          this.parents.set(id, ordered[i]);
-          ordered.push(id);
+    this.parents = new Map();
+    const ordered = [];
+    const walk = start => {
+      const first = ordered.length;
+      ordered.push(start);
+      this.parents.set(start, null);
+      for (let i = first; i < ordered.length; i++) {
+        for (const id of neighbors.get(ordered[i]) || []) {
+          if (nodes.has(id) && !this.parents.has(id)) {
+            this.parents.set(id, ordered[i]);
+            ordered.push(id);
+          }
         }
       }
-    }
+    };
+    if (nodes.has(root)) walk(root);
     ordered.push(...[...nodes.keys()].filter(id => !this.parents.has(id)).sort(compareIDs));
-    if (this.pending.length === 0) { this.nextAt = now + 45; this.burst = 0; }
+    if (this.pending.length === 0) {
+      this.nextAt = now + 45;
+      this.burst = 0;
+    }
     this.pending = ordered.filter(id => !this.visible.has(id));
     if (reduced) this.finish();
     else if (!this.visible.size && nodes.has(root)) this.show([root], now);

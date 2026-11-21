@@ -8,6 +8,7 @@
 
 import CryptoKit
 import Foundation
+import GRDB
 import MCP
 
 /// 弱持依赖容器避免容器 → MCP facade → 容器成环；任务切号屏障由 AppDependencies 调用。
@@ -21,7 +22,17 @@ final class StarcatMCPPublicFacade {
     var diagnosticExports: [String: (url: URL, createdAt: Date)] = [:]
     var agentExecutions: [String: AgentWorkspaceViewModel] = [:]
 
-    init(dependencies: AppDependencies, facade: StarcatMCPFacade) {
+    private let database: any DatabaseManaging
+    private let signedInUserID: () -> Int64?
+
+    /// 标签查询只依赖当前身份和数据库，隔离库可以经过相同的账户校验与读取路径。
+    init(database: any DatabaseManaging, signedInUserID: @escaping () -> Int64?) {
+        self.database = database
+        self.signedInUserID = signedInUserID
+    }
+
+    convenience init(dependencies: AppDependencies, facade: StarcatMCPFacade) {
+        self.init(database: dependencies.database, signedInUserID: { [weak dependencies] in dependencies?.authSession.state.user?.id })
         self.dependencies = dependencies
         self.facade = facade
     }
@@ -57,6 +68,11 @@ final class StarcatMCPPublicFacade {
     /// 输入结构由 Registry 校验；此处继续验证 selector、账号范围和每次执行的真实权限。
     func call(name: String, arguments: [String: Value]) async throws -> Value {
         try requireReadySession()
+        switch name {
+        case "get_tag_graph", "list_repos_by_tags":
+            return try await tagGraphRead(name, arguments: arguments)
+        default: break
+        }
         guard let app = dependencies else { throw StarcatMCPError.unsupported("App services are unavailable.") }
         if StarcatMCPPublicCatalog.specs.first(where: { $0.name == name })?.permission == "write" {
             try StarcatMCPAccess.requireWrite(app.settings)
@@ -628,6 +644,44 @@ final class StarcatMCPPublicFacade {
             "has_more": .bool(hasMore), "next_offset": hasMore ? .int(offset + limit) : .null,
             "network_used": .bool(false)
         ])
+    }
+
+    /// 一次调用固定读取一个账户的数据库。分页边界以全量计数为准，最后一页没有游标。
+    private func tagGraphRead(_ name: String, arguments: [String: Value]) async throws -> Value {
+        guard let userID = signedInUserID() else {
+            throw StarcatPublicCapabilityError(code: "AUTH_REQUIRED", message: "Sign in to Starcat first.")
+        }
+        let changing = StarcatPublicCapabilityError(code: "SESSION_CHANGING", message: "The account database is changing.")
+        guard database.currentUserId == userID else { throw changing }
+        let reader = database.writer
+        let limit = arguments["limit"]?.intValue ?? 20
+        let offset = arguments["offset"]?.intValue ?? 0
+        var result: [String: Value]
+        let matching: Int
+        if name == "get_tag_graph" {
+            let graph = try await reader.read { try TagGraphQuery.snapshot(in: $0) }
+            let edges = Array(graph.edges.dropFirst(offset).prefix(limit))
+            let repoIDs = Set(edges.map(\.target))
+            // Retain all tags, including isolated ones. Only send repos referenced on this page.
+            let nodes = graph.nodes.filter { $0.kind == .tag || repoIDs.contains($0.id) }
+            matching = graph.edges.count
+            result = ["nodes": try StarcatMCPJSON.value(nodes), "edges": try StarcatMCPJSON.value(edges),
+                      "total_edges": .int(matching), "total_nodes": .int(graph.nodes.count)]
+        } else {
+            let ids = Set(arguments["tag_ids"]?.arrayValue?.compactMap(\.stringValue) ?? [])
+            let page = try await reader.read { try RepoTagIntersection.page(in: $0, tagIDs: ids, limit: limit, offset: offset) }
+            matching = page.total
+            result = ["items": try StarcatMCPJSON.value(page.items.map(MCPRepoDTO.init(repo:))), "total": .int(matching)]
+        }
+        try requireReadySession()
+        guard signedInUserID() == userID, database.currentUserId == userID else { throw changing }
+        let hasMore = offset < matching && matching - offset > limit
+        result["limit"] = .int(limit)
+        result["offset"] = .int(offset)
+        result["has_more"] = .bool(hasMore)
+        result["next_offset"] = hasMore ? .int(offset + limit) : .null
+        result["network_used"] = .bool(false)
+        return .object(result)
     }
 
     /// 公共查询只读取本地缓存，不改变 GUI 筛选，也不启动远端状态补全。

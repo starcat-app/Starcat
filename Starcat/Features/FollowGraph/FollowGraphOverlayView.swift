@@ -35,22 +35,19 @@ struct FollowGraphOverlayView: View {
             // 与 Canvas 的主题底色一致，WebKit 加载期间也不会露出另一种颜色。
             Color(white: colorScheme == .dark ? 28.0 / 255 : 245.0 / 255).ignoresSafeArea()
             if canvasPrepared, !model.isPreparing {
-                FollowGraphWebView(model: model, graphRevision: model.revision,
-                                   selectionID: model.selectedID, viewportRevision: model.viewportRevision,
-                                   avatarRevision: model.avatarUpdate?.revision ?? 0)
+                FollowGraphWebView(input: canvasInput, events: canvasEvents)
                     .id(model.rendererRevision)
                     .ignoresSafeArea()
                     .opacity(model.rendererPresented ? 1 : 0)
                     .allowsHitTesting(model.rendererPresented)
                     .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: model.rendererPresented)
             }
-            // 只放实际大小的卡片，避免透明的全屏布局容器参与画布事件命中。
-            if canvasPrepared, let node = model.selected {
-                selectedInfo(node)
-                    .transition(reduceMotion ? .opacity : .offset(y: 12).combined(with: .opacity))
-                    // 移除过渡仍需位于不透明画布之上，否则关闭会直接消失。
-                    .zIndex(1)
+            FollowGraphSelectionCard(node: canvasPrepared ? model.selected : nil,
+                                     canvasSize: canvasSize, toolbarHeight: toolbarHeight,
+                                     contentHeight: $cardContentHeight) { node in
+                FollowGraphUserCard(node: node, model: model)
             }
+            .zIndex(1)
             VStack(spacing: 8) {
                 toolbarPanel
                     .frame(maxWidth: .infinity, alignment: .top)
@@ -85,7 +82,6 @@ struct FollowGraphOverlayView: View {
             Text("followGraph.initialize.message")
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { canvasSize = $0 }
-        .animation(.easeOut(duration: reduceMotion ? 0.16 : 0.22), value: model.selectedID != nil)
         .task {
             // open 会重置 rendererRevision；先初始化再挂载，避免初次出现就销毁重建 WebView。
             model.open(user: user, client: client, relation: relation)
@@ -111,6 +107,39 @@ struct FollowGraphOverlayView: View {
         }
         .onDisappear { model.stop() }
         .onChange(of: scenePhase) { _, phase in if phase == .background { model.stop() } }
+    }
+
+    /// 数据与命令分开编码，原生卡片更新不需要把节点重复传给 WebKit。
+    private var canvasInput: FollowGraphWebView.Input? {
+        guard let snapshot = model.displayedSnapshot else { return nil }
+        return .init(rootID: snapshot.rootID, relation: snapshot.relation, revision: model.revision,
+                     selectedID: model.selectedID, selectionRevision: model.selectionRevision, path: model.path,
+                     viewport: model.viewport, viewportRevision: model.viewportRevision, focusID: model.focusID,
+                     avatarUpdate: model.avatarUpdate) {
+            let nodes = snapshot.nodes.values.map {
+                ["id": $0.id, "login": $0.login, "name": $0.name ?? $0.login,
+                 "avatar": FollowGraphAvatarURL.source($0.avatarURL)] as [String: Any]
+            }
+            return (nodes, snapshot.edges.map { ["source": $0.source, "target": $0.target] })
+        }
+    }
+
+    private var canvasEvents: FollowGraphWebView.Events {
+        let renderer = model.rendererRevision
+        return .init(isCurrent: { model.rendererRevision == renderer },
+                     onPresented: { model.rendererPresented = true },
+                     onError: { model.rendererError = $0 },
+                     onSelect: { id in
+                         guard id.map({ model.snapshot?.nodes[$0] != nil }) ?? true else { return nil }
+                         model.select(id)
+                         return canvasInput
+                     },
+                     onViewport: { model.viewport = $0 },
+                     onProgress: { nodes, edges, revision, selectedID, selectionRevision, selectedCount in
+                         model.reportRenderedCounts(nodes: nodes, edges: edges, revision: revision, renderer: renderer,
+                                                    selectedID: selectedID, selectionRevision: selectionRevision,
+                                                    selectedCount: selectedCount)
+                     })
     }
 
     /// 只对实际浮层范围感应悬停；不把透明全窗口容器变成画布的事件遮挡层。
@@ -265,14 +294,41 @@ struct FollowGraphOverlayView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
-    private func selectedInfo(_ node: FollowGraphNode) -> some View {
+    /// 窄窗口把提示放在卡片上方，避免底部 Toast 覆盖加载按钮。
+    private var cardHeight: CGFloat {
+        min(cardContentHeight, max(1, canvasSize.height - toolbarHeight - 60))
+    }
+}
+
+/// 两种图谱共用浮卡的尺寸和切换。只有卡片实际区域拦截画布事件。
+struct FollowGraphSelectionCard<Node: Identifiable, Content: View>: View {
+    let node: Node?
+    let canvasSize: CGSize
+    let toolbarHeight: CGFloat
+    @Binding var contentHeight: CGFloat
+    @ViewBuilder let content: (Node) -> Content
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Group {
+            if let node {
+                selectionContent(node)
+                    .transition(reduceMotion ? .opacity : .offset(y: 12).combined(with: .opacity))
+                    // 离场期间仍需位于画布之上，保留完整退场。
+                    .zIndex(1)
+            }
+        }
+        .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.22), value: node != nil)
+    }
+
+    private func selectionContent(_ node: Node) -> some View {
         let width = min(370, max(1, canvasSize.width - 40))
-        let height = cardHeight
+        let height = min(contentHeight, max(1, canvasSize.height - toolbarHeight - 60))
         return ScrollView {
-            FollowGraphUserCard(node: node, model: model)
+            content(node)
                 .id(node.id)
                 .transition(.opacity)
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardContentHeight = $0 }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
         }
         .scrollBounceBehavior(.basedOnSize)
         // 只淡换卡片内容，不把外框尺寸或位置变化纳入切换动画。
@@ -288,8 +344,4 @@ struct FollowGraphOverlayView: View {
         .offset(x: max(20, canvasSize.width - width - 20), y: max(toolbarHeight + 40, canvasSize.height - height - 20))
     }
 
-    /// 窄窗口把提示放在卡片上方，复用实际滚动高度，避免底部 Toast 覆盖加载按钮。
-    private var cardHeight: CGFloat {
-        min(cardContentHeight, max(1, canvasSize.height - toolbarHeight - 60))
-    }
 }

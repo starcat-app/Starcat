@@ -170,6 +170,8 @@ struct HomeView: View {
     /// 新功能圆点由主窗口持有一份，让顶部统计入口和 Explore 侧栏共享同一次“首次点击”记录。
     @State private var newFeatureBadgeStore = NewFeatureBadgeStore()
     /// 图谱模型跨关闭保留；原页面选择不随遮盖层变化。
+    @State private var showsTagGraph = false
+    @State private var tagGraphEscape = 0
     @State private var showsFollowGraph = false
     @State private var followGraphModel = FollowGraphViewModel()
     @State private var followGraphRelation: FollowGraphRelation = .following
@@ -447,8 +449,8 @@ struct HomeView: View {
     /// 不改整窗 chrome / safe area，也不使用固定侧栏宽度或 toolbar 高度。
     private var navigationWithDailyRadarPreview: AnyView {
         AnyView(baseNavigation
-            .disabled(showsFollowGraph)
-            .accessibilityHidden(showsFollowGraph)
+            .disabled(showsFollowGraph || showsTagGraph)
+            .accessibilityHidden(showsFollowGraph || showsTagGraph)
             .background {
                 FollowGraphWindowOverlay(isPresented: showsFollowGraph, onEscape: {
                     if !followGraphModel.search.isEmpty { followGraphModel.search = "" }
@@ -461,6 +463,20 @@ struct HomeView: View {
                             showsFollowGraph = false
                         }
                         // 原页面 disabled，但独立宿主里的图谱必须保持可操作。
+                        .disabled(false)
+                        .accessibilityHidden(false)
+                    }
+                }
+            }
+            .background {
+                FollowGraphWindowOverlay(isPresented: showsTagGraph, onEscape: { tagGraphEscape += 1 }) {
+                    if let userID = authSession.state.user?.id, dependencies.database.currentUserId == userID {
+                        let revision = dependencies.databaseScopeRevision
+                        TagGraphWorkspace(reader: dependencies.database.writer, isCurrent: {
+                            authSession.state.user?.id == userID && dependencies.database.currentUserId == userID
+                                && dependencies.databaseScopeRevision == revision
+                        }, escape: tagGraphEscape, onClose: { showsTagGraph = false })
+                        .id(revision)
                         .disabled(false)
                         .accessibilityHidden(false)
                     }
@@ -1473,6 +1489,10 @@ struct HomeView: View {
             dailyRadarModel: dailyRadarModel,
             recommendationHistoryModel: recommendationHistoryModel,
             newFeatureBadgeStore: newFeatureBadgeStore,
+            onOpenTagGraph: {
+                showsDailyRadarPreview = false
+                showsTagGraph = true
+            },
             onOpenFollowGraph: { relation in
                 followGraphRelation = relation
                 showsDailyRadarPreview = false
@@ -1771,6 +1791,7 @@ struct HomeView: View {
         // user id 没变（如 unauthenticated ↔ awaitingUserCode 中间态、authenticated(A) 内部刷新）
         // → 不动任何业务状态，避免误清缓存导致 UI 无谓重渲。
         guard oldUserID != newUserID else { return }
+        showsTagGraph = false
         showsFollowGraph = false
         followGraphModel.clearAccount()
 
