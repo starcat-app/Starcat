@@ -278,20 +278,12 @@ struct GRDBUserRepoActivityRepository: UserRepoActivityRepositoryProtocol, Senda
                         ?
                     FROM starred_repos sr
                     JOIN repos r ON r.id = sr.repo_id
-                    WHERE r.is_starred = 1
+                    WHERE r.is_starred = 1 AND (? IS NULL OR sr.user_id = ?)
                       AND sr.starred_at IS NOT NULL
                       AND sr.starred_at != ''
-                      AND NOT EXISTS (
-                          SELECT 1 FROM (
-                              SELECT kind FROM user_repo_activity a
-                              WHERE a.repo_id = r.id
-                              ORDER BY a.occurred_at DESC, a.id DESC
-                              LIMIT 1
-                          ) latest
-                          WHERE latest.kind = 'star'
-                      )
+                      AND \(Self.unrecordedCurrentStarSQL)
                     """,
-                arguments: [createdAt, userID, login]
+                arguments: [createdAt, userID, login, userID, userID]
             )
             try db.execute(
                 sql: """
@@ -429,6 +421,15 @@ struct GRDBUserRepoActivityRepository: UserRepoActivityRepositoryProtocol, Senda
         }
     }
 
+    /// 读期间事实和回填均以 sr 表示当前关系。Fork 不改变收藏状态，
+    /// 保留最后一次取消之后、由 GitHub 提供新日期的重新收藏。
+    static let unrecordedCurrentStarSQL = """
+        COALESCE((SELECT a.kind = 'unstar' AND julianday(sr.starred_at) > julianday(a.occurred_at)
+                  FROM user_repo_activity a WHERE a.repo_id = sr.repo_id
+                    AND (a.user_id = sr.user_id OR a.user_id IS NULL) AND a.kind IN ('star', 'unstar')
+                  ORDER BY a.occurred_at DESC, a.id DESC LIMIT 1), 1)
+        """
+
     @discardableResult
     private static func insertIfKindChanged(
         db: Database,
@@ -446,11 +447,12 @@ struct GRDBUserRepoActivityRepository: UserRepoActivityRepositoryProtocol, Senda
             db,
             sql: """
                 SELECT kind FROM user_repo_activity
-                WHERE repo_id = ?
+                WHERE repo_id = ? AND (user_id = ? OR user_id IS NULL OR ? IS NULL)
+                  AND \(kind == .fork ? "kind = 'fork'" : "kind IN ('star', 'unstar')")
                 ORDER BY occurred_at DESC, id DESC
                 LIMIT 1
                 """,
-            arguments: [repoID]
+            arguments: [repoID, actor.userID, actor.userID]
         )
         if latestKind == kind.rawValue {
             return false

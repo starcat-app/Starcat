@@ -1,8 +1,8 @@
 //
-//  DailyRadarWindowChromeModifier.swift
+//  MainWindowContentOverlay.swift
 //  Starcat
 //
-//  每日热点的窗口内局部覆盖桥。
+//  每日热点和洞察共用的主窗口内容区宿主。
 //  系统 toolbar 位于 SwiftUI 内容树之外，直接切换其可见性会让交通灯和侧栏跳动；
 //  因此保留整窗布局，只在中右栏上方挂载一个延伸到窗口顶部的 SwiftUI 宿主。
 //
@@ -16,7 +16,7 @@ import SwiftUI
 /// 原 NavigationSplitView、toolbar 与系统按钮的布局始终由 SwiftUI / AppKit 保持。
 /// 查学习索引关键词：NSViewRepresentable / NSHostingView / 坐标转换。
 @MainActor
-struct DailyRadarWindowOverlay<Overlay: View>: NSViewRepresentable {
+struct MainWindowContentOverlay<Overlay: View>: NSViewRepresentable {
     let isPresented: Bool
     let reduceMotion: Bool
     @ViewBuilder var content: () -> Overlay
@@ -37,7 +37,7 @@ struct DailyRadarWindowOverlay<Overlay: View>: NSViewRepresentable {
     func updateNSView(_ nsView: ProbeView, context: Context) {
         context.coordinator.update(
             from: nsView,
-            rootView: DailyRadarWindowOverlayContent(
+            rootView: MainWindowContentOverlayBody(
                 isPresented: isPresented,
                 reduceMotion: reduceMotion,
                 environment: context.environment,
@@ -61,14 +61,14 @@ struct DailyRadarWindowOverlay<Overlay: View>: NSViewRepresentable {
     /// 只拥有局部 hosting view；随探针附加 / 拆除，不修改 NSWindow 或系统按钮。
     @MainActor
     final class Coordinator {
-        private var hostingView: DailyRadarOverlayHostingView<DailyRadarWindowOverlayContent<Overlay>>?
+        private var hostingView: MainContentHostingView<MainWindowContentOverlayBody<Overlay>>?
 
         /// 跨宿主完整传递环境（含依赖、语言、字号和主题），但不重新创建已打开的工作区。
-        func update(from probe: ProbeView, rootView: DailyRadarWindowOverlayContent<Overlay>, isPresented: Bool) {
+        func update(from probe: ProbeView, rootView: MainWindowContentOverlayBody<Overlay>, isPresented: Bool) {
             if let hostingView {
                 hostingView.rootView = rootView
             } else {
-                let view = DailyRadarOverlayHostingView(rootView: rootView)
+                let view = MainContentHostingView(rootView: rootView)
                 // frame 由锚点决定，不允许内容的 fitting size 反向撑大窗口。
                 view.sizingOptions = []
                 view.safeAreaRegions = []
@@ -143,7 +143,7 @@ struct DailyRadarWindowOverlay<Overlay: View>: NSViewRepresentable {
 }
 
 /// 保持宿主挂载，让 SwiftUI 同时处理进入 / 退出和快速反向切换，不用延迟任务销毁面板。
-struct DailyRadarWindowOverlayContent<Overlay: View>: View {
+struct MainWindowContentOverlayBody<Overlay: View>: View {
     let isPresented: Bool
     let reduceMotion: Bool
     let environment: EnvironmentValues
@@ -168,7 +168,7 @@ struct DailyRadarWindowOverlayContent<Overlay: View>: View {
 
 /// 关闭后透明宿主仍保留以完成退出动画，但不能拦截原 toolbar / 内容区的鼠标事件。
 @MainActor
-private final class DailyRadarOverlayHostingView<Content: View>: NSHostingView<Content> {
+private final class MainContentHostingView<Content: View>: NSHostingView<Content> {
     var interceptsEvents = false
 
     override func hitTest(_ point: NSPoint) -> NSView? {

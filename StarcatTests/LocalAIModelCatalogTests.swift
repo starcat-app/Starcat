@@ -56,8 +56,8 @@ struct LocalAIModelCatalogTests {
         for entry in LocalAIModelCatalog.entries {
             #expect(entry.estimatedDownloadSize > 0)
             #expect(entry.memoryRecommendation > 0)
-            #expect(entry.files.contains { $0.name == "config.json" })
-            #expect(entry.files.contains { $0.name == "model.safetensors" })
+            #expect(entry.files.contains(.required("config.json")))
+            #expect(entry.files.contains { $0.isRequired && $0.name.hasSuffix(".safetensors") })
             #expect(!entry.sources.isEmpty)
             #expect(entry.source(for: .huggingFace) != nil)
         }
@@ -67,10 +67,36 @@ struct LocalAIModelCatalogTests {
     func modelScopeWhitelist() {
         // 2026-09-12 全量核验：12 个模型在 HF 与魔塔均有可用仓库；大多数来自
         // mlx-community，MiniCPM5 使用 OpenBMB 官方双源仓库。
-        for entry in LocalAIModelCatalog.entries {
+        for entry in LocalAIModelCatalog.entries where entry.id != LocalAIModelCatalog.llmDefiantFable.id {
             #expect(entry.isAvailable(on: .modelScope), "\(entry.id) 应有魔塔镜像")
             #expect(entry.isAvailable(on: .huggingFace), "\(entry.id) 应有 HF 仓库")
         }
+    }
+
+    @Test("Defiant Fable 固定 Hugging Face 版本并安装双分片与独立模板")
+    func defiantFableContract() throws {
+        let entry = try #require(LocalAIModelCatalog.entry(id: "qwen3.5-9b-defiant-fable-mlx-4bit"))
+
+        #expect(entry.type == .llm)
+        #expect(entry.capability == .chat)
+        #expect(!entry.recommended)
+        #expect(!entry.isLite)
+        #expect(entry.sources == [
+            LocalAIModelSource(
+                kind: .huggingFace,
+                repo: "pipenetwork/Qwen3.5-9B-The-Defiant-Fable-Uncensored-Heretic-MLX-4bit",
+                revision: "99a39b89e05082eecefb02f0dd93e2cd111166c0"),
+        ])
+        #expect(entry.files == [
+            .required("config.json"),
+            .required("tokenizer.json"),
+            .required("tokenizer_config.json"),
+            .required("chat_template.jinja"),
+            .required("model.safetensors.index.json"),
+            .required("model-00001-of-00002.safetensors"),
+            .required("model-00002-of-00002.safetensors"),
+            .optional("generation_config.json"),
+        ])
     }
 
     @Test("MiniCPM5 使用官方双源并携带独立聊天模板")

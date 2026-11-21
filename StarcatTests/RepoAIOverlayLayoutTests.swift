@@ -9,7 +9,7 @@ import SwiftUI
 import Testing
 @testable import Starcat
 
-@Suite("AI 浮层高度")
+@Suite("详情浮层布局")
 struct RepoAIOverlayLayoutTests {
 
     @Test("笔记和 AI 浮层在两条栏的实测高度外各留 4pt")
@@ -40,6 +40,32 @@ struct RepoAIOverlayLayoutTests {
         RepoDetailAIOverlayTopInsetPreference.reduce(value: &value) { 36 }
         RepoDetailAIOverlayTopInsetPreference.reduce(value: &value) { 0 }
         #expect(value == 36)
+    }
+
+    @Test("从左边缘左拖放宽、右拖收窄")
+    func resizesNotesDrawerFromLeadingEdge() {
+        #expect(RepoDetailOverlayLayout.notesDrawerWidth(
+            availableWidth: 800, preferredWidth: 480, horizontalDrag: -80
+        ) == 560)
+        #expect(RepoDetailOverlayLayout.notesDrawerWidth(
+            availableWidth: 800, preferredWidth: 480, horizontalDrag: 50
+        ) == 430)
+    }
+
+    @Test("笔记宽度遵守边界并从实际显示宽度开始拖动")
+    func clampsNotesDrawerWidthToAvailableSpace() {
+        #expect(RepoDetailOverlayLayout.notesDrawerWidth(
+            availableWidth: 650, preferredWidth: 800, horizontalDrag: 50
+        ) == 600)
+        #expect(RepoDetailOverlayLayout.notesDrawerWidth(
+            availableWidth: 650, preferredWidth: 480, horizontalDrag: -500
+        ) == 650)
+        #expect(RepoDetailOverlayLayout.notesDrawerWidth(
+            availableWidth: 650, preferredWidth: 480, horizontalDrag: 500
+        ) == 400)
+        #expect(RepoDetailOverlayLayout.notesDrawerWidth(
+            availableWidth: 320, preferredWidth: 480, horizontalDrag: 0
+        ) == 320)
     }
 }
 

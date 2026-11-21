@@ -458,7 +458,13 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                             }
                         }
                         .overlay {
-                            notesDrawerOverlay(workspace: notesWorkspace)
+                            RepoNoteDrawerOverlay(
+                                workspace: notesWorkspace,
+                                verticalInsets: RepoDetailOverlayLayout.verticalInsets(
+                                    topChromeInset: aiOverlayTopChromeInset,
+                                    bottomChromeInset: aiOverlayBottomChromeInset
+                                )
+                            )
                         }
                 }
                 .frame(
@@ -590,36 +596,6 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         ) {
             openRepositoryAIFromCommand()
         }
-    }
-
-    /// 在正文坐标内先留出入口栏和状态栏，再布局抽屉，窗口缩放与 Hero 折叠会自然更新高度。
-    private func notesDrawerOverlay(workspace: RepoNotesWorkspace?) -> some View {
-        let isDrawerOpen = workspace?.isDrawerOpen == true
-        let isMaximized = workspace?.isDrawerMaximized == true
-        let horizontalInset: CGFloat = isMaximized ? 4 : 16
-
-        return GeometryReader { proxy in
-            ZStack {
-                if let workspace, isDrawerOpen {
-                    let availableWidth = max(0, proxy.size.width - horizontalInset * 2)
-                    let compactWidth = min(availableWidth, max(480, proxy.size.width * 0.62))
-                    RepoNoteDrawer(workspace: workspace)
-                        .frame(
-                            width: isMaximized ? availableWidth : compactWidth,
-                            height: proxy.size.height
-                        )
-                        .padding(.horizontal, horizontalInset)
-                        .transition(reduceMotion ? .identity : .move(edge: .trailing))
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-        }
-        .padding(RepoDetailOverlayLayout.verticalInsets(
-            topChromeInset: aiOverlayTopChromeInset,
-            bottomChromeInset: aiOverlayBottomChromeInset
-        ))
-        .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.85), value: isDrawerOpen)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: isMaximized)
     }
 
     /// 快捷键必须与详情现有 `.ai` action 使用同一门禁；`id == 0` 是公共列表 fallback，
@@ -1251,5 +1227,77 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
               keys.contains(WikiRepoKey(owner: repo.owner, repo: repo.name)),
               wikiRepoKey == wikiLookupKey(for: repo) else { return }
         wikiLinks = []
+    }
+}
+
+/// 笔记浮层独立持有拖拽状态，使连续宽度更新只重排浮层。高度仍由正文视口和上下栏间距决定。
+private struct RepoNoteDrawerOverlay: View {
+    let workspace: RepoNotesWorkspace?
+    let verticalInsets: EdgeInsets
+
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+    @State private var preferredWidth: CGFloat?
+    @GestureState private var horizontalDrag: CGFloat? = nil
+
+    var body: some View {
+        let isDrawerOpen = workspace?.isDrawerOpen == true
+        let isMaximized = workspace?.isDrawerMaximized == true
+        let horizontalInset: CGFloat = isMaximized ? 4 : 16
+
+        GeometryReader { proxy in
+            ZStack {
+                if let workspace, isDrawerOpen {
+                    let availableWidth = max(0, proxy.size.width - horizontalInset * 2)
+                    let idealWidth = preferredWidth ?? max(480, proxy.size.width * 0.62)
+                    let width = isMaximized ? availableWidth : RepoDetailOverlayLayout.notesDrawerWidth(
+                        availableWidth: availableWidth,
+                        preferredWidth: idealWidth,
+                        horizontalDrag: horizontalDrag ?? 0
+                    )
+
+                    RepoNoteDrawer(workspace: workspace)
+                        .frame(width: width, height: proxy.size.height)
+                        .overlay(alignment: .leading) {
+                            if !isMaximized, availableWidth > RepoDetailOverlayLayout.minimumNotesDrawerWidth {
+                                resizeHandle(availableWidth: availableWidth, idealWidth: idealWidth)
+                                    .allowsHitTesting(workspace.isDrawerOpen)
+                            }
+                        }
+                        .padding(.horizontal, horizontalInset)
+                        .transition(reduceMotion ? .identity : .move(edge: .trailing))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+        }
+        .padding(verticalInsets)
+        .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.85), value: isDrawerOpen)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: isMaximized)
+    }
+
+    /// 手柄会和面板左边缘一起移动，用全局坐标计算位移才能避免拉动时来回跳动。
+    private func resizeHandle(availableWidth: CGFloat, idealWidth: CGFloat) -> some View {
+        Capsule()
+            .fill(Color.secondary.opacity(horizontalDrag == nil ? 0.4 : 0.85))
+            .frame(width: 3, height: 36)
+            .frame(width: 12)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .pointerStyle(.columnResize)
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .updating($horizontalDrag) { value, drag, transaction in
+                        drag = value.translation.width
+                        transaction.animation = nil
+                    }
+                    .onEnded { value in
+                        guard value.translation.width != 0 else { return }
+                        preferredWidth = RepoDetailOverlayLayout.notesDrawerWidth(
+                            availableWidth: availableWidth,
+                            preferredWidth: idealWidth,
+                            horizontalDrag: value.translation.width
+                        )
+                    }
+            )
+            .accessibilityHidden(true)
     }
 }

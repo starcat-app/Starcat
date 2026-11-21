@@ -609,7 +609,7 @@ final class SearchIntentRouter {
         in response: DecisionEvaluationResponse,
         questionID: String
     ) throws -> Double {
-        guard let probability = response.answers[questionID]?.probability,
+        guard let probability = response.answers[questionID]?.noul,
               probability.isFinite,
               (0...1).contains(probability)
         else {
@@ -721,9 +721,9 @@ extension SearchIntentRouter {
         """
     }
 
-    private static var decisionQuestions: [String: DecisionNoulQuestion] {
+    private static var decisionQuestions: [String: DecisionQuestion] {
         [
-            needsPlanningQuestionID: DecisionNoulQuestion(
+            needsPlanningQuestionID: .noul(
                 instructions: DecisionQuestionInstructions.object([
                     "task": "Classify whether the query needs repository discovery planning.",
                     "definition": "Natural intent, alternatives, forgot-the-name, feature descriptions, or fresh evidence need planning.",
@@ -734,7 +734,7 @@ extension SearchIntentRouter {
                     false: "The query is a plain keyword, exact repository reference, or GitHub query syntax."
                 )
             ),
-            needsFreshEvidenceQuestionID: DecisionNoulQuestion(
+            needsFreshEvidenceQuestionID: .noul(
                 instructions: DecisionQuestionInstructions.object([
                     "task": "Classify whether finding the repository depends on recent public evidence.",
                     "definition": "Words like recent/trending need evidence, but are only soft preferences unless a concrete time or metric is stated.",

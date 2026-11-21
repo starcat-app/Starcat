@@ -54,6 +54,19 @@ struct DailyRadarSharingTests {
         #expect(await fixture.api().cachedRepoShare(fullName: "owner/project") == nil)
     }
 
+    /// 显式重建必须绕过本地记录；成功后普通入口改为复用新公开快照。
+    @Test func explicitRepoShareRecreateBypassesPersistentRecord() async throws {
+        let fixture = SharingFixture()
+        defer { fixture.clean() }
+        let api = fixture.api()
+        let request = makeRepoShareRequest()
+        _ = try await api.shareRepo(request: request)
+        _ = try await api.recreateRepoShare(request: request)
+        #expect(fixture.state.requests.count == 2)
+        _ = try await api.shareRepo(request: request)
+        #expect(fixture.state.requests.count == 2)
+    }
+
     @Test func repoShareExpirationValidation() {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         func response(_ expiration: String?, url: String = "https://share.example/s/repo") -> ShareCreateResponse {
@@ -483,6 +496,20 @@ struct DailyRadarSharingTests {
             shareID: "fixture", shareURL: URL(string: url)!, alreadyExists: false,
             heroWebPURL: URL(string: "https://share.example/d/fixture/hero.webp")!,
             heroPNGURL: URL(string: "https://share.example/d/fixture/hero.png")!, createdAt: "2026-11-13T00:00:00Z"
+        )
+    }
+
+    private func makeRepoShareRequest() -> ShareRepoRequest {
+        ShareRepoRequest(
+            repo: ShareRepoDTO(
+                fullName: "owner/project", description: nil, language: nil, starsCount: 1,
+                forksCount: 0, subscribersCount: 0, topics: [], homepage: nil,
+                url: "https://github.com/owner/project"
+            ),
+            aiSummary: ShareAISummaryDTO(
+                oneLiner: "Summary", summary: "Summary", platforms: [], suitableFor: [],
+                strengths: [], risks: [], suggestedTags: []
+            )
         )
     }
 

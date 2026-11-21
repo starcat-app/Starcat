@@ -770,10 +770,9 @@ struct RepoShareButton: View {
                             .controlSize(.small)
                     }
                 } else {
-                    let isShared = hasExistingShare
                     Label(
-                        isShared ? "repo.share.ai.created" : "repo.share.ai.create",
-                        systemImage: isShared ? "sparkles.rectangle.stack.fill" : "sparkles.rectangle.stack"
+                        "repo.share.ai.create",
+                        systemImage: "sparkles.rectangle.stack"
                     )
                 }
             }
@@ -811,6 +810,7 @@ struct RepoShareTaskSheet: View {
     let repoID: Int64
     let onCancel: () -> Void
     let onRetry: () -> Void
+    let onRecreate: () -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -960,7 +960,11 @@ struct RepoShareTaskSheet: View {
                 }
 
             case .success:
-                EmptyView()
+                Button {
+                    onRecreate()
+                } label: {
+                    Label("repo.share.ai.created", systemImage: "arrow.clockwise")
+                }
 
             case .failure:
                 Button {

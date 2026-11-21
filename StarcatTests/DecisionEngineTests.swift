@@ -34,7 +34,7 @@ struct DecisionEngineTests {
             callCount += 1
             if shouldFail { throw StubError.failed }
             return DecisionEvaluationResponse(answers: request.questions.mapValues { _ in
-                DecisionNoulAnswer(probability: 0.9)
+                DecisionAnswer(type: "noul", noul: 0.9)
             })
         }
     }

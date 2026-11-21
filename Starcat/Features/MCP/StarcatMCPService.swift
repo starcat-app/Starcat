@@ -31,6 +31,7 @@ final class StarcatMCPService {
     private let facade: StarcatMCPFacade
     private let writeFacade: StarcatMCPWriteFacade
     private let notificationService: ReleaseNotificationService?
+    private let decisionSystemOneService: DecisionSystemOneService?
     // 固定本次 service 的 Bonjour 名称，确保配对地址和 Host/Origin 白名单一致。
     // ProcessInfo.hostName 可能是网络提供的公网名称，不能当成本地可解析地址。
     private let localHostName = SCDynamicStoreCopyLocalHostName(nil) as String?
@@ -137,7 +138,8 @@ final class StarcatMCPService {
         deviceStore: StarcatMCPDeviceStore,
         facade: StarcatMCPFacade,
         writeFacade: StarcatMCPWriteFacade,
-        notificationService: ReleaseNotificationService? = nil
+        notificationService: ReleaseNotificationService? = nil,
+        decisionSystemOneService: DecisionSystemOneService? = nil
     ) {
         self.settings = settings
         self.entitlementGate = entitlementGate
@@ -146,6 +148,7 @@ final class StarcatMCPService {
         self.facade = facade
         self.writeFacade = writeFacade
         self.notificationService = notificationService
+        self.decisionSystemOneService = decisionSystemOneService
     }
 
     var endpointURL: String {
@@ -283,13 +286,16 @@ final class StarcatMCPService {
         lifecycleGeneration += 1
         let generation = lifecycleGeneration
         let allowsRemoteConnections = settings.mcpAllowRemoteConnections
+        // HTTP 决策接口和 MCP Runtime 必须使用同一个 Host/Origin 白名单；
+        // 否则远程模式下会出现 MCP 允许、HTTP 拒绝（或反过来）的安全分叉。
+        let originValidator = makeOriginValidator(
+            port: port,
+            allowsRemoteConnections: allowsRemoteConnections
+        )
         let runtime = StarcatMCPRuntime(
             facade: facade,
             writeFacade: writeFacade,
-            originValidator: makeOriginValidator(
-                port: port,
-                allowsRemoteConnections: allowsRemoteConnections
-            )
+            originValidator: originValidator
         )
 
         startupTask = Task { @MainActor [weak self] in
@@ -319,6 +325,9 @@ final class StarcatMCPService {
                     },
                     routeHandler: { [weak self] request in
                         await self?.handlePairingRoute(request)
+                    },
+                    publicRouteHandler: { [weak self] request in
+                        await self?.handlePublicRoute(request, originValidator: originValidator)
                     }
                 )
                 try httpServer.start()
@@ -442,7 +451,7 @@ final class StarcatMCPService {
     }
 
     private func validate(_ request: StarcatHTTPServerRequest) -> StarcatHTTPServerError? {
-        guard request.path == "/mcp" else { return .notFound }
+        guard request.path == "/mcp" || request.path == "/v1/systemone" else { return .notFound }
         guard settings.mcpServiceEnabled else { return .forbidden(StarcatMCPError.disabled.localizedDescription) }
         guard entitlementGate.isProUser else { return .forbidden(StarcatMCPError.requiresPro.localizedDescription) }
         guard let authorization = request.header("Authorization"), authorization.hasPrefix("Bearer ") else {
@@ -451,6 +460,94 @@ final class StarcatMCPService {
         let token = String(authorization.dropFirst("Bearer ".count))
         guard token == bearerToken || deviceStore.isAuthorized(token: token) else { return .unauthorized }
         return nil
+    }
+
+    /// `POST /v1/systemone` 兼容 Jev SDK 的决策入口。
+    ///
+    /// 安全边界刻意沿用 MCP listener：服务开关、Pro、Bearer、Host/Origin 和
+    /// `write` 权限完全一致。这里是传输层，不重新实现引擎选择或兜底。
+    private func handlePublicRoute(
+        _ request: StarcatHTTPServerRequest,
+        originValidator: OriginValidator
+    ) async -> StarcatHTTPServerRouteResponse? {
+        guard request.path == "/v1/systemone" else { return nil }
+        guard request.method.uppercased() == "POST" else {
+            return Self.decisionResponse(statusCode: 400, message: "POST required")
+        }
+        do {
+            let httpRequest = HTTPRequest(
+                method: request.method,
+                headers: request.headers,
+                body: request.body,
+                path: request.path
+            )
+            let context = HTTPValidationContext(httpMethod: request.method)
+            if let rejected = originValidator.validate(httpRequest, context: context) {
+                return Self.decisionResponse(
+                    statusCode: rejected.statusCode,
+                    message: rejected.statusCode == 421 ? "Host header not allowed" : "Origin not allowed"
+                )
+            }
+            try StarcatMCPAccess.requireWrite(settings)
+            if let encoding = request.header("Content-Encoding"), encoding.lowercased() != "identity" {
+                return Self.decisionResponse(statusCode: 415, message: "Send an uncompressed System One request.")
+            }
+            let contentType = request.header("Content-Type") ?? ""
+            let input: DecisionSystemOneInput
+            if contentType.lowercased().hasPrefix("multipart/form-data") {
+                input = try DecisionSystemOneInput.normalize(
+                    multipartBody: request.body,
+                    contentType: request.header("Content-Type")
+                )
+            } else {
+                guard contentType.lowercased().hasPrefix("application/json") else {
+                    throw DecisionInputError("headers.Content-Type: expected application/json or multipart/form-data")
+                }
+                input = try JSONDecoder().decode(DecisionSystemOneInput.self, from: request.body)
+            }
+            try requireImageHeader(for: input, request: request)
+            guard let decisionSystemOneService else {
+                throw StarcatMCPError.unsupported("Decision services are unavailable.")
+            }
+            let response = try await decisionSystemOneService.evaluate(input)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            return StarcatHTTPServerRouteResponse(statusCode: 200, body: try encoder.encode(response))
+        } catch let error as DecisionInputError {
+            return Self.decisionResponse(statusCode: 400, message: error.localizedDescription)
+        } catch is DecodingError {
+            return Self.decisionResponse(statusCode: 400, message: "Invalid JSON request body")
+        } catch StarcatMCPError.disabled {
+            return Self.decisionResponse(statusCode: 403, message: StarcatMCPError.disabled.localizedDescription)
+        } catch StarcatMCPError.requiresPro {
+            return Self.decisionResponse(statusCode: 403, message: StarcatMCPError.requiresPro.localizedDescription)
+        } catch let error as StarcatPublicCapabilityError {
+            return Self.decisionResponse(statusCode: 403, message: error.localizedDescription)
+        } catch DecisionEngineError.engineUnavailable(_, let reason) {
+            return Self.decisionResponse(statusCode: 503, message: reason)
+        } catch DecisionEngineError.engineNotRegistered {
+            return Self.decisionResponse(statusCode: 400, message: "Decision engine is not registered")
+        } catch DecisionEngineError.invalidAnswer, TypeSafeClientError.invalidAnswer {
+            return Self.decisionResponse(statusCode: 502, message: "Decision engine returned an invalid answer")
+        } catch let error as StarcatMCPError {
+            return Self.decisionResponse(statusCode: 400, message: error.localizedDescription)
+        } catch {
+            return Self.decisionResponse(statusCode: 503, message: error.localizedDescription)
+        }
+    }
+
+    private func requireImageHeader(for input: DecisionSystemOneInput, request: StarcatHTTPServerRequest) throws {
+        let usesImages = input.assets?.isEmpty == false
+            || input.questions.values.contains { $0.type == .box }
+        let enabled = request.header("TypeSafe-Danger-Zone-Images")?.lowercased() == "true"
+        guard !usesImages || enabled else {
+            throw DecisionInputError("TypeSafe-Danger-Zone-Images: must be true for images or box questions")
+        }
+    }
+
+    private static func decisionResponse(statusCode: Int, message: String) -> StarcatHTTPServerRouteResponse {
+        let body = (try? JSONSerialization.data(withJSONObject: ["error": message], options: [.sortedKeys])) ?? Data()
+        return StarcatHTTPServerRouteResponse(statusCode: statusCode, body: body)
     }
 
     /// 一次性配对是 MCP listener 上唯一的非 MCP route。它不接受业务参数，也不读取用户数据；

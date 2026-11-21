@@ -176,7 +176,7 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
                 count
             )
         case .insights:
-            // HomeView 在洞察页直接替换整列，本分支仅用于 enum 穷尽性兜底。
+            // 洞察的标题和统计在合并后的右侧页头显示。
             return ""
         }
     }
@@ -621,7 +621,8 @@ struct RepoListView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !(selectedPage == .trending && selectedExploreMode == .recommendations),
+            if selectedPage != .insights,
+               !(selectedPage == .trending && selectedExploreMode == .recommendations),
                viewModel.effectiveGlobalFilterState.skillFilter != .any { RepoSkillCoverageBanner() }
         }
         .onPreferenceChange(RepoLicenseOptionsPreferenceKey.self) { keys in
@@ -913,6 +914,7 @@ struct RepoListView: View {
     ///
     /// Explore weekly 走 `WeeklySelectionService` 真源。
     private var listColumnTintColor: Color {
+        if selectedPage == .insights { return .accentColor }
         if selectedPage == .trending, selectedExploreMode == .recommendations {
             guard let language = recommendationHistoryModel.selectedEntry?.item?.language else { return .accentColor }
             return LanguageColor.color(for: language)
@@ -1536,7 +1538,7 @@ struct RepoListView: View {
                     }
                 )
                 .transition(MiddleListPageFade())
-            } else {
+            } else if selectedPage == .manage {
                 // Manage：顶栏（排序 + 同步）始终可见，排序作用于当前侧边栏分类子集。
                 manageCategoryContent(vm)
                     .transition(MiddleListPageFade())
@@ -1929,6 +1931,9 @@ struct RepoListView: View {
         }
         if selectedPage == .activity {
             return "activity-local"
+        }
+        if selectedPage == .insights {
+            return "insights"
         }
         // W12 PR-5：多选状态迁到 manageMultiSelectionStore；状态签名用 store.isActive 派生。
         let mode = dependencies.manageMultiSelectionStore.isActive ? "multi" : "single"
@@ -2442,6 +2447,9 @@ struct RepoListView: View {
                 prefix: String.l10n("activity.title"),
                 thirdLevelTitle: selectedActivityCategory.localizedTitle
             )
+        }
+        if selectedPage == .insights {
+            return Text("insights.title")
         }
         return manageNavigationTitle
     }

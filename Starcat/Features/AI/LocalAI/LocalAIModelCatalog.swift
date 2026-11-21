@@ -12,7 +12,7 @@
 //    （401/404 视为不存在），ModelScope 镜像必须 API `Code:200`。未验证的组合不入册
 //    ——下载源选了 ModelScope 而某模型没有镜像时，该模型显示「暂未收录」。
 //  - ModelScope 镜像为社区同步（master 分支），revision 记录为 master 快照；
-//    HF 为权威源（安装时解析 commit SHA）。
+//    HF 优先使用目录固定的 commit SHA，未固定时在安装时解析。
 //  - 2026-09-12 二轮扩充：Embedding 4 / Reranker 3 / LLM 5（Qwen3.5、MiniCPM5 已入册）。
 //    Nemotron-3-Embed（model_type ministral3）上游 registry 不支持，未收录；
 //    jina-reranker-v3 为 CC BY-NC 非商业许可，未收录；Qwen3-VL-Reranker 为
@@ -253,7 +253,7 @@ enum LocalAIModelCatalog {
         ],
         files: mlxConfigFiles)
 
-    // MARK: - LLM（5）
+    // MARK: - LLM（6）
 
     /// 最新一代推荐：Qwen3.5 4B（mlx-swift-lm 锁定版本原生支持 Qwen3_5 架构）。
     static let llm = LocalAIModelCatalogEntry(
@@ -312,6 +312,36 @@ enum LocalAIModelCatalog {
         ],
         files: llmConfigFiles + [.required("chat_template.jinja")])
 
+    /// Defiant Fable 9B 的社区 MLX 转换版。固定 revision 以匹配已验证的分片与独立聊天模板。
+    /// ModelScope 尚无已验证镜像，沿用设置页的下载源可用性判断。
+    static let llmDefiantFable = LocalAIModelCatalogEntry(
+        id: "qwen3.5-9b-defiant-fable-mlx-4bit",
+        displayName: "Qwen3.5 9B Defiant Fable 4bit",
+        type: .llm,
+        capability: .chat,
+        recommended: false,
+        isLite: false,
+        estimatedDownloadSize: 5_970_000_000,
+        memoryRecommendation: 7_000_000_000,
+        contextLength: nil,
+        embeddingDimension: nil,
+        sources: [
+            LocalAIModelSource(
+                kind: .huggingFace,
+                repo: "pipenetwork/Qwen3.5-9B-The-Defiant-Fable-Uncensored-Heretic-MLX-4bit",
+                revision: "99a39b89e05082eecefb02f0dd93e2cd111166c0"),
+        ],
+        files: [
+            .required("config.json"),
+            .required("tokenizer.json"),
+            .required("tokenizer_config.json"),
+            .required("chat_template.jinja"),
+            .required("model.safetensors.index.json"),
+            .required("model-00001-of-00002.safetensors"),
+            .required("model-00002-of-00002.safetensors"),
+            .optional("generation_config.json"),
+        ])
+
     static let llmQwen35Lite = LocalAIModelCatalogEntry(
         id: "qwen3.5-0.8b-mlx-4bit",
         displayName: "Qwen3.5 0.8B 4bit",
@@ -358,6 +388,7 @@ enum LocalAIModelCatalog {
         llm,
         llmQwen3_4B,
         llmMiniCPM5,
+        llmDefiantFable,
         llmQwen35Lite,
         llmLite,
     ]

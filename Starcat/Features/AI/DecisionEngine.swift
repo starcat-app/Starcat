@@ -80,25 +80,6 @@ struct DecisionNoulCriteria: Encodable, Equatable, Sendable {
     var `false`: String?
 }
 
-/// 当前决策抽象只开放业务实际使用的 Noul 原语。
-struct DecisionNoulQuestion: Encodable, Equatable, Sendable {
-    let instructions: DecisionQuestionInstructions
-    let criteria: DecisionNoulCriteria?
-
-    /// Laya 没有结构化 criteria 参数，因此把判据追加到问题文本；字段名固定，
-    /// 既保留概率语义，也避免调用方各自拼 prompt。
-    var localPromptText: String {
-        var parts = [instructions.localPromptText]
-        if let trueCriterion = criteria?.true, !trueCriterion.isEmpty {
-            parts.append("true criterion: \(trueCriterion)")
-        }
-        if let falseCriterion = criteria?.false, !falseCriterion.isEmpty {
-            parts.append("false criterion: \(falseCriterion)")
-        }
-        return parts.joined(separator: "\n")
-    }
-}
-
 /// 仓库分类所需的最小事实快照。
 ///
 /// README 是不可信数据，只作为 state 传入；候选过滤、封闭集校验与最终写入仍在代码层。
@@ -157,6 +138,7 @@ struct RepositoryDecisionState: Encodable, Equatable, Sendable {
 enum DecisionState: Encodable, Equatable, Sendable {
     case text(String)
     case repository(RepositoryDecisionState)
+    case json(AgentJSONValue)
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
@@ -164,6 +146,8 @@ enum DecisionState: Encodable, Equatable, Sendable {
         case .text(let value):
             try container.encode(value)
         case .repository(let value):
+            try container.encode(value)
+        case .json(let value):
             try container.encode(value)
         }
     }
@@ -174,6 +158,8 @@ enum DecisionState: Encodable, Equatable, Sendable {
             return value
         case .repository(let value):
             return value.localPromptText
+        case .json(let value):
+            return value.decisionText
         }
     }
 }
@@ -185,20 +171,20 @@ enum DecisionEvaluationOperation: String, Sendable {
     case tagReuse = "tag_reuse"
     case connectionTest = "connection_test"
     case searchIntent = "search_intent"
+    case external
 }
 
 struct DecisionEvaluationRequest: Equatable, Sendable {
     let state: DecisionState
-    let questions: [String: DecisionNoulQuestion]
+    let questions: [String: DecisionQuestion]
     let operation: DecisionEvaluationOperation
+    var assets: [String: DecisionImageAsset]? = nil
 }
 
-struct DecisionNoulAnswer: Equatable, Sendable {
-    let probability: Double
-}
-
-struct DecisionEvaluationResponse: Equatable, Sendable {
-    let answers: [String: DecisionNoulAnswer]
+struct DecisionEvaluationResponse: Codable, Equatable, Sendable {
+    let answers: [String: DecisionAnswer]
+    var model: String?
+    var usage: TypeSafeUsage?
 }
 
 /// 同步可查询的可用性只决定「是否在调用前回退既有 LLM」。

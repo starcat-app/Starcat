@@ -13,19 +13,7 @@ struct InsightsDrillDownTests {
 
     @Test("所有待处理动作都能从 neutral 下钻")
     func actionRoutesAreCompleteAndNeutral() throws {
-        let actions: [InsightsSelection] = [
-            .untagged,
-            .unread,
-            .missingReadme,
-            .missingIndexableContent,
-            .indexIssues,
-            .healthPending,
-            .openSSFPending,
-            .maintenanceRisk,
-            .securityRisk
-        ]
-
-        for action in actions {
+        for action in InsightsActionID.allCases {
             let route = try #require(
                 InsightsDrillDownRouter.route(
                     scope: .knowledge,
@@ -37,6 +25,19 @@ struct InsightsDrillDownTests {
             #expect(!route.filters.hideArchived)
             #expect(!route.filters.hideForks)
             #expect(route.filters.globalFilterLanguages.isEmpty)
+
+            let starredRoute = InsightsDrillDownRouter.route(
+                scope: .starred,
+                target: .action(action),
+                embeddingModel: "embed-v1"
+            )
+            switch action {
+            case .missingReadme, .missingIndexableContent, .indexIssues:
+                #expect(starredRoute == nil)
+            default:
+                #expect(starredRoute?.selection == .allStars)
+                #expect(starredRoute?.filters == route.filters)
+            }
         }
     }
 
