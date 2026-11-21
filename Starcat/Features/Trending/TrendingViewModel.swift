@@ -416,7 +416,7 @@ final class TrendingViewModel {
     /// - 网络失败 + 无缓存 → errorView
     ///
     /// 智能 revision 规则（关键，与 2026-06-02 版本一致）：
-    /// - 缓存上屏总是 bump revision（首屏入场动画）
+    /// - 首次提交缓存快照时递增 revision
     /// - 网络回来对比 oldIDs vs newIDs：身份序列变化才 bump
     /// - "身份序列" = `repos.map(\.fullName)` ordered list，stars/forks 等数值不算
     ///

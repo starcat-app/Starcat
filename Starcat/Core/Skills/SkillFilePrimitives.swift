@@ -69,6 +69,11 @@ enum SkillFilePrimitives {
         FileManager.default.fileExists(atPath: url.path) || isSymbolicLink(url)
     }
 
+    /// 文件系统按 `/` 字节分段，Swift 的 Character 会把附在斜杠后的组合字符视为同一字素。
+    static func pathComponents(_ path: String) -> [String] {
+        path.utf8.split(separator: 0x2F, omittingEmptySubsequences: false).map { String(decoding: $0, as: UTF8.self) }
+    }
+
     /// 共享根可能被其他工具同时写入；存在性预检不能替代内核的禁止覆盖语义。
     /// 不支持排他 rename 的卷直接失败，不能回退为会替换目标的普通 rename。
     static func moveExclusively(_ source: URL, to destination: URL) throws {
@@ -81,17 +86,17 @@ enum SkillFilePrimitives {
     @concurrent
     static func fingerprint(
         _ directory: URL, maximumEntries: Int = 5_000,
-        maximumBytes: Int64 = 67_108_864, maximumDepth: Int = 16
+        maximumBytes: Int64 = 67_108_864, maximumDepth: Int = 16, requireUnlinkedFiles: Bool = false
     ) async throws -> SkillDirectoryFingerprint {
         try fingerprintSynchronously(
             directory, maximumEntries: maximumEntries,
-            maximumBytes: maximumBytes, maximumDepth: maximumDepth
+            maximumBytes: maximumBytes, maximumDepth: maximumDepth, requireUnlinkedFiles: requireUnlinkedFiles
         )
     }
 
     /// NSFastEnumeration 的迭代器只能用于同步上下文，整个循环由上层后台入口调度。
     private static func fingerprintSynchronously(
-        _ directory: URL, maximumEntries: Int, maximumBytes: Int64, maximumDepth: Int
+        _ directory: URL, maximumEntries: Int, maximumBytes: Int64, maximumDepth: Int, requireUnlinkedFiles: Bool
     ) throws -> SkillDirectoryFingerprint {
         try Task.checkCancellation()
         let manager = FileManager.default
@@ -99,7 +104,8 @@ enum SkillFilePrimitives {
         guard rootValues.isDirectory == true, rootValues.isSymbolicLink != true else {
             throw RepoSkillError.unsupportedFiles
         }
-        let root = directory.resolvingSymlinksInPath().standardizedFileURL
+        // 评估的来源已经验证为物理路径。再次解析可能跟随其后被替换的父目录。
+        let root = requireUnlinkedFiles ? directory.standardizedFileURL : directory.resolvingSymlinksInPath().standardizedFileURL
         let prefix = root.path + "/"
         let rootMode = try mode(at: root)
         var enumerationError: (any Error)?
@@ -112,9 +118,9 @@ enum SkillFilePrimitives {
         for case let url as URL in enumerator {
             try Task.checkCancellation()
             let absolutePath = url.standardizedFileURL.path
-            guard absolutePath.hasPrefix(prefix) else { throw SkillFileTransactionError.invalidBoundary }
-            let path = String(absolutePath.dropFirst(prefix.count))
-            guard members.count < maximumEntries, path.split(separator: "/").count <= maximumDepth else {
+            guard absolutePath.utf8.starts(with: prefix.utf8) else { throw SkillFileTransactionError.invalidBoundary }
+            let path = String(decoding: absolutePath.utf8.dropFirst(prefix.utf8.count), as: UTF8.self)
+            guard members.count < maximumEntries, pathComponents(path).count <= maximumDepth else {
                 throw SkillFileTransactionError.budgetExceeded
             }
             let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey])
@@ -124,21 +130,11 @@ enum SkillFilePrimitives {
                 members.append(.init(path: path, kind: .directory, digest: nil, byteCount: 0, mode: permissions))
             } else {
                 guard values.isRegularFile == true else { throw RepoSkillError.unsupportedFiles }
-                let handle = try FileHandle(forReadingFrom: url)
+                let handle = try requireUnlinkedFiles ? openRegularFile(in: root, relativePath: path) : FileHandle(forReadingFrom: url)
                 defer { try? handle.close() }
-                var hash = SHA256()
-                var count: Int64 = 0
-                while let chunk = try handle.read(upToCount: 65_536), !chunk.isEmpty {
-                    try Task.checkCancellation()
-                    count += Int64(chunk.count)
-                    totalBytes += Int64(chunk.count)
-                    guard totalBytes <= maximumBytes else { throw SkillFileTransactionError.budgetExceeded }
-                    hash.update(data: chunk)
-                }
-                members.append(.init(
-                    path: path, kind: .file, digest: hash.finalize().map { String(format: "%02x", $0) }.joined(),
-                    byteCount: count, mode: permissions
-                ))
+                let (count, digest) = try hashFile(handle, maximumBytes: maximumBytes - totalBytes)
+                totalBytes += count
+                members.append(.init(path: path, kind: .file, digest: digest, byteCount: count, mode: permissions))
             }
         }
         if let enumerationError { throw enumerationError }
@@ -148,6 +144,73 @@ enum SkillFilePrimitives {
         let manifest = try encoder.encode(members)
         let digest = digest(Data("\(rootMode)\n".utf8) + manifest)
         return SkillDirectoryFingerprint(digest: digest, rootMode: rootMode, members: members)
+    }
+
+    /// 评估会跨过进程和模型边界，因此每一段都由内核拒绝跟随链接。
+    /// O_NONBLOCK 防止扫描后被替换为 FIFO 的文件卡住整个任务。
+    private static func openRegularFile(in root: URL, relativePath: String) throws -> FileHandle {
+        let flags = O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK
+        guard root.path.hasPrefix("/") else { throw RepoSkillError.unsupportedFiles }
+        var descriptor = open("/", flags | O_DIRECTORY)
+        guard descriptor >= 0 else { throw RepoSkillError.unsupportedFiles }
+        defer { close(descriptor) }
+        let parts = pathComponents(root.path).dropFirst() + pathComponents(relativePath)
+        guard !relativePath.isEmpty, parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." && !$0.contains("\0") })
+        else { throw RepoSkillError.unsupportedFiles }
+        for (index, part) in parts.enumerated() {
+            let next = openat(descriptor, part, flags | (index == parts.count - 1 ? 0 : O_DIRECTORY))
+            guard next >= 0 else { throw RepoSkillError.unsupportedFiles }
+            close(descriptor)
+            descriptor = next
+        }
+        var status = stat()
+        guard fstat(descriptor, &status) == 0, (status.st_mode & S_IFMT) == S_IFREG, status.st_nlink == 1 else {
+            throw RepoSkillError.unsupportedFiles
+        }
+        let copied = fcntl(descriptor, F_DUPFD_CLOEXEC, 0)
+        guard copied >= 0 else { throw RepoSkillError.unsupportedFiles }
+        return FileHandle(fileDescriptor: copied, closeOnDealloc: true)
+    }
+
+    /// 快照文件排他创建，沿用静态检查所需的读写权限，去除 Git 或本机文件的执行位。
+    static func createPrivateFile(at url: URL) throws -> FileHandle {
+        let descriptor = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
+        guard descriptor >= 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
+        return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    }
+
+    /// 复制流的字节数和摘要必须匹配预检，防止把变化后的附件记在旧版本下。
+    static func copyRegularFile(in root: URL, member: SkillFileFingerprint, to destination: URL) throws {
+        let input = try openRegularFile(in: root, relativePath: member.path)
+        defer { try? input.close() }
+        let output = try createPrivateFile(at: destination)
+        defer { try? output.close() }
+        do {
+            let (count, digest) = try hashFile(input, maximumBytes: member.byteCount, output: output)
+            guard count == member.byteCount, digest == member.digest else { throw RepoSkillError.verification }
+        } catch SkillFileTransactionError.budgetExceeded {
+            throw RepoSkillError.verification
+        }
+    }
+
+    /// 指纹与复制共用固定大小的缓冲区，达到预算后最多再读一字节以区分 EOF 和增长。
+    private static func hashFile(
+        _ input: FileHandle, maximumBytes: Int64, output: FileHandle? = nil
+    ) throws -> (Int64, String) {
+        guard maximumBytes >= 0 else { throw SkillFileTransactionError.budgetExceeded }
+        var hash = SHA256()
+        var count: Int64 = 0
+        while true {
+            try Task.checkCancellation()
+            let remaining = maximumBytes - count
+            let limit = Int(min(65_535, remaining)) + 1
+            guard let chunk = try input.read(upToCount: limit), !chunk.isEmpty else { break }
+            guard chunk.count <= remaining else { throw SkillFileTransactionError.budgetExceeded }
+            count += Int64(chunk.count)
+            hash.update(data: chunk)
+            try output?.write(contentsOf: chunk)
+        }
+        return (count, hash.finalize().map { String(format: "%02x", $0) }.joined())
     }
 
     /// copyItem 保留原目录，复制后按批准的完整指纹复核；变化或取消都停在发布之前。

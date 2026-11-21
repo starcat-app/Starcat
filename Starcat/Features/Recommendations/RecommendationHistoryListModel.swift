@@ -24,9 +24,14 @@ final class RecommendationHistoryListModel {
     private(set) var paginationIdentity = UUID()
     private var scope = ""
     private var lastQuery = ""
+    private var didPrepareHistory = false
 
     var hasMore: Bool { visibleLimit < filtered.count }
     var selectedEntry: RecommendationHistoryEntry? { filtered.first { $0.id == selectedID } }
+
+    func hasPreparedHistory(for scope: String) -> Bool {
+        self.scope == scope && didPrepareHistory
+    }
 
     /// 切账号即清查询和选择；不让旧详情留到新库返回后才消失。
     func activate(scope: String) {
@@ -40,6 +45,7 @@ final class RecommendationHistoryListModel {
         rows = []
         visibleLimit = 100
         lastQuery = ""
+        didPrepareHistory = false
         paginationIdentity = UUID()
         revision &+= 1
     }
@@ -66,9 +72,10 @@ final class RecommendationHistoryListModel {
         if filtered.map(\.id) != previousIDs { revision &+= 1 }
         // ID 相同也可能更新简介或反馈，不能只按 ID 变化刷新页面内容。
         refreshRows()
+        didPrepareHistory = true
     }
 
-    /// 追加当前筛选的下一页，不改变选择、分页身份或行入场修订号。
+    /// 追加当前筛选的下一页，保留选择和分页身份。
     func loadMore() {
         guard hasMore else { return }
         visibleLimit += 100

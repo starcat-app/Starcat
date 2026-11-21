@@ -104,18 +104,15 @@ struct TrendingView: View {
             // 因而工具栏、侧栏、详情栏和其它 TimelineView 动画都不会跟随重建。
             VStack(spacing: 0) {
                 cacheWarningBanner
-                ZStack {
-                    contentView
-                        .opacity(viewModel.hasPublishedCurrentQuery ? 1 : 0)
-                        .allowsHitTesting(viewModel.hasPublishedCurrentQuery)
-
-                    if !viewModel.hasPublishedCurrentQuery {
-                        if let error = viewModel.loadError, !viewModel.isLoading {
-                            errorView(message: error)
-                        } else {
-                            RepoSkeletonListView(rowCount: 10)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        }
+                MiddleListPresentation(
+                    showsSkeleton: !viewModel.hasPublishedCurrentQuery && (viewModel.isLoading || viewModel.loadError == nil),
+                    rowCount: 10,
+                    retainsContentDuringLoading: true
+                ) {
+                    if !viewModel.hasPublishedCurrentQuery, let error = viewModel.loadError {
+                        errorView(message: error)
+                    } else {
+                        contentView
                     }
                 }
             }

@@ -1,0 +1,87 @@
+#!/bin/sh
+# 随测试包复制的离线 CLI 替身。测试宿主创建的临时文件会被沙盒禁止执行。
+# 只核对参数与隔离环境，读取清单是否存在，输出固定格式的合成报告。
+set -eu
+
+[ -z "${OPENAI_API_KEY-}${GITHUB_TOKEN-}" ] || exit 2
+[ "$PYTHON_DOTENV_DISABLED" = 1 ] || exit 2
+[ "$HOME" != "$PWD" ] && [ -d "$HOME" ] && [ ! -e "$HOME/.env" ] || exit 2
+
+case "$1" in
+--version)
+    [ "$#" -eq 1 ] && [ -z "${SKILL_EVAL_LLM_API_KEY-}" ] || exit 2
+    printf 'skillevaluator, version 1.0.1\n'
+    ;;
+tier1)
+    [ "$#" -eq 9 ] && [ "$2" = --checks ] && [ "$3" = schema,quality ] && [ "$4" = --no-llm ] || exit 2
+    [ "$5" = --report ] && [ "$6" = json ] && [ "$7" = --output-dir ] && [ -f "$9/SKILL.md" ] || exit 2
+    [ -z "${SKILL_EVAL_LLM_API_KEY-}${SKILL_EVAL_EMBEDDING_API_KEY-}" ] || exit 2
+    printf 'terminal-only-diagnostic\n' >&2
+    cat > "$8/skillevaluator-tier1.json" <<'REPORT'
+{
+  "version": "1.0.1", "incomplete_scans": [],
+  "results": [
+    {
+      "publication_evidence": {"schema_version": 1, "producer": "skillevaluator.tier1", "tier": 1, "check_id": "schema"},
+      "status": "passed", "passed": true, "skipped": false,
+      "incomplete_scans": [], "tier1_unscanned_paths": [], "findings": [],
+      "success_details": [{"check": "manifest_exists"}, {"check": "frontmatter_valid"}]
+    },
+    {
+      "publication_evidence": {"schema_version": 1, "producer": "skillevaluator.tier1", "tier": 1, "check_id": "quality"},
+      "status": "passed", "passed": true, "skipped": false,
+      "incomplete_scans": [], "tier1_unscanned_paths": [], "findings": [],
+      "success_details": [{"check": "quality_score"}],
+      "quality": {
+        "overall_score": 80,
+        "dimensions": {"correctness": {"score": 80}, "discoverability": {"score": 80},
+                       "reliability": {"score": 80}, "efficiency": {"score": 80}}
+      }
+    }
+  ]
+}
+REPORT
+    ;;
+harness-check)
+    [ "$#" -eq 4 ] && [ "$2" = --json ] && [ -f "$4/SKILL.md" ] || exit 2
+    # 根路径由测试生成，只包含临时目录、UUID 和带空格的测试目录名。
+    printf '{"harness_compatibility":{"%s":[' "$4" > "$3"
+    for agent in claude-code codex copilot-cli hermes openclaw opencode; do
+        [ "$agent" = claude-code ] || printf ',' >> "$3"
+        printf '{"harness":"%s","status":"loads","findings":[]}' "$agent" >> "$3"
+    done
+    printf ']}}\n' >> "$3"
+    ;;
+rubric-eval)
+    [ "$#" -eq 6 ] && [ "$2" = --report ] && [ "$3" = json ] && [ "$4" = --output-dir ] && [ -f "$6/SKILL.md" ] || exit 2
+    [ "${SKILL_EVAL_LLM_API_KEY-}" = fixture-key ] && [ -z "${SKILL_EVAL_EMBEDDING_API_KEY-}" ] || exit 2
+    [ "${SKILL_EVAL_LLM_BASE_URL-}" = https://model.invalid/v1 ] && [ "${SKILL_EVAL_LLM_MODEL-}" = fixture-chat ] || exit 2
+    cat > "$5/skillevaluator-rubric.json" <<'REPORT'
+{
+  "version": "1.0.1", "incomplete_scans": [],
+  "results": [{
+    "publication_evidence": {"schema_version": 1, "producer": "skillevaluator.tier1", "tier": 1, "check_id": "rubric"},
+    "status": "passed", "passed": true, "skipped": false,
+    "incomplete_scans": [], "tier1_unscanned_paths": [], "findings": [],
+    "success_details": [{"check": "rubric_eval"}],
+    "rubric_eval": {
+      "execution_status": "succeeded", "overall_pass": true, "overall_score": 90,
+      "llm_provider": "openai-compatible", "llm_model_used": "fixture-chat", "judge_attempts": 1,
+      "checks": [
+        {"id": "description_clarity", "score": 9, "pass": true},
+        {"id": "instruction_clarity", "score": 9, "pass": true},
+        {"id": "example_quality", "score": 9, "pass": true},
+        {"id": "documentation_completeness", "score": 9, "pass": true},
+        {"id": "scope_definition", "score": 9, "pass": true},
+        {"id": "professional_tone", "score": 9, "pass": true},
+        {"id": "trigger_simulation", "score": 9, "pass": true},
+        {"id": "workflow_completeness", "score": 9, "pass": true},
+        {"id": "error_handling_quality", "score": 9, "pass": true}
+      ]
+    }
+  }]
+}
+REPORT
+    ;;
+*) exit 2 ;;
+esac

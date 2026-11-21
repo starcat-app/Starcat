@@ -86,7 +86,7 @@ struct WeeklyContentView: View {
             if let viewModel {
                 content(viewModel)
             } else {
-                ProgressView()
+                RepoSkeletonListView(rowCount: 10)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -134,7 +134,12 @@ struct WeeklyContentView: View {
             // 与探索发现一致：横条挂在筛选栏下方、列表上方，避免埋进 List 滚动区。
             weeklyCacheWarningBanner(viewModel)
 
-            weeklyContentBody(viewModel)
+            MiddleListPresentation(
+                showsSkeleton: viewModel.showsPresentationSkeleton,
+                rowCount: 10
+            ) {
+                weeklyContentBody(viewModel)
+            }
         }
         .task {
             viewModel.interestedLanguages = settings.interestedLanguages
@@ -198,10 +203,7 @@ struct WeeklyContentView: View {
 
     @ViewBuilder
     private func weeklyContentBody(_ viewModel: WeeklyContentViewModel) -> some View {
-        if viewModel.isLoading && viewModel.items.isEmpty {
-            RepoSkeletonListView(rowCount: 10)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = viewModel.loadError, viewModel.items.isEmpty {
+        if let error = viewModel.loadError, viewModel.items.isEmpty {
             emptyState(systemImage: "exclamationmark.triangle", title: "activity.error.title", subtitleText: error) {
                 Task { await viewModel.reload() }
             }
@@ -1077,9 +1079,22 @@ final class WeeklyContentViewModel {
     private(set) var isLoading: Bool = false
     private(set) var isLoadingMore: Bool = false
     private(set) var loadError: String?
+    private var hasResolvedFirstPage = false
+    /// 同条件的已知空快照也可直接展示，回切重读缓存时无需再盖一次骨架。
+    var showsPresentationSkeleton: Bool {
+        guard items.isEmpty, publishedPresentationQuery != presentationQuery else { return false }
+        return isLoading || !hasResolvedFirstPage
+    }
+
+    private(set) var publishedPresentationQuery: String?
+
+    private var presentationQuery: String {
+        let excludedLanguages = selectedLanguage == TrendingLanguage.otherRawValue ? interestedLanguages.sorted() : []
+        return "\(selectedSource.rawValue):\(selectedCoverage.rawValue):\(selectedLanguage):\(selectedSort.rawValue):\(hideArchivedRepos):\(hideForkRepos):\(selectedStarsFilter.rawValue):\(selectedPushedRecency.rawValue):\(quickSearchQuery):\(licenseFilter.cacheKey):\(hiddenSources.sorted()):\(excludedLanguages)"
+    }
     /// 有可用列表时网络刷新失败的横条提示（与探索发现 / 趋势同语义）。
     private(set) var cacheWarning: String?
-    /// 入场动画 / row-reveal 用的"身份快照"版本，仅在筛选切换 / 重新加载时 bump。
+    /// 首屏快照版本，供分页、徽标加载和详情选中策略使用。
     private(set) var itemsRevision: Int = 0
 
     /// 当前数据源；UI 可读以便将来展示"本地"徽章（暂未做）。
@@ -1284,7 +1299,12 @@ final class WeeklyContentViewModel {
         let myGen = generation
         isLoading = true
         // 旧首屏查询不得清掉切换许可证后新一轮查询的 loading 状态。
-        defer { if myGen == generation { isLoading = false } }
+        defer {
+            if myGen == generation {
+                isLoading = false
+                if !Task.isCancelled { hasResolvedFirstPage = true }
+            }
+        }
 
         // Step 1: 尝试从本地缓存读
         if let cached = await bulkRepository.cachedPage(query: makeCacheQuery(page: 1)) {
@@ -1328,6 +1348,12 @@ final class WeeklyContentViewModel {
         isLoadingMore = false
         loadError = nil
         cacheWarning = nil
+        defer {
+            if myGen == generation {
+                isLoading = false
+                if !Task.isCancelled { hasResolvedFirstPage = true }
+            }
+        }
 
         do {
             let fetchResult = try await bulkRepository.fetchBulk()
@@ -1379,9 +1405,6 @@ final class WeeklyContentViewModel {
                     cacheWarning = Self.cacheFallbackWarning(friendly.message)
                 }
                 friendly.record(category: "network", operation: "weekly.reloadBulkForFilters", service: "weekly")
-                if myGen == generation {
-                    isLoading = false
-                }
                 return
             }
             // bulk 彻底失败（无缓存可回退）→ 退到分页 API；若分页也失败且仍有列表，横条提示。
@@ -1394,9 +1417,6 @@ final class WeeklyContentViewModel {
             } else if items.isEmpty {
                 loadError = loadError ?? friendly.message
             }
-        }
-        if myGen == generation {
-            isLoading = false
         }
     }
 
@@ -1628,7 +1648,7 @@ final class WeeklyContentViewModel {
     }
 
     /// 远端分页 fallback：用于缓存未命中入场 / bulk 失败 fallback。
-    /// 隐含语义"切回 `.remote`"——`bumpRevision` 在 reload 路径必为 true（让动画重播）。
+    /// 远端首页发布后切回 `.remote`，供后续游标分页使用。
     private func loadRemotePage() async {
         let myGen = generation  // 由调用方先 bumpGeneration（loadInitialIfNeeded 不需 bump）
         loadError = nil
@@ -1639,6 +1659,7 @@ final class WeeklyContentViewModel {
             total = 0
             hasMore = false
             selectionService?.applyTotal(0)
+            publishedPresentationQuery = presentationQuery
             return
         }
         do {
@@ -1658,6 +1679,7 @@ final class WeeklyContentViewModel {
             page = result.page
             hasMore = result.hasMore
             itemsRevision += 1
+            publishedPresentationQuery = presentationQuery
             loadError = nil
             cacheWarning = nil
             if selectedSource == .all, selectedLanguage.isEmpty {
@@ -1682,7 +1704,7 @@ final class WeeklyContentViewModel {
     }
 
     /// 把 bulk 缓存 snapshot 应用到当前状态，切到 `.local` 并应用全部筛选。
-    /// `bumpRevision`：reload 路径要刷新入场动画；首次入场不刷（避免列表上来就抖一次）。
+    /// `bumpRevision` 让已挂载列表在刷新后补载当前首屏的辅助信息。
     private func applyLocalSnapshot(
         _ snapshot: WeeklyBulkCachedSnapshot,
         bumpRevision: Bool
@@ -1724,6 +1746,7 @@ final class WeeklyContentViewModel {
             appendUniqueVisibleItems(snapshot.items)
         } else {
             replaceVisibleItems(with: snapshot.items)
+            publishedPresentationQuery = presentationQuery
         }
         if bumpRevision {
             itemsRevision += 1
@@ -1854,9 +1877,12 @@ final class WeeklyContentViewModel {
     ) {
         filteredLocalItems = filtered
         total = filtered.count
-        page = 1
+        let query = presentationQuery
+        let pageCount = max(1, (total + Self.localPageSize - 1) / Self.localPageSize)
+        page = publishedPresentationQuery == query ? min(page, pageCount) : 1
+        publishedPresentationQuery = query
         let pageSize = Self.localPageSize
-        let slice = Array(filtered.prefix(pageSize))
+        let slice = Array(filtered.prefix(page * pageSize))
         replaceVisibleItems(with: slice)
         hasMore = filtered.count > slice.count
         if bumpRevision {

@@ -198,15 +198,25 @@ final class LinuxDoListModel {
     private(set) var rows: [DiscoveryRepoDTO] = []
     private(set) var total = 0
     private(set) var identity = ""
+    private(set) var presentationQuery: String?
     var libraryStates: [Int64: LibraryState] = [:]
     var wikiAvailability: [Int64: Bool] = [:]
     private var matching: [DiscoveryRepoDTO] = []
     var hasMore: Bool { rows.count < matching.count }
 
-    /// 延迟求值让相同查询真正跳过全量筛选；保留已加载页，只有输入身份变化才从首批开始。
-    func reset(repositories: @autoclosure () -> [DiscoveryRepoDTO], promotionDates: [String: String], search: String, recentPromotionFirst: Bool, identity: String) {
+    /// 延迟求值跳过相同快照。查询不变时保留已加载范围，目录版本变化只更新当前结果。
+    func reset(
+        repositories: @autoclosure () -> [DiscoveryRepoDTO],
+        promotionDates: [String: String],
+        search: String,
+        recentPromotionFirst: Bool,
+        identity: String,
+        presentationQuery: String? = nil
+    ) {
         guard self.identity != identity else { return }
+        let limit = presentationQuery != nil && self.presentationQuery == presentationQuery ? max(40, rows.count) : 40
         self.identity = identity
+        self.presentationQuery = presentationQuery
         let term = search.trimmingCharacters(in: .whitespacesAndNewlines)
         matching = repositories().filter { term.isEmpty || $0.fullName.localizedCaseInsensitiveContains(term) || ($0.description?.localizedCaseInsensitiveContains(term) ?? false) }
         matching.sort { a, b in
@@ -217,7 +227,7 @@ final class LinuxDoListModel {
             return a.repoID > b.repoID
         }
         total = matching.count
-        rows = Array(matching.prefix(40))
+        rows = Array(matching.prefix(limit))
     }
 
     func loadMore() {

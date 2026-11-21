@@ -39,6 +39,8 @@ struct RepoSkillDetailPane: View {
     @State private var installationIssueToast: String?
     @State private var aiInstallToast: String?
     @State private var aiInstallToastRevision = 0
+    @State private var evaluationItem: SkillEvaluationPanelItem?
+    @State private var evaluationTask: SkillEvaluationPanelTaskLink?
 
     /// 只共享翻译服务与设置；窗口拥有自己的 VM，翻译 Skill 不会打断主窗口的 README。
     init(
@@ -104,12 +106,12 @@ struct RepoSkillDetailPane: View {
                 HStack(spacing: 8) {
                     contentTabs
                     Spacer(minLength: 8)
-                    if tab == .manifest { manifestToolbar }
+                    detailToolbar
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     contentTabs
-                    if tab == .manifest {
-                        HStack { Spacer(minLength: 0); manifestToolbar }
+                    if tab == .manifest || canEvaluate {
+                        HStack { Spacer(minLength: 0); detailToolbar }
                     }
                 }
             }
@@ -172,11 +174,21 @@ struct RepoSkillDetailPane: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .allowsHitTesting(previewedFile == nil)
-        .accessibilityHidden(previewedFile != nil)
+        .allowsHitTesting(previewedFile == nil && evaluationItem == nil)
+        .accessibilityHidden(previewedFile != nil || evaluationItem != nil)
         .overlay {
             filePreviewOverlay
         }
+        .overlay {
+            // 仓库阅读区已由 AppKit sheet 承载，评估借用当前栏的尺寸与注入环境。
+            if let evaluationItem {
+                SkillEvaluationPanel(items: [evaluationItem], service: dependencies.skillEvaluation, rememberedTask: $evaluationTask) {
+                    self.evaluationItem = nil
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(contentAnimation, value: evaluationItem != nil)
         .sheet(item: translationPaywallBinding) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
@@ -221,11 +233,16 @@ struct RepoSkillDetailPane: View {
         }
         .onChange(of: skill.id, initial: true) { _, _ in
             previewedFile = nil
+            evaluationItem = nil
             aiInstallToast = nil
             translationSourceDocumentID = nil
             translationSourceSnapshot = .empty
             // 只在切换 Skill 时提示，手动关闭后不因正文重绘或翻译更新再次弹出。
             installationIssueToast = skill.installationIssue
+        }
+        .onChange(of: dependencies.databaseScopeRevision) {
+            evaluationItem = nil
+            evaluationTask = nil
         }
         .onChange(of: tab) { _, _ in
             aiInstallToast = nil
@@ -322,6 +339,28 @@ struct RepoSkillDetailPane: View {
                 accessibilityLabel: "repo.skills.preview.selection",
                 symbol: { $0.symbol }, tint: { $0.tint }
             )
+        }
+    }
+
+    private var canEvaluate: Bool {
+        dependencies.distributionGate.isAvailable(.externalToolBridge)
+    }
+
+    @ViewBuilder private var detailToolbar: some View {
+        if tab == .manifest {
+            manifestToolbar
+        }
+        if canEvaluate {
+            Button {
+                let source = [session.repo.fullName, skill.directory].filter { !$0.isEmpty }.joined(separator: "/")
+                evaluationItem = SkillEvaluationPanelItem(target: .repository(session.repo, skill), name: skill.name, source: source)
+            } label: {
+                Label("skills.evaluation.action", systemImage: "checklist")
+                    .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.bordered)
+            .help("skills.evaluation.action")
+            .accessibilityLabel(Text("skills.evaluation.action"))
         }
     }
 

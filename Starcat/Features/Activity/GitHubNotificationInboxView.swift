@@ -22,7 +22,6 @@ struct GitHubNotificationInboxView: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
     @Environment(\.locale) private var locale
-    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @Binding var selectedItem: ActivityItem?
 
@@ -65,11 +64,14 @@ struct GitHubNotificationInboxView: View {
         VStack(spacing: 0) {
             toolbar
             Divider()
-            content(for: phase)
-                .animation(
-                    phase == .ready ? .easeOut(duration: reduceMotion ? 0.12 : 0.18) : nil,
-                    value: phase
-                )
+            MiddleListPresentation(
+                showsSkeleton: phase == .skeleton
+            ) {
+                ListLoadingSkeleton(rowHeight: 76, showsSectionHeader: true)
+                    .padding(.horizontal, 12)
+            } content: {
+                content(for: phase)
+            }
         }
         .task {
             inbox.listFilter = filter
@@ -260,11 +262,6 @@ struct GitHubNotificationInboxView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
-        } else if phase == .skeleton {
-            ListLoadingSkeleton(rowHeight: 76)
-                .padding(12)
-                .frame(maxHeight: .infinity, alignment: .top)
-                .transition(.opacity)
         } else if rows.isEmpty {
             if inbox.missingScope {
                 missingScopeEmpty
@@ -277,7 +274,6 @@ struct GitHubNotificationInboxView: View {
             searchEmptyState
         } else {
             timeline(visibleRows)
-                .transition(.opacity)
         }
     }
 
@@ -429,21 +425,23 @@ struct GitHubNotificationInboxView: View {
         .padding()
     }
 
-    private func reloadFirstPage(limit: Int = GitHubNotificationMapper.timelinePageSize) async {
+    private func reloadFirstPage(limit: Int? = nil) async {
         // 首页重载代表列表上下文已变化。递增 generation，让仍在等待的旧分页结果自动失效，
         // 避免切换筛选或同步刷新时把上一份列表的下一页追加到新列表。
         pagingGeneration += 1
         let requestedGeneration = pagingGeneration
         let requestedFilter = filter
+        // 同条件同步保留已加载窗口。显式筛选会先清空 rows，因此仍从一页开始。
+        let requestedLimit = limit ?? max(rows.count, GitHubNotificationMapper.timelinePageSize)
         isLoadingPage = true
         defer {
             if requestedGeneration == pagingGeneration {
                 isLoadingPage = false
             }
         }
-        let page = await inbox.fetchTimelinePage(cursor: nil, filter: requestedFilter, limit: limit)
+        let page = await inbox.fetchTimelinePage(cursor: nil, filter: requestedFilter, limit: requestedLimit)
         let fetchedAt = await inbox.lastFetchedAt()
-        guard requestedGeneration == pagingGeneration, requestedFilter == filter else { return }
+        guard !Task.isCancelled, requestedGeneration == pagingGeneration, requestedFilter == filter else { return }
         rows = page.rows
         hasMore = page.hasMore
         cursor = page.rows.last?.cursor
@@ -460,7 +458,10 @@ struct GitHubNotificationInboxView: View {
         }
         if let selectedThreadId,
            let row = rows.first(where: { $0.id == selectedThreadId }) {
-            selectedItem = await makeItem(from: row)
+            let item = await makeItem(from: row)
+            guard !Task.isCancelled, requestedGeneration == pagingGeneration,
+                  self.selectedThreadId == selectedThreadId else { return }
+            selectedItem = item
         } else if selectedThreadId != nil, !rows.contains(where: { $0.id == selectedThreadId }) {
             selectedThreadId = nil
             selectedItem = nil

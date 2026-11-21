@@ -310,7 +310,12 @@ if ! pluginkit -a "$WIDGET_EXTENSION_PATH"; then
 fi
 
 echo "==> 启动 StarcatDirect..."
-if ! open "$APP_PATH"; then
+# 验收使用独立工具目录，避免为了重现首次安装而移动本机已有的 SkillEvaluator。
+APP_OPEN_ARGUMENTS=("$APP_PATH")
+if [ "${STARCAT_PREVIEW_SKILL_EVALUATOR_INSTALL:-0}" = "1" ]; then
+  APP_OPEN_ARGUMENTS=(--env STARCAT_PREVIEW_SKILL_EVALUATOR_INSTALL=1 "$APP_PATH")
+fi
+if ! open "${APP_OPEN_ARGUMENTS[@]}"; then
   echo "ERROR: LaunchServices 拒绝启动 StarcatDirect。"
   echo "       app: $APP_PATH"
   exit 1

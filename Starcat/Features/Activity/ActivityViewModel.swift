@@ -127,6 +127,8 @@ final class ActivityViewModel {
     private(set) var loadError: String?
     private(set) var lastRefreshedAt: Date?
     private(set) var itemsRevision: Int = 0
+    /// 分页身份只跟随已提交的分类。排序和筛选另用自己的输入，后台更新沿用当前分类。
+    private(set) var publishedCategory: ActivityCategory?
     /// 仅在用户完成一次分类 / 模块导航且目标首屏已提交后推进。
     ///
     /// 与 `itemsRevision` 分离，避免刷新、排序或分页为了动画而迫使整批 row 重建。
@@ -142,12 +144,6 @@ final class ActivityViewModel {
     var licenseOptions: [String] { RepoLicenseFilter.options(allItems.compactMap { $0.repo?.license }) }
     /// 当前分类 filter + sort 后的完整数量；`items.count` 只是已分页上屏的数量，不能用于标题计数。
     var filteredItemTotalCount: Int { filteredItems.count }
-    /// 当前已经有可见列表内容。View 层用它区分“后台过滤中但已有首屏”与“真的空白加载中”。
-    ///
-    /// 约束：不要让 `isApplyingCategoryFilter` 在已有 prime 首屏时重新切回骨架屏，否则
-    /// 首次进入 Activity 全部类型会出现“列表出现 → 骨架 → 列表”的二次刷新感。
-    var hasVisibleItems: Bool { !items.isEmpty }
-
     /// 是否已完成至少一次 `publishItems`（含 prime 快路径）。ActivityView 离 weekly 切回时判断要不要 `ensureLoaded`。
     var isAggregateReady: Bool { isAggregateLoaded }
 
@@ -167,6 +163,7 @@ final class ActivityViewModel {
 
     /// 当前侧边栏选中的分类（`selectCategory` / `reload` 入口都会更新）。
     private var currentCategory: ActivityCategory = .all
+
     /// 分类切换先登记意图，真正提交对应分类快照时才推进 row reveal revision。
     private var pendingRowRevealCategory: ActivityCategory?
 
@@ -294,16 +291,24 @@ final class ActivityViewModel {
 
     // MARK: - Public Actions
 
+    /// 侧栏选中领先于 View 的 onChange。只显示目标分类已经提交或预热过的首屏。
+    func presentationItems(for category: ActivityCategory) -> [ActivityItem]? {
+        if publishedCategory == category { return items }
+        return filteredItemsCache[category].map { paginatedSlice(from: $0, page: 1) }
+    }
+
     /// 进入 Activity 页：首次全量 reload；已加载过则只切分类 filter。
     func ensureLoaded(category: ActivityCategory) async {
         currentCategory = category
         if isAggregateLoaded {
-            markCategorySwitchForListReveal()
-            applyCategoryFilter(category, bumpRevision: false)
+            if publishedCategory != category {
+                applyCategoryFilter(category, bumpRevision: false)
+            }
             return
         }
         isLoading = true
         await primeCategoryCacheIfAvailable(for: category)
+        guard currentCategory == category, !Task.isCancelled else { return }
         await reload(category: category, shouldPollReleases: false, cachePolicy: .respectTTL)
     }
 
@@ -427,9 +432,10 @@ final class ActivityViewModel {
     /// 侧边栏切分类：只 refilter `allItems`；若该分类专属网络尚未拉过则后台补拉。
     ///
     /// **性能约束（HOM-46 同款）**：切分类走 `applyCategoryFilter(bumpRevision: false)`，
-    /// 不因可见 ID 变化 bump `itemsRevision`；分类动画只由首屏提交后的
-    /// `rowRevealRevision` 驱动，避免数据刷新和动画身份互相耦合。
+    /// `itemsRevision` 留给数据更新，分类切换通过 `publishedCategory` 重置分页身份。
+    /// 行入场动画由首屏提交后的 `rowRevealRevision` 驱动，这里只登记导航意图。
     func selectCategory(_ category: ActivityCategory) {
+        guard category != currentCategory || publishedCategory != category else { return }
         currentCategory = category
         markCategorySwitchForListReveal()
         categoryFilterTask?.cancel()
@@ -449,6 +455,21 @@ final class ActivityViewModel {
         supplementNetworkTask = Task { @MainActor [weak self] in
             await self?.supplementNetworks(for: category, cachePolicy: .respectTTL)
         }
+    }
+
+    /// 从时间线 / Undo Star 独立分类返回聚合分类时，补一次行入场触发。
+    ///
+    /// 这类导航里模型侧 `currentCategory` / `publishedCategory` 都未变，
+    /// `selectCategory` 的同分类 guard 会提前返回；而中栏列表又整体重建，
+    /// 复用的行只能靠这里递增的 `rowRevealRevision` 触发重播。
+    /// 数据与分页保持不变，重复返回会各触发一次（与重新进入页面语义一致）。
+    func revealRowsAfterReturningFromStandaloneList(_ category: ActivityCategory) {
+        guard currentCategory == category, publishedCategory == category else {
+            // 模型状态与目标不一致（如离开期间后台刷新尚未发布）时走常规切换路径。
+            selectCategory(category)
+            return
+        }
+        rowRevealRevision &+= 1
     }
 
     /// 进入页面入口（保留给测试 / 外部直调）：等同 `ensureLoaded`。
@@ -827,9 +848,7 @@ final class ActivityViewModel {
 
     /// **性能约束（HOM-46 同款 + 2026-06-17 修订）**：
     /// - `selectCategory` 走 `bumpRevision: false` + 默认 `resetPage: true` 时，
-    ///   **禁止**因可见 ID 变化而 bump `itemsRevision`——否则 30 行 `listRowReveal`
-    ///   同时 stagger，主线程卡顿会连带 sidebar 蛇动画掉帧。
-    /// - 排序切换等仍可推进普通数据版本，但不会冒充一次分类导航动画。
+    ///   保留 `itemsRevision`，分页使用分类、排序及筛选输入识别新查询。
     ///
     /// **`.all` 专项（2026-06-17）**：去重+全量排序走 `Task.detached`，避免主线程彩虹圈；
     /// 命中 `filteredItemsCache` 时同步上屏。
@@ -838,6 +857,8 @@ final class ActivityViewModel {
         bumpRevision: Bool,
         resetPage: Bool = true
     ) {
+        categoryFilterTask?.cancel()
+        isApplyingCategoryFilter = false
         if let cached = filteredItemsCache[category] {
             commitFilteredSlice(from: cached, bumpRevision: bumpRevision, resetPage: resetPage)
             return
@@ -868,7 +889,6 @@ final class ActivityViewModel {
         }
 
         isApplyingCategoryFilter = true
-        categoryFilterTask?.cancel()
         categoryFilterTask = Task { @MainActor [weak self] in
             let filtered = await Task.detached(priority: .userInitiated) {
                 Self.computeFilteredItems(
@@ -898,6 +918,9 @@ final class ActivityViewModel {
         filteredItems = filtered
         if resetPage {
             visiblePage = 1
+        } else {
+            let pageCount = max(1, (filtered.count + Self.pageSize - 1) / Self.pageSize)
+            visiblePage = min(visiblePage, pageCount)
         }
         let slice = paginatedSlice(from: filteredItems, page: visiblePage)
         let oldIDs = items.map(\.id)
@@ -912,6 +935,7 @@ final class ActivityViewModel {
             rowRevealRevision &+= 1
             pendingRowRevealCategory = nil
         }
+        publishedCategory = currentCategory
     }
 
     /// 后台预热分类 filter 缓存（不阻塞 UI）。
@@ -975,7 +999,11 @@ final class ActivityViewModel {
         // `applyCategoryFilter` 的后台分支，不能在 publish 阶段直接同步调用
         // `computeFilteredItems`，否则首次从 Manage / Trending 切进 Activity All
         // 会绕过 v3.1 的主线程保护并造成卡顿。
-        applyCategoryFilter(currentCategory, bumpRevision: false, resetPage: true)
+        applyCategoryFilter(
+            currentCategory,
+            bumpRevision: false,
+            resetPage: publishedCategory != currentCategory
+        )
 
         if currentCategory != .all {
             prewarmFilterCache(for: .all)
@@ -1002,6 +1030,9 @@ final class ActivityViewModel {
             isAggregateLoaded = true
             // 即使列表内容不变，成功读取的空表也必须发布真实的 0，不能永久沿用旧缓存。
             publishCategoryCounts(from: source)
+            if publishedCategory != currentCategory && !isApplyingCategoryFilter {
+                applyCategoryFilter(currentCategory, bumpRevision: false)
+            }
             return
         }
         publishItems(from: source, snapshot: snapshot)
