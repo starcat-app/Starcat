@@ -65,6 +65,12 @@ final class ExploreDiscoveryViewModel {
         let filteredRepos: [DiscoveryRepoDTO]
     }
 
+    /// 视图首帧可能早于 reload 的 task。已派生的目标首屏可直接绘制，分页仍等正式发布。
+    func presentationRepos(for identity: String) -> [DiscoveryRepoDTO]? {
+        if publishedQueryIdentity == identity { return repos }
+        return preparedSnapshots[identity].map { Array($0.filteredRepos.prefix(Self.pageSize)) }
+    }
+
     func reload(
         repository: any DiscoveryRepositoryProtocol,
         mode: ExploreMode,
@@ -99,7 +105,9 @@ final class ExploreDiscoveryViewModel {
         // A → B → A 时直接提交已经派生好的快照。TTL 过期只触发后台 SWR，
         // 不让仍可用的列表重新退回骨架屏。
         if !showsRefreshIndicator, let prepared = preparedSnapshot(for: queryIdentity) {
-            publishPreparedSnapshot(prepared, bumpRevision: true)
+            if publishedQueryIdentity != queryIdentity {
+                publishPreparedSnapshot(prepared, bumpRevision: true, preservingPage: false)
+            }
             publishedQueryIdentity = queryIdentity
             isLoading = false
             didPublishLocalSnapshot = true
@@ -279,8 +287,7 @@ final class ExploreDiscoveryViewModel {
         guard let nextPage else { return }
         // 只拦初次加载，不拦 SWR 后台刷新（isRefreshing）。进入分类时 summary/bulk 的
         // 3h 窗口几乎必然触发一次后台刷新，若用它拦截分页，快速滚动期间的所有触发都会
-        // 被吞掉；刷新完成后 publishPreparedSnapshot 重置回首屏且已加载数量不变，
-        // 共享 modifier 的 onChange 不会重新评估，需求就永久丢失（用户必须来回滚动才能续页）。
+        // 被吞掉；刷新结束后数量不变时，共享 modifier 的 onChange 未必会重新评估。
         // 本地切片在 MainActor 上串行执行，与刷新的替换发布之间没有竞态。
         guard !isLoading else { return }
         if let appearingIndex, let visibleItemCount {
@@ -442,16 +449,21 @@ final class ExploreDiscoveryViewModel {
         )
         let prepared = PreparedSnapshot(filteredRepos: filtered)
         storePreparedSnapshot(prepared, for: identity)
-        publishPreparedSnapshot(prepared, bumpRevision: bumpRevision)
+        publishPreparedSnapshot(
+            prepared,
+            bumpRevision: bumpRevision,
+            preservingPage: publishedQueryIdentity == identity
+        )
     }
 
     /// MainActor 只提交已准备好的首屏值；缓存命中和后台派生共用同一发布边界。
-    private func publishPreparedSnapshot(_ snapshot: PreparedSnapshot, bumpRevision: Bool) {
+    private func publishPreparedSnapshot(_ snapshot: PreparedSnapshot, bumpRevision: Bool, preservingPage: Bool) {
         filteredLocalRepos = snapshot.filteredRepos
         total = snapshot.filteredRepos.count
-        page = 1
-        repos = Array(snapshot.filteredRepos.prefix(Self.pageSize))
-        nextPage = snapshot.filteredRepos.count > repos.count ? 2 : nil
+        let pageCount = max(1, (total + Self.pageSize - 1) / Self.pageSize)
+        page = preservingPage ? min(page, pageCount) : 1
+        repos = Array(snapshot.filteredRepos.prefix(page * Self.pageSize))
+        nextPage = total > repos.count ? page + 1 : nil
         if bumpRevision {
             reposRevision += 1
         }

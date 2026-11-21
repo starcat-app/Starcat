@@ -221,8 +221,10 @@ private struct ExploreDiscoveryListView: View {
             await Task.yield()
             guard !Task.isCancelled else { return }
             let requestedIdentity = queryIdentity
-            selectedRepoID = nil
-            selectedRepo = nil
+            if viewModel.publishedQueryIdentity != requestedIdentity {
+                selectedRepoID = nil
+                selectedRepo = nil
+            }
             async let libraryLoad: Void = reloadLibraryStateMap()
             if settings.libraryFilter != .all {
                 await libraryLoad
@@ -408,29 +410,26 @@ private struct ExploreDiscoveryListView: View {
     }
 
     private var content: some View {
-        VStack(spacing: 0) {
-            cacheWarningBanner
+        let repos = viewModel.presentationRepos(for: queryIdentity)
+        return VStack(spacing: 0) {
+            if hasPublishedCurrentQuery { cacheWarningBanner }
 
-            // 与星标 / 周刊一致：用 if/else 按状态切换骨架 / 空态 / 错误 / 列表，而非 ZStack+opacity。
-            // ZStack 里列表宿主始终保留但 opacity=0，会让行 reveal 在隐藏期间播放、被 opacity 吞掉，
-            // 最终列表「直接全部显示」而非逐行淡入。改成 if/else 让列表在数据就位后新鲜创建，reveal 可见。
-            if !hasPublishedCurrentQuery || (viewModel.isLoading && viewModel.repos.isEmpty) {
-                RepoSkeletonListView(rowCount: 10)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = viewModel.loadError, viewModel.repos.isEmpty {
-                ExploreEmptyState(
-                    systemImage: "exclamationmark.triangle",
-                    titleKey: "error.loadFailed",
-                    subtitleText: error
-                )
-            } else if viewModel.repos.isEmpty {
-                ExploreEmptyState(
-                    businessIcon: mode.businessIcon,
-                    titleKey: "explore.empty.title",
-                    subtitleKey: "explore.empty.subtitle"
-                )
-            } else {
-                repoList
+            MiddleListPresentation(showsSkeleton: repos == nil, rowCount: 10) {
+                if hasPublishedCurrentQuery, let error = viewModel.loadError, repos?.isEmpty == true {
+                    ExploreEmptyState(
+                        systemImage: "exclamationmark.triangle",
+                        titleKey: "error.loadFailed",
+                        subtitleText: error
+                    )
+                } else if let repos, !repos.isEmpty {
+                    repoList(repos)
+                } else {
+                    ExploreEmptyState(
+                        businessIcon: mode.businessIcon,
+                        titleKey: "explore.empty.title",
+                        subtitleKey: "explore.empty.subtitle"
+                    )
+                }
             }
         }
     }
@@ -454,8 +453,9 @@ private struct ExploreDiscoveryListView: View {
         dependencies.exploreMultiSelectionStore
     }
 
-    private var repoList: some View {
+    private func repoList(_ repos: [DiscoveryRepoDTO]) -> some View {
         let store = exploreStore
+        let indexedRepos = indexedRepos(for: repos)
         return List {
             ForEach(indexedRepos) { item in
                 let repo = item.repo
@@ -497,7 +497,7 @@ private struct ExploreDiscoveryListView: View {
                     appearingIndex: item.index,
                     visibleItemCount: indexedRepos.count,
                     loadedItemCount: viewModel.repos.count,
-                    hasMore: viewModel.nextPage != nil,
+                    hasMore: hasPublishedCurrentQuery && viewModel.nextPage != nil,
                     // 只用 isLoading 做闸门，不掺 isRefreshing：SWR 后台刷新几乎覆盖
                     // 每次进入分类的头几秒，若一并拦截，快速滚动触发的请求会被整体
                     // 吞掉且刷新完成后无法经 onChange 恢复（见 loadMoreIfNeeded 注释）。
@@ -525,7 +525,7 @@ private struct ExploreDiscoveryListView: View {
         .automaticListPaginationFill(
             visibleItemCount: indexedRepos.count,
             loadedItemCount: viewModel.repos.count,
-            hasMore: viewModel.nextPage != nil,
+            hasMore: hasPublishedCurrentQuery && viewModel.nextPage != nil,
             // 与行级触发器同口径：SWR 后台刷新不拦截分页（见上方注释）。
             isLoading: viewModel.isLoading,
             identity: queryIdentity
@@ -566,7 +566,7 @@ private struct ExploreDiscoveryListView: View {
         .background {
             let store = exploreStore
             Button {
-                let visibleRepos = globalFilteredRepos(viewModel.repos)
+                let visibleRepos = globalFilteredRepos(repos)
                 let snapshots = visibleRepos.map {
                     SelectionSnapshot(ghRepoId: $0.repoID, owner: $0.owner, name: $0.name)
                 }
@@ -657,8 +657,8 @@ private struct ExploreDiscoveryListView: View {
         "\(mode.id)-\(repo.repoID)-\(repo.latestReleaseAt ?? "__no_release__")"
     }
 
-    private var indexedRepos: [IndexedDiscoveryRepo] {
-        globalFilteredRepos(viewModel.repos)
+    private func indexedRepos(for repos: [DiscoveryRepoDTO]) -> [IndexedDiscoveryRepo] {
+        globalFilteredRepos(repos)
             .enumerated()
             .map { IndexedDiscoveryRepo(index: $0.offset, repo: $0.element) }
     }
@@ -825,7 +825,7 @@ private struct ExploreDiscoveryListView: View {
     private func fillSkillResults() async {
         for _ in 0..<20 {
             guard !Task.isCancelled, settings.skillFilter != .any,
-                  indexedRepos.count < 40, viewModel.nextPage != nil, !viewModel.isLoading else { return }
+                  indexedRepos(for: viewModel.repos).count < 40, viewModel.nextPage != nil, !viewModel.isLoading else { return }
             guard skillPageBudget.claim(scope: "\(skillScanScope):\(dependencies.repoSkillStore.paginationRevision)") else { return }
             let count = viewModel.repos.count
             await viewModel.loadMoreIfNeeded(

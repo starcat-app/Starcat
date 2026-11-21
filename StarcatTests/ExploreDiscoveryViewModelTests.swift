@@ -203,7 +203,7 @@ struct ExploreDiscoveryViewModelTests {
     }
 
     @Test("发现子分类切换复用会话 bulk，不重复读取缓存或请求远端")
-    func categorySwitchReusesInMemoryBulk() async {
+    func categorySwitchReusesInMemoryBulk() async throws {
         let repository = FakeDiscoveryRepository()
         await repository.enqueueBulk(Self.makeBulkResult(repos: [
             Self.makeRepo(
@@ -233,6 +233,7 @@ struct ExploreDiscoveryViewModelTests {
         )
         let firstCacheReads = await repository.cachedBulkCount()
         let firstFetches = await repository.fetchBulkCount()
+        let popularQuery = try #require(viewModel.publishedQueryIdentity)
 
         await viewModel.reload(
             repository: repository,
@@ -247,6 +248,7 @@ struct ExploreDiscoveryViewModelTests {
         #expect(await repository.cachedBulkCount() == firstCacheReads)
         #expect(await repository.fetchBulkCount() == firstFetches)
         #expect(viewModel.repos.count == 1)
+        #expect(viewModel.presentationRepos(for: popularQuery)?.map(\.fullName) == ["catalog/popular"])
 
         let derivationsAfterAB = viewModel.localDerivationCountForTesting
         await viewModel.reload(
@@ -684,8 +686,23 @@ struct ExploreDiscoveryViewModelTests {
         #expect(viewModel.repos.count == 25)
         #expect(viewModel.nextPage == nil)
 
+        let refreshedRepo = Self.makeRepo(
+            repoID: 326,
+            owner: "swr",
+            name: "refreshed",
+            language: "Swift",
+            stars: 1,
+            popularityScore: 1,
+            discoveryScore: 1
+        )
+        await repository.enqueueBulk(Self.makeBulkResult(repos: Array(repos.dropLast()) + [refreshedRepo]))
         await repository.resumeBulkFetch()
         await reloadTask.value
+
+        #expect(viewModel.repos.count == 25)
+        #expect(viewModel.repos.contains(refreshedRepo))
+        #expect(viewModel.nextPage == nil)
+        #expect(viewModel.cacheWarning == nil)
     }
 
     @Test("新发布列表只展示 new_releases 归属仓库")
