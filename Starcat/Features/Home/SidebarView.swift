@@ -1890,16 +1890,22 @@ struct SidebarView: View {
             .help(Text("sidebar.tagManagement"))
 
             Button(action: onOpenTagGraph) {
-                Label("tagGraph.window.title", systemImage: "point.3.connected.trianglepath.dotted")
-                    .labelStyle(.iconOnly)
-                    // 三角图谱符号比圆形加号更宽，小一档可让两个入口的视觉大小更接近。
-                    .font(interfaceScale.font(.iconSmall, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
+                ZStack {
+                    // 外圈与加号用同一字号，单独缩小更宽的连线符号。
+                    Image(systemName: "circle.fill")
+                        .font(interfaceScale.font(.iconMedium, weight: .medium))
+                        .foregroundStyle(.secondary.opacity(0.2))
+                    Image(systemName: "point.3.connected.trianglepath.dotted")
+                        .font(interfaceScale.font(.iconSmall, weight: .medium))
+                        .scaleEffect(0.68)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
+            .accessibilityLabel(Text("tagGraph.window.title"))
             .help(Text("tagGraph.window.title"))
 
             // HOM-179：仅当有 tag 被选中时显示"清除"按钮，避免空状态下噪声。

@@ -1096,10 +1096,11 @@ test('settled flow redraws only its transparent overlay and follows Retina zoom 
   assert.equal(canvas.height, 0);
 });
 
+const bundledLogo = 'file:///Starcat.app/Contents/Resources/starcat-appstore-r.png';
 const membershipGraph = {
   root: 'app:starcat', kind: 'tags', dark: true,
   nodes: [
-    { id: 'app:starcat', kind: 'app', name: 'Starcat', glyph: 'data:image/png;base64,AA==' },
+    { id: 'app:starcat', kind: 'app', name: 'Starcat', glyph: bundledLogo },
     { id: 'tag:a', kind: 'tag', name: 'Agent', color: '#0088aa', glyph: 'data:image/png;base64,AA==' },
     { id: 'tag:b', kind: 'tag', name: 'RAG' },
     { id: 'tag:z', kind: 'tag', name: '资料' },
@@ -1132,10 +1133,13 @@ test('app icon paints alone before tags enter with the same cadence and parent p
   const [anchor] = visible(r).nodes;
   assert.deepEqual([anchor.x, anchor.y, anchor.fx, anchor.fy], [0, 0, 0, 0]);
   const [logo] = r.images;
-  assert.match(logo.src, /^data:image\/png/);
+  assert.equal(logo.src, bundledLogo);
   logo.onload();
   paintVisible(r);
   assert.ok(r.messages.some(message => message.type === 'presented'));
+  const [, surface, , , diameter] = r.calls.findLast(([name]) => name === 'drawImage');
+  assert.ok(surface.width >= diameter * r.props.get('maxZoom') * 2,
+    'the bundled logo retains enough pixels for maximum zoom on a Retina display');
   assert.ok(r.calls.some(([name, value]) => name === 'fillText' && value === 'Starcat'));
   assert.ok(!r.calls.some(([name, ticks]) => name === 'cooldownTicks' && ticks === 0));
 

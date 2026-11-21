@@ -67,8 +67,10 @@ function paint(resource, node, placeholder = false) {
   const surface = placeholder ? resource.placeholder : resource.canvas;
   if (!surface) return;
   const ctx = surface.getContext('2d');
-  ctx.clearRect(0, 0, 64, 64);
+  ctx.clearRect(0, 0, surface.width, surface.height);
   ctx.save();
+  // The app logo stays sharp when zoomed; ordinary avatars keep their small cache.
+  ctx.scale(surface.width / 64, surface.height / 64);
   ctx.beginPath();
   ctx.arc(32, 32, 32, 0, Math.PI * 2);
   ctx.clip();
@@ -86,8 +88,7 @@ function paint(resource, node, placeholder = false) {
       ctx.drawImage(resource.image, (64 - width) / 2, (64 - height) / 2, width, height);
       ctx.filter = 'none';
     } else if (node.kind === 'app') {
-      // Keep the macOS icon's rounded square intact inside the same circular node.
-      ctx.drawImage(resource.image, 4, 4, 56, 56);
+      ctx.drawImage(resource.image, 0, 0, 64, 64);
     } else ctx.drawImage(resource.image, 0, 0, 64, 64);
   } else {
     ctx.fillStyle = tag ? symbolInk(badge) : dark ? '#ffffff' : '#24374a';
@@ -146,7 +147,7 @@ function drainImages(queue) {
         // A local miss releases first-frame presentation immediately, without
         // waiting for the network. Keep the existing placeholder/download fade.
         graph.nodeCanvasObject(drawNode);
-        if (node.glyph) return; // Native symbols are already local. Keep the fallback on decode failure.
+        if (node.glyph) return; // Bundled images and native symbols have no network fallback.
         if (node.id === selected) downloadQueue.pending.unshift([node, resource]);
         else downloadQueue.pending.push([node, resource]);
         drainImages(downloadQueue);
@@ -208,9 +209,9 @@ function releasePlaceholder(resource) {
   resource.placeholder = null;
 }
 
-function avatarSurface() {
+function avatarSurface(size = 64) {
   const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 64;
+  canvas.width = canvas.height = size;
   return canvas;
 }
 
@@ -268,7 +269,7 @@ function refreshCardAvatar(event) {
 function avatar(node) {
   if (!resources.has(node.id)) {
     const probing = Boolean(node.avatar || node.glyph);
-    const resource = { canvas: avatarSurface(), placeholder: null, loaded: false, probing };
+    const resource = { canvas: avatarSurface(node.kind === 'app' ? 1024 : 64), placeholder: null, loaded: false, probing };
     resources.set(node.id, resource);
     paint(resource, node);
     if (probing) { cacheQueue.pending.push([node, resource]); drainImages(cacheQueue); }

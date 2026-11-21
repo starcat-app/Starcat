@@ -5,6 +5,11 @@ import SwiftUI
 
 /// 数据订阅仍按账户隔离；渲染状态只描述当前 WebView 会话。
 struct TagGraphWorkspace: View {
+    // 画布从本地资源加载 Logo，点击「更多」时无需重新传输图片。
+    private static let appLogoURL = Bundle.main.url(
+        forResource: "starcat-\(DistributionChannel.current.rawValue)-r", withExtension: "png"
+    )?.absoluteString
+
     let reader: any DatabaseReader
     let isCurrent: () -> Bool
     let escape: Int
@@ -20,13 +25,14 @@ struct TagGraphWorkspace: View {
     @State private var rendererFailed = false
     @State private var canvasSize = CGSize.zero
     @State private var cardContentHeight: CGFloat = 180
-    @FocusState private var searchFocused: Bool
+    @State private var toolbarHeight: CGFloat = 28
+    @FocusState private var focusedControl: String?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             canvas
             FollowGraphSelectionCard(node: rendererPresented ? model.selectedNode : nil,
-                                     canvasSize: canvasSize, toolbarHeight: 28,
+                                     canvasSize: canvasSize, toolbarHeight: toolbarHeight,
                                      contentHeight: $cardContentHeight) { node in
                 TagGraphNodeCard(node: node, model: model, reader: reader, isCurrent: isCurrent) {
                     focus(node.id)
@@ -34,7 +40,22 @@ struct TagGraphWorkspace: View {
             }
             .zIndex(1)
         }
-        .overlay(alignment: .topLeading) { contentOverlay }
+        .overlay(alignment: .top) {
+            FollowGraphToolbarPanel(
+                canvasWidth: canvasSize.width,
+                search: $search,
+                searchPlaceholder: "tagGraph.search.placeholder",
+                toolbarHeight: $toolbarHeight,
+                focusedControl: $focusedControl,
+                onSearchSubmit: selectFirstSearchResult
+            ) {
+                resetButton
+            } results: {
+                searchResults
+            }
+            .padding(.top, 16)
+        }
+        .overlay(alignment: .bottom) { failureOverlay }
         .overlay(alignment: .topTrailing) {
             SheetCloseButton(action: onClose)
                 .accessibilityLabel(Text("common.close"))
@@ -46,7 +67,7 @@ struct TagGraphWorkspace: View {
         .onChange(of: escape) {
             if !search.isEmpty {
                 search = ""
-                searchFocused = true
+                focusedControl = "search"
             } else if model.selectedID != nil {
                 model.select(nil)
             } else {
@@ -90,7 +111,7 @@ struct TagGraphWorkspace: View {
             focusID: focusID
         ) {
             var logo: [String: Any] = ["id": root, "kind": "app", "name": "Starcat"]
-            logo["glyph"] = TagGraphSymbolCache.appLogo
+            logo["glyph"] = Self.appLogoURL
             let nodes = graph.nodes.map { node -> [String: Any] in
                 var value: [String: Any] = ["id": node.id, "kind": node.kind.rawValue, "name": node.name]
                 if node.kind == .tag {
@@ -130,29 +151,8 @@ struct TagGraphWorkspace: View {
         )
     }
 
-    /// 只保留可收起的悬浮搜索和视角操作，画布保持完整宽度。
-    private var contentOverlay: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                TextField("tagGraph.search.placeholder", text: $search)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 250)
-                    .focused($searchFocused)
-                    .onSubmit { if let node = model.graph?.matchingNodes(search).first { locate(node) } }
-                Button { focus(nil) } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .frame(width: 24, height: 24)
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help(String.l10n("followGraph.action.reset"))
-                .accessibilityLabel(Text("followGraph.action.reset"))
-            }
-            .padding(10)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-            if !search.isEmpty { searchResults }
-            Spacer(minLength: 0)
+    @ViewBuilder private var failureOverlay: some View {
+        VStack(spacing: 8) {
             if rendererFailed {
                 Button("followGraph.action.reloadRenderer") {
                     rendererFailed = false
@@ -169,8 +169,24 @@ struct TagGraphWorkspace: View {
                     .buttonStyle(.bordered)
             }
         }
-        .padding(16)
-        .zIndex(2)
+        .padding(.bottom, 16)
+    }
+
+    private func selectFirstSearchResult() {
+        if let node = model.graph?.matchingNodes(search).first { locate(node) }
+    }
+
+    private var resetButton: some View {
+        Button { focus(nil) } label: {
+            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                .frame(width: 24, height: 24)
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .focused($focusedControl, equals: "followGraph.action.reset")
+        .help(String.l10n("followGraph.action.reset"))
+        .accessibilityLabel(Text("followGraph.action.reset"))
     }
 
     @ViewBuilder private var searchResults: some View {
@@ -198,13 +214,14 @@ struct TagGraphWorkspace: View {
                         .buttonStyle(.plain)
                         .focusEffectDisabled()
                         .listRowSurface(index: index)
+                        .focused($focusedControl, equals: "result.\(node.id)")
                         .help(Text(verbatim: node.name))
                         .accessibilityLabel(Text(verbatim: node.name))
                     }
                 }
             }
         }
-        .frame(width: 320, height: min(220, CGFloat(matches.count * 36 + 26)))
+        .frame(maxWidth: 440, maxHeight: 230)
         .padding(6)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
@@ -214,7 +231,7 @@ struct TagGraphWorkspace: View {
         model.locate(node.id)
         focus(model.selectedID)
         search = ""
-        searchFocused = false
+        focusedControl = nil
     }
 
     private func focus(_ id: String?) {
@@ -240,16 +257,6 @@ struct TagGraphWorkspace: View {
 /// SF Symbols 只在标签图使用。按符号名缓存透明 PNG，避免数据库刷新时重复栅格化。
 @MainActor private enum TagGraphSymbolCache {
     private static var glyphs: [String: String?] = [:]
-
-    /// 直接使用当前渠道的 App 图标，缩小后再编码，避免把完整 icns 传给 WebKit。
-    static let appLogo: String? = {
-        guard let source = NSApp.applicationIconImage else { return nil }
-        let image = NSImage(size: NSSize(width: 96, height: 96), flipped: false) { rect in
-            source.draw(in: rect)
-            return true
-        }
-        return dataURL(image)
-    }()
 
     static func glyph(for symbol: String) -> String? {
         if let cached = glyphs[symbol] { return cached }
