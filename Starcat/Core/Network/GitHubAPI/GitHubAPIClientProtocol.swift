@@ -87,10 +87,11 @@ protocol GitHubAPIClientProtocol: Sendable {
 
     /// 获取单个仓库完整元数据（2026-06-08 引入，Weekly 详情页本地缓存未命中时回源用）。
     ///
+    /// - Parameter forceRefresh: 主动刷新时跳过本地 HTTP 缓存，避免写入后读到旧计数。
     /// - Returns: 完整的 `GitHubRepoDTO`（含 description / language / stargazers_count /
     ///   topics / license / created_at / updated_at / pushed_at 等字段）。
     /// - Throws: 网络层 `NetworkError`（404 / 401 / RateLimit 等）。
-    func repo(owner: String, repo: String) async throws -> GitHubRepoDTO
+    func repo(owner: String, repo: String, forceRefresh: Bool) async throws -> GitHubRepoDTO
 
     /// 自己的 fork：上游身份 + 默认分支 ahead/behind。
     ///
@@ -303,6 +304,10 @@ protocol GitHubAPIClientProtocol: Sendable {
 }
 
 extension GitHubAPIClientProtocol {
+    func repo(owner: String, repo: String) async throws -> GitHubRepoDTO {
+        try await self.repo(owner: owner, repo: repo, forceRefresh: false)
+    }
+
     var fileTreeCacheScope: String { String(reflecting: Self.self) }
     func repositoryGitTreeLevel(owner: String, repo: String, ref: String) async throws -> GitHubGitTreeDTO {
         throw NetworkError.clientError(statusCode: 501, message: "Non-recursive git tree is not implemented")

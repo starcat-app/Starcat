@@ -150,6 +150,13 @@ struct Repo: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, E
 
     // MARK: - 派生属性
 
+    /// 公共聚合数据及其旧缓存用 0 同时表示缺值和零关注者；这类零值必须按需核实。
+    /// 直接来自 GitHub 详情或 repos 缓存的真值无需经过此转换。
+    static func subscriberCount(fromFeed count: Int?) -> Int? {
+        guard let count, count > 0 else { return nil }
+        return count
+    }
+
     /// 解析 topics JSON 字符串为数组；解析失败返回空数组。
     /// 不持久化此属性。
     var topicsArray: [String] {

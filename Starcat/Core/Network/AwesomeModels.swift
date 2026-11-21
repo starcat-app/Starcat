@@ -81,7 +81,7 @@ struct AwesomeEntryDTO: Codable, Hashable, Sendable {
     let stars: Int
     let forks: Int
     let watchers: Int
-    let subscribers: Int
+    let subscribers: Int?
     let openIssues: Int
     let defaultBranch: String
     let licenseSpdx: String?
@@ -143,7 +143,7 @@ struct AwesomeEntryDTO: Codable, Hashable, Sendable {
         stars: Int,
         forks: Int,
         watchers: Int,
-        subscribers: Int,
+        subscribers: Int?,
         openIssues: Int,
         defaultBranch: String,
         licenseSpdx: String?,
@@ -203,6 +203,7 @@ struct AwesomeEntryDTO: Codable, Hashable, Sendable {
         ownerAvatar = try container.decodeIfPresent(String.self, forKey: .ownerAvatar)
         homepage = try container.decodeIfPresent(String.self, forKey: .homepage)
         language = try container.decodeIfPresent(String.self, forKey: .language)
+        subscribers = try container.decodeIfPresent(Int.self, forKey: .subscribers)
         licenseSpdx = try container.decodeIfPresent(String.self, forKey: .licenseSpdx)
         pushedAt = try container.decodeIfPresent(String.self, forKey: .pushedAt)
         entryDescription = try container.decodeIfPresent(String.self, forKey: .entryDescription)
@@ -217,7 +218,6 @@ struct AwesomeEntryDTO: Codable, Hashable, Sendable {
             stars = try container.decode(Int.self, forKey: .stars)
             forks = try container.decode(Int.self, forKey: .forks)
             watchers = try container.decode(Int.self, forKey: .watchers)
-            subscribers = try container.decode(Int.self, forKey: .subscribers)
             openIssues = try container.decode(Int.self, forKey: .openIssues)
             defaultBranch = try container.decode(String.self, forKey: .defaultBranch)
             topics = try container.decode([String].self, forKey: .topics)
@@ -232,7 +232,6 @@ struct AwesomeEntryDTO: Codable, Hashable, Sendable {
             stars = try container.decodeIfPresent(Int.self, forKey: .stars) ?? 0
             forks = try container.decodeIfPresent(Int.self, forKey: .forks) ?? 0
             watchers = try container.decodeIfPresent(Int.self, forKey: .watchers) ?? 0
-            subscribers = try container.decodeIfPresent(Int.self, forKey: .subscribers) ?? 0
             openIssues = try container.decodeIfPresent(Int.self, forKey: .openIssues) ?? 0
             defaultBranch = try container.decodeIfPresent(String.self, forKey: .defaultBranch) ?? ""
             topics = try container.decodeIfPresent([String].self, forKey: .topics) ?? []

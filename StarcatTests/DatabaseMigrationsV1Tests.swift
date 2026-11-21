@@ -82,6 +82,29 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
+    @Test("旧库只清除来源不明的零关注者数")
+    func legacyZeroSubscriberCountsAreRechecked() throws {
+        let writer = try DatabaseQueue()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(writer, upTo: "v27-repository-skill-summaries")
+        try writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url, subscribers_count, is_starred)
+                VALUES (301, 'a', 'zero', 'a/zero', 'https://github.com/a/zero', 0, 1),
+                       (302, 'a', 'known', 'a/known', 'https://github.com/a/known', 42, 0)
+                """)
+        }
+
+        try migrator.migrate(writer)
+        try writer.read { db in
+            let legacy = try #require(try Repo.fetchOne(db, key: 301))
+            #expect(legacy.subscribersCount == nil)
+            #expect(legacy.isStarred)
+            #expect(try Repo.fetchOne(db, key: 302)?.subscribersCount == 42)
+        }
+    }
+
     @Test("v24 应新增 GitHub List 本地覆盖层并清理旧组织限制忽略记录")
     func githubStarListLocalOverridesMigration() throws {
         let writer = try makeDB()

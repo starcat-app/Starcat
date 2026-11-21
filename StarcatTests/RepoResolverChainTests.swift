@@ -238,9 +238,150 @@ struct RepoResolverChainTests {
         #expect(try await repository.findById(909) == nil)
     }
 
+    @Test("补查缓存真实零值，保留 Star 和其他仓库元数据")
+    func subscriberBackfillIsPersistedWithoutReplacingRepo() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBRepoRepository(database: database)
+        let original = makeRepoDTO(id: 910, owner: "alice", name: "foo", subscribersCount: nil)
+        let star = StarredRepoDTO(starredAt: "2026-11-17T00:00:00Z", repo: original)
+        try await repository.upsertStarred([star], userID: 42, syncedAt: Date())
+        let snapshot = try #require(try await repository.findById(910))
+        let api = CountingMockClient()
+        api.repoHandler = { owner, name in
+            self.makeRepoDTO(id: 910, owner: owner, name: name, subscribersCount: 0)
+        }
+        let resolve = {
+            try await RepoSubscriberCountResolver.resolve(
+                for: snapshot, repository: repository, apiClient: api, isCurrent: { true }
+            )
+        }
+
+        #expect(try await resolve() == 0)
+        var expected = snapshot
+        expected.subscribersCount = 0
+        #expect(try await repository.findById(910) == expected)
+        #expect(try await repository.starredCount() == 1)
+        #expect(try await repository.cacheSubscriberCount(repoID: 910, count: 15) == 0)
+
+        try await repository.upsertStarred([star], userID: 42, syncedAt: Date())
+        _ = try await repository.upsertRepoMetadataForLibrary(repo: snapshot, syncedAt: Date())
+        #expect(try await resolve() == 0)
+        #expect(api.repoCalls == 1)
+    }
+
+    @Test("有计数的快照免请求，外部仓库补查只更新展示")
+    func knownCountAndExternalRepo() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBRepoRepository(database: database)
+        let api = CountingMockClient()
+        let snapshot = StarcatRepoCardDTO(
+            ghRepoId: 911, fullName: "alice/foo", owner: "alice", repo: "foo", subscribers: 9
+        ).toEphemeralRepo()
+        #expect(try await RepoSubscriberCountResolver.resolve(
+            for: snapshot, repository: repository, apiClient: api, isCurrent: { true }
+        ) == 9)
+        #expect(api.repoCalls == 0)
+
+        var missing = snapshot
+        missing.subscribersCount = nil
+        api.repoHandler = { owner, name in self.makeRepoDTO(id: 911, owner: owner, name: name) }
+        #expect(try await RepoSubscriberCountResolver.resolve(
+            for: missing, repository: repository, apiClient: api, isCurrent: { true }
+        ) == 7)
+        #expect(try await repository.findById(911) == nil)
+        #expect(api.repoCalls == 1)
+    }
+
+    @Test("主动刷新覆盖已有关注者计数，保留 Star 和其它仓库资料")
+    func forcedSubscriberRefreshReplacesKnownCount() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBRepoRepository(database: database)
+        let storedDTO = makeRepoDTO(id: 914, owner: "alice", name: "foo", subscribersCount: 12)
+        let star = StarredRepoDTO(starredAt: "2026-11-17T00:00:00Z", repo: storedDTO)
+        try await repository.upsertStarred([star], userID: 42, syncedAt: Date())
+        let snapshot = try #require(try await repository.findById(914))
+        let api = CountingMockClient()
+        api.repoHandler = { owner, name in
+            self.makeRepoDTO(id: 914, owner: owner, name: name, subscribersCount: 0)
+        }
+        let resolve = {
+            try await RepoSubscriberCountResolver.resolve(
+                for: snapshot, repository: repository, apiClient: api,
+                forceRefresh: true, isCurrent: { true }
+            )
+        }
+
+        #expect(try await resolve() == 0)
+        var expected = snapshot
+        expected.subscribersCount = 0
+        #expect(try await repository.findById(914) == expected)
+        #expect(api.repoCalls == 1)
+
+        api.repoHandler = { _, _ in throw URLError(.notConnectedToInternet) }
+        await #expect(throws: URLError.self) { try await resolve() }
+        #expect(try await repository.findById(914) == expected)
+    }
+
+    @Test("请求失败、详情缺字段与不同仓库的响应都不污染缓存")
+    func unavailableSubscriberCountStaysUnknown() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBRepoRepository(database: database)
+        let api = CountingMockClient()
+        let dto = makeRepoDTO(id: 912, owner: "alice", name: "foo", subscribersCount: nil)
+        let snapshot = try await repository.upsertExternalRepoForLibrary(repoDTO: dto, syncedAt: Date())
+        let resolve = {
+            try await RepoSubscriberCountResolver.resolve(
+                for: snapshot, repository: repository, apiClient: api, isCurrent: { true }
+            )
+        }
+
+        api.repoHandler = { _, _ in throw URLError(.notConnectedToInternet) }
+        await #expect(throws: URLError.self) { try await resolve() }
+        api.repoHandler = { _, _ in dto }
+        #expect(try await resolve() == nil)
+        api.repoHandler = { owner, name in self.makeRepoDTO(id: 999, owner: owner, name: name) }
+        #expect(try await resolve() == nil)
+        #expect(try await repository.findById(912) == snapshot)
+    }
+
+    @Test("切号或切仓取消后不回填旧请求")
+    func staleSubscriberCountIsDiscarded() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBRepoRepository(database: database)
+        let api = CountingMockClient()
+        let dto = makeRepoDTO(id: 913, owner: "alice", name: "foo", subscribersCount: nil)
+        let snapshot = try await repository.upsertExternalRepoForLibrary(repoDTO: dto, syncedAt: Date())
+        let accountID = database.currentUserId
+
+        api.repoHandler = { owner, name in
+            try await database.reopen(userId: 42)
+            _ = try await repository.upsertExternalRepoForLibrary(repoDTO: dto, syncedAt: Date())
+            return self.makeRepoDTO(id: 913, owner: owner, name: name)
+        }
+        await #expect(throws: CancellationError.self) {
+            try await RepoSubscriberCountResolver.resolve(
+                for: snapshot, repository: repository, apiClient: api,
+                isCurrent: { database.currentUserId == accountID }
+            )
+        }
+
+        api.repoHandler = { owner, name in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return self.makeRepoDTO(id: 913, owner: owner, name: name)
+        }
+        let task = Task {
+            try await RepoSubscriberCountResolver.resolve(
+                for: snapshot, repository: repository, apiClient: api, isCurrent: { true }
+            )
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(try await repository.findById(913)?.subscribersCount == nil)
+        #expect(api.repoCalls == 2)
+    }
+
     // MARK: - Helpers
 
-    private func makeRepoDTO(id: Int64, owner: String, name: String) -> GitHubRepoDTO {
+    private func makeRepoDTO(id: Int64, owner: String, name: String, subscribersCount: Int? = 7) -> GitHubRepoDTO {
         GitHubRepoDTO(
             id: id, name: name, fullName: "\(owner)/\(name)",
             owner: GitHubUserDTO(id: 1, login: owner, name: nil, avatarUrl: nil,
@@ -255,7 +396,7 @@ struct RepoResolverChainTests {
             pushedAt: nil, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-11-17T00:00:00Z",
             // SEARCH-RICH 2026-06-14：5 个新字段对此 chain 测试无意义，置 nil。
             openIssuesCount: nil, defaultBranch: nil,
-            disabled: nil, isTemplate: nil, score: nil, subscribersCount: 7
+            disabled: nil, isTemplate: nil, score: nil, subscribersCount: subscribersCount
         )
     }
 }
@@ -296,7 +437,7 @@ private final class CountingMockClient: GitHubAPIClientProtocol, @unchecked Send
     func releases(owner: String, repo: String, perPage: Int) async throws -> APIResponse<[GitHubReleaseDTO]> {
         fatalError("not used")
     }
-    func repo(owner: String, repo: String) async throws -> GitHubRepoDTO {
+    func repo(owner: String, repo: String, forceRefresh: Bool) async throws -> GitHubRepoDTO {
         repoCalls += 1
         guard let handler = repoHandler else {
             // 默认抛错，模拟「网络不通」

@@ -44,7 +44,7 @@ final class DailyRadarProjectStore {
             repoID: repo.id, fullName: repo.fullName, owner: repo.owner, name: repo.name,
             description: repo.description, homepage: repo.homepage, language: repo.language,
             stars: repo.starsCount, forks: repo.forksCount, watchers: repo.watchersCount,
-            subscribers: repo.subscribersCount ?? 0, openIssues: repo.openIssuesCount ?? 0,
+            subscribers: repo.subscribersCount, openIssues: repo.openIssuesCount ?? 0,
             ownerAvatar: repo.ownerAvatar, defaultBranch: repo.defaultBranch,
             licenseSpdx: repo.license, topics: repo.topicsArray, platforms: [],
             pushedAt: repo.pushedAt, updatedAt: repo.updatedAt, createdAt: repo.createdAt,

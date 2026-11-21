@@ -60,7 +60,7 @@ import Foundation
 ///
 /// 字段必填性：
 /// - `gh_repo_id`：必填（N5 决策：enricher 未补全的 repo 后端不返回）
-/// - 计数字段（stars/forks/watchers/subscribers/open_issues）：必填，缺省值视后端而定
+/// - 计数字段缺省值视后端而定；缺少 `subscribers` 时保留 nil。
 /// - 时间字段（pushed_at/updated_at/created_at）：可选（后端可能未补全 enrich）
 /// - URL 字段（owner_avatar/homepage/html_url）：可选
 ///
@@ -105,7 +105,7 @@ struct StarcatRepoCardDTO: Decodable, Sendable, Equatable {
     let watchers: Int
 
     /// 订阅者数（GitHub `subscribers_count` 字段）。
-    let subscribers: Int
+    let subscribers: Int?
 
     /// Topics 数组。空数组而非 nil（设计 §6.1.3 默认 [])。
     let topics: [String]
@@ -200,7 +200,7 @@ struct StarcatRepoCardDTO: Decodable, Sendable, Equatable {
         self.stars = try c.decodeIfPresent(Int.self, forKey: .stars) ?? 0
         self.forks = try c.decodeIfPresent(Int.self, forKey: .forks) ?? 0
         self.watchers = try c.decodeIfPresent(Int.self, forKey: .watchers) ?? 0
-        self.subscribers = try c.decodeIfPresent(Int.self, forKey: .subscribers) ?? 0
+        self.subscribers = try c.decodeIfPresent(Int.self, forKey: .subscribers)
         self.topics = try c.decodeIfPresent([String].self, forKey: .topics) ?? []
         self.homepage = try Self.decodeOptionalURL(c, forKey: .homepage)
         self.licenseSpdx = try c.decodeIfPresent(String.self, forKey: .licenseSpdx)
@@ -266,7 +266,7 @@ struct StarcatRepoCardDTO: Decodable, Sendable, Equatable {
         stars: Int = 0,
         forks: Int = 0,
         watchers: Int = 0,
-        subscribers: Int = 0,
+        subscribers: Int? = nil,
         topics: [String] = [],
         homepage: URL? = nil,
         licenseSpdx: String? = nil,
@@ -416,7 +416,7 @@ extension StarcatRepoCardDTO {
             cachedAt: nil,
             // R-01 v1.2 扩展 4 字段（2026-06-10 落地）：DTO → Repo 全字段透传
             ownerAvatar: ownerAvatar?.absoluteString,
-            subscribersCount: subscribers,
+            subscribersCount: Repo.subscriberCount(fromFeed: subscribers),
             defaultBranch: defaultBranch,
             openIssuesCount: openIssues
         )

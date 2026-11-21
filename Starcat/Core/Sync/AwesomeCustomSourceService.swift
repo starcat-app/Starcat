@@ -328,8 +328,7 @@ actor AwesomeCustomSourceService {
             stars: repo.stargazersCount,
             forks: repo.forksCount,
             watchers: repo.watchersCount,
-            // GitHubRepoDTO 暂未暴露 subscribers_count；自定义来源不上传远端，保持本地已知值为 0。
-            subscribers: 0,
+            subscribers: repo.subscribersCount,
             openIssues: repo.openIssuesCount ?? 0,
             defaultBranch: repo.defaultBranch ?? "",
             licenseSpdx: repo.license?.spdxId,

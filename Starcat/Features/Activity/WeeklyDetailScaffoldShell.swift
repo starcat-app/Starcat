@@ -98,14 +98,20 @@ struct WeeklyDetailScaffoldShell: View {
     @State private var displayRepo: Repo?
     /// 详情接口返回的通用来源历史；切 repo 时必须与 displayRepo 同步清空，避免旧事件残留。
     @State private var sourceEvents: [WeeklySourceEvent] = []
-    /// 当前 displayRepo 是否来自本地（保留供后续扩展使用,view body 当前不读取此字段）。
+    /// 本地命中由共用 Hero 补缺失计数；未命中已有完整详情请求，由宿主提供结果。
     @State private var isLocalHit: Bool = false
+
+    private struct LoadKey: Equatable {
+        let repoID: Int64
+        let scope: RepoDetailDatabaseScope
+    }
 
     // R-01 §3.2.3 决策（Q2）：unstar **即点即生效，不弹 confirm alert**；
     // API 失败 chip 抖动 + 短暂红色（不弹 toast / alert）。失败仅 AppLog 记日志。
     // → 本 view 不持有 showUnstarConfirm / unstarError 等 @State。
 
     var body: some View {
+        let loadKey = LoadKey(repoID: item.ghRepoId, scope: RepoDetailDatabaseScope(dependencies))
         // Group + if-else 与 TrendingScaffoldShell 同款:
         // - displayRepo / readmeVM 都就绪时渲染 RepoDetailScaffold;
         // - 极短瞬间(loadAll 入口同步推 fallback 之前的那一帧)显示 ProgressView。
@@ -122,7 +128,8 @@ struct WeeklyDetailScaffoldShell: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .task(id: item.id) {
+        .task(id: loadKey) {
+            guard loadKey.scope.isReady else { return }
             await loadAll()
         }
     }
@@ -145,7 +152,8 @@ struct WeeklyDetailScaffoldShell: View {
                     sources: item.sourceTypes,
                     label: item.shortSourceLabel,
                     url: sourceURL(for: item)
-                )
+                ),
+                loadsMissingSubscriberCount: isLocalHit
             ),
             fallbackAccentColor: WeeklyVisualStyle.accentColor,
             // R-01 v1.5 / v2.0:tooltip 与 toggle 行为对齐,直接派生自 `repo.isStarred`。
@@ -222,15 +230,10 @@ struct WeeklyDetailScaffoldShell: View {
     private func loadAll() async {
         // ─── 同步段(D-27 修复 1):必须在任何 await 之前完成 ─────────────────
         //
-        // Shell 重建后 displayRepo 是 nil(@State 初始值),无条件推 fallback。
-        // 同 shell 内 handleStarTapped 后重复 loadAll 不会发生(loadAll 仅由
-        // .task(id: project.id) 触发,project.id 不变 task 不重跑),所以无需
-        // D-27 时代的 `displayRepo?.fullName != project.fullName` 守卫。
-        if displayRepo?.id != item.ghRepoId {
-            displayRepo = dependencies.starredRegistry.applyingDisplayState(to: makeFallbackRepo(from: item))
-            sourceEvents = []
-            isLocalHit = false
-        }
+        // 切仓或切号时，先用公共列表快照替换上一次读取的账号资料。
+        displayRepo = dependencies.starredRegistry.applyingDisplayState(to: makeFallbackRepo(from: item))
+        sourceEvents = []
+        isLocalHit = false
         loadReadme(for: item)
 
         // ─── 异步段:后台升级 displayRepo 到本地真值或 GitHub API 真值 ───────
@@ -239,10 +242,14 @@ struct WeeklyDetailScaffoldShell: View {
     }
 
     private func loadDetail(for item: WeeklyFeedItem) async {
+        let scope = RepoDetailDatabaseScope(dependencies)
         do {
             let detail = try await dependencies.weeklyAPI.fetchDetail(repoID: item.ghRepoId)
-            guard detail.repo.card.ghRepoId == item.ghRepoId else { return }
-            displayRepo = dependencies.starredRegistry.applyingDisplayState(to: detail.repo.card.toEphemeralRepo())
+            guard !Task.isCancelled, RepoDetailDatabaseScope(dependencies) == scope,
+                  detail.repo.card.ghRepoId == item.ghRepoId else { return }
+            var repo = detail.repo.card.toEphemeralRepo()
+            repo.subscribersCount = repo.subscribersCount ?? Repo.subscriberCount(fromFeed: item.card.subscribers)
+            displayRepo = dependencies.starredRegistry.applyingDisplayState(to: repo)
             sourceEvents = detail.events
             isLocalHit = false
         } catch {
@@ -262,10 +269,16 @@ struct WeeklyDetailScaffoldShell: View {
     /// 2.  全部不命中 → **silent upgrade**:调 GitHub `/repos` 用真值替换 fallback;
     ///     失败保持 fallback 不变(hero 不白屏)。
     private func resolveRepo(for item: WeeklyFeedItem) async {
+        let scope = RepoDetailDatabaseScope(dependencies)
+        guard !Task.isCancelled, scope.isReady else { return }
+        let isCurrent = { !Task.isCancelled && RepoDetailDatabaseScope(dependencies) == scope }
+        let sourceCount = displayRepo?.id == item.ghRepoId ? displayRepo?.subscribersCount : nil
         // 1a) 本地查找 — id 精确匹配 优先(仅当 fullName 与当前 project 同源)
         if let cached = displayRepo, cached.id > 0 {
             do {
-                if let local = try await dependencies.repoRepository.findById(item.ghRepoId) {
+                if var local = try await dependencies.repoRepository.findById(item.ghRepoId) {
+                    guard isCurrent() else { return }
+                    local.subscribersCount = local.subscribersCount ?? sourceCount
                     displayRepo = dependencies.starredRegistry.applyingDisplayState(to: local)
                     isLocalHit = true
                     return
@@ -277,10 +290,14 @@ struct WeeklyDetailScaffoldShell: View {
 
         // 1b) findById 未命中 → owner/name 兜底
         do {
-            if let local = try await dependencies.repoRepository.findByOwnerName(
+            if var local = try await dependencies.repoRepository.findByOwnerName(
                 owner: item.owner,
                 name: item.name
             ) {
+                guard isCurrent() else { return }
+                if local.id == item.ghRepoId {
+                    local.subscribersCount = local.subscribersCount ?? sourceCount
+                }
                 displayRepo = dependencies.starredRegistry.applyingDisplayState(to: local)
                 isLocalHit = true
                 return
@@ -293,16 +310,15 @@ struct WeeklyDetailScaffoldShell: View {
         //
         // weekly 列表只是发现入口,**不入库**——避免污染本地 starred 集合。
         do {
+            guard isCurrent() else { return }
             let dto = try await dependencies.apiClient.repo(owner: item.owner, repo: item.name)
+            guard isCurrent(), item.ghRepoId <= 0 || dto.id == item.ghRepoId else { return }
             let cachedAt = ISO8601DateFormatter.shared.string(from: Date())
-            displayRepo = dependencies.starredRegistry.applyingDisplayState(
-                to: GRDBRepoRepository.repoFromDTO(
-                    dto,
-                    starredAt: nil,
-                    cachedAt: cachedAt,
-                    isStarred: false
-                )
+            var repo = GRDBRepoRepository.repoFromDTO(
+                dto, starredAt: nil, cachedAt: cachedAt, isStarred: false
             )
+            repo.subscribersCount = repo.subscribersCount ?? sourceCount
+            displayRepo = dependencies.starredRegistry.applyingDisplayState(to: repo)
             isLocalHit = false
         } catch {
             AppLog.network.error("weekly: GitHub /repos silent upgrade failed for \(item.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")

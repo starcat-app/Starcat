@@ -126,6 +126,15 @@ enum DatabaseMigrations {
         registerV26(into: &migrator)
         registerV27(into: &migrator)
         registerV28(into: &migrator)
+        registerV29(into: &migrator)
+    }
+
+    /// 过去的精简快照可能将缺失计数写为零，旧行无法区分这两种情况。
+    /// 只清理有歧义的统计值，打开详情时再向 GitHub 核实。
+    private static func registerV29(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v29-recheck-legacy-zero-subscriber-counts") { db in
+            try db.execute(sql: "UPDATE repos SET subscribers_count = NULL WHERE subscribers_count = 0")
+        }
     }
 
     /// 旧版本的空笔记无法区分状态写入和主动清空，因此统一清除编辑时间。

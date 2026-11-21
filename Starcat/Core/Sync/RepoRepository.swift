@@ -84,7 +84,7 @@ struct GRDBRepoRepository {
                 var repo = Self.repoFromDTO(dto.repo, starredAt: dto.starredAt, cachedAt: cachedAtISO)
                 // Stars 列表不返回 subscribers_count，不能清掉详情补齐的真实关注者数。
                 if repo.subscribersCount == nil {
-                    repo.subscribersCount = try Repo.fetchOne(db, key: repo.id)?.subscribersCount
+                    repo.subscribersCount = try Self.storedSubscriberCount(in: db, repoID: repo.id)
                 }
                 try repo.save(db)
 
@@ -226,6 +226,9 @@ struct GRDBRepoRepository {
 
         return try await database.writer.write { db in
             var repo = Self.repoFromDTO(repoDTO, starredAt: resolvedStarredAt, cachedAt: cachedAtISO, isStarred: true)
+            if repo.subscribersCount == nil {
+                repo.subscribersCount = try Self.storedSubscriberCount(in: db, repoID: repo.id)
+            }
             try repo.save(db)
 
             var starred = StarredRepo(
@@ -249,14 +252,18 @@ struct GRDBRepoRepository {
     /// - 新 repo 一律以 `is_starred = false` 落库，避免把私有入库误写成 GitHub Star。
     /// - 如果本地已经是 starred，则只刷新 metadata，不把 `is_starred/starred_at` 降级。
     /// - `library_state` 仍由 `RepoNoteRepository.updateLibraryState` 写入，两个语义分层。
+    @MainActor
     func upsertExternalRepoForLibrary(repoDTO: GitHubRepoDTO, syncedAt: Date) async throws -> Repo {
         let cachedAtISO = ISO8601DateFormatter.shared.string(from: syncedAt)
 
         return try await database.writer.write { db in
             var repo = Self.repoFromDTO(repoDTO, starredAt: nil, cachedAt: cachedAtISO, isStarred: false)
-            if let existing = try Repo.fetchOne(db, key: repo.id), existing.isStarred {
-                repo.isStarred = true
-                repo.starredAt = existing.starredAt
+            if let existing = try Repo.fetchOne(db, key: repo.id) {
+                if existing.isStarred {
+                    repo.isStarred = true
+                    repo.starredAt = existing.starredAt
+                }
+                repo.subscribersCount = repo.subscribersCount ?? existing.subscribersCount
             }
             try repo.save(db)
             return repo
@@ -280,10 +287,30 @@ struct GRDBRepoRepository {
             // 已有 starred 事实必须保留；没有历史行时一律按未 star 入库。
             saved.isStarred = existing?.isStarred == true
             saved.starredAt = existing?.isStarred == true ? existing?.starredAt : nil
+            saved.subscribersCount = existing?.subscribersCount ?? saved.subscribersCount
             saved.cachedAt = cachedAtISO
             try saved.save(db)
             return saved
         }
+    }
+
+    /// 只更改统计列，不用详情响应覆盖可能已被同步更新的元数据和归属。
+    @MainActor
+    func cacheSubscriberCount(repoID: Int64, count: Int, replacingExisting: Bool = false) async throws -> Int? {
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE repos SET subscribers_count = ?
+                    WHERE id = ? AND (? OR subscribers_count IS NULL) AND subscribers_count IS NOT ?
+                    """,
+                arguments: [count, repoID, replacingExisting, count]
+            )
+            return try Self.storedSubscriberCount(in: db, repoID: repoID)
+        }
+    }
+
+    private static func storedSubscriberCount(in db: Database, repoID: Int64) throws -> Int? {
+        try Int.fetchOne(db, sql: "SELECT subscribers_count FROM repos WHERE id = ?", arguments: [repoID])
     }
 
     func updateAccessState(repoId: Int64, state: RepoAccessState, reason: String?, checkedAt: Date) async throws {

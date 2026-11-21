@@ -29,9 +29,7 @@ final class DiscoveryDetailPresentation {
                 // 同仓刷新或回切打断退场时，保留已经补齐的字段，不退回不完整的列表资料。
                 snapshot = repo
             } else {
-                // 推荐列表没有这些计数；适配 DTO 的 0 不是接口真值。
-                // nil 复用 Hero 现有占位，不能把“未知”显示成“没有关注者 / Issue”。
-                snapshot.subscribersCount = nil
+                // 推荐列表缺少 Issue 计数；nil 复用 Hero 的未知占位。
                 snapshot.openIssuesCount = nil
             }
         }
