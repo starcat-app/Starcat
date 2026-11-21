@@ -1343,7 +1343,7 @@ final class AppSettings {
         didSet { persistBool(key: Keys.typesafeNativeKeyTestFailed, value: typesafeNativeKeyTestFailed) }
     }
 
-    /// 固定版本模型 ID（默认 jev-1.13.0）。
+    /// 固定版本模型 ID（默认 jev-1.14.0），已保存的选版保持不变。
     ///
     /// 官方文档明确 `jev-latest` alias 会随版本漂移、行为可能被 silently 改变；
     /// 概率阈值调好后必须固定版本 ID。留空回退默认值。

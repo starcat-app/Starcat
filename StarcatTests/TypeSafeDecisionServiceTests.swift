@@ -169,7 +169,7 @@ struct TypeSafeClientTests {
         #expect(request.url?.absoluteString == "https://openrouter.test.invalid/api/alpha/decisions")
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer sk-or-test")
         let body = try JSONSerialization.jsonObject(with: #require(request.httpBody)) as? [String: Any]
-        #expect(body?["model"] as? String == "typesafe/jev-1.13")
+        #expect(body?["model"] as? String == "typesafe/jev-1.14")
     }
 
     @Test("无 criteria 的 Noul 问题不编码 criteria 键")

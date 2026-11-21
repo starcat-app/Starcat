@@ -37,6 +37,19 @@ struct JevConnectionSettingsTests {
         try keychain.storeAIKey("or-test-key", forProvider: "openrouter-test")
     }
 
+    @Test("缺省模型升级到 1.14，已保存的 1.13 保持生效")
+    func defaultUpgradePreservesExplicitModel() throws {
+        let keychain = InMemoryKeychain()
+        let defaults = try #require(UserDefaults(suiteName: "test.starcat.jevSettings.\(UUID().uuidString)"))
+        try keychain.storeServiceAPIKey("native-test", forService: JevDecisionEngine.keychainServiceID)
+        let settings = AppSettings(defaults: defaults, keychain: keychain)
+        #expect(JevDecisionEngine.resolveAccess(settings: settings, keychain: keychain)?.modelID == "jev-1.14.0")
+
+        settings.typesafeModelID = "jev-1.13.0"
+        let restored = AppSettings(defaults: defaults, keychain: keychain)
+        #expect(JevDecisionEngine.resolveAccess(settings: restored, keychain: keychain)?.modelID == "jev-1.13.0")
+    }
+
     @Test("接口候选与固定版本合并去重，不写入 Key 或验证状态")
     func modelListMergesWithoutVerifyingConnection() async throws {
         let keychain = InMemoryKeychain()
@@ -168,13 +181,13 @@ struct JevConnectionSettingsTests {
         var calls: [JevDecisionAccess] = []
         let model = JevConnectionSettingsModel(settings: settings, keychain: keychain, probe: { access in
             calls.append(access)
-            if access.modelID == "jev-1.14.0" { throw ProbeError.invalidModel }
+            if access.modelID == "jev-1.13.0" { throw ProbeError.invalidModel }
             return .init(elapsedMilliseconds: 12, noul: 0.98)
         })
         model.draftAPIKey = "native-draft"
-        model.nativeModelID = "jev-1.14.0"
+        model.nativeModelID = "jev-1.13.0"
         await model.testConnection()
-        #expect(model.nativeModelID == "jev-1.14.0")
+        #expect(model.nativeModelID == "jev-1.13.0")
         #expect(model.draftAPIKey == "native-draft")
         #expect(model.nativeConnectionFailed)
         #expect(model.testState == .failed("invalid native model"))
@@ -184,7 +197,7 @@ struct JevConnectionSettingsTests {
         model.nativeModelID = JevDecisionEngine.defaultModelID
         #expect(model.testState == .idle)
         await model.testConnection()
-        #expect(calls.map(\.modelID) == ["jev-1.14.0", JevDecisionEngine.defaultModelID])
+        #expect(calls.map(\.modelID) == ["jev-1.13.0", JevDecisionEngine.defaultModelID])
         #expect(calls.allSatisfy { $0.api == .typeSafe })
         #expect(model.nativeCredentialIsUsable)
         #expect(!model.nativeConnectionFailed)
@@ -218,9 +231,9 @@ struct JevConnectionSettingsTests {
         // 备用连接成功不能把未验证的原生 Key 当作已保存或已验证。
         #expect(!model.hasStoredNativeAPIKey)
         #expect(try keychain.loadAIKey(forProvider: "openrouter-test") == "or-test-key")
-        model.nativeModelID = JevDecisionEngine.defaultModelID
+        model.nativeModelID = "jev-1.13.0"
         #expect(model.canTest)
-        #expect(model.nativeModelID == JevDecisionEngine.defaultModelID)
+        #expect(model.nativeModelID == "jev-1.13.0")
     }
 
     @Test("两条连接都失败时保留已存 Key 和模型")

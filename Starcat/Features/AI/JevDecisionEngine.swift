@@ -44,9 +44,9 @@ struct JevDecisionAccess: Equatable, Sendable {
 final class JevDecisionEngine: DecisionEngineProviding {
     static let keychainServiceID = "typesafe-ai"
     /// 固定版本避免 `jev-latest` 漂移后破坏已调好的概率阈值。
-    static let defaultModelID = "jev-1.13.0"
+    static let defaultModelID = "jev-1.14.0"
     /// OpenRouter Decisions 使用独立模型命名空间，同样固定版本。
-    static let openRouterModelID = "typesafe/jev-1.13"
+    static let openRouterModelID = "typesafe/jev-1.14"
 
     let id: DecisionEngineID = .jev
 
