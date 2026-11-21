@@ -38,6 +38,8 @@ struct UserRepoActivityRepositoryTests {
             actor: Self.actor,
             occurredAt: "2026-08-19T12:05:00Z"
         )
+        try await env.activity.recordFork(repo: repo, source: .starcat, actor: Self.actor,
+                                          occurredAt: "2026-08-19T12:06:00Z")
         try await env.activity.recordSyncedStars(
             [
                 UserRepoActivityStarDraft(
@@ -50,7 +52,8 @@ struct UserRepoActivityRepositoryTests {
             actor: Self.actor
         )
 
-        #expect(try await env.activity.count() == 1)
+        try await env.activity.backfillFromLocalCaches(actor: Self.actor)
+        #expect(try await env.activity.count() == 2)
     }
 
     @Test("Unstar 后再 Star 会追加两行不同 kind")

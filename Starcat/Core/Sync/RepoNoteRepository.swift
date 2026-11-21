@@ -145,16 +145,9 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     /// 有非空私有笔记的 repo id 集合（`requireNote` predicate 用）。
     func fetchRepoIdsWithNonEmptyContent() async throws -> Set<Int64> {
         try await database.writer.read { db in
-            let rows = try Row.fetchAll(db, sql: """
-                SELECT repo_id, content FROM repo_notes WHERE content IS NOT NULL
-                """)
-            // SQLite TRIM 默认只去 ASCII 空格；与编辑器相同的 Foundation 规则
-            // 才能排除仅含换行、Tab 或全角空格的笔记，状态专用行也不会误报。
-            return Set(rows.compactMap { row in
-                let content: String = row["content"]
-                return content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    ? nil : row["repo_id"] as Int64
-            })
+            Set(try Int64.fetchAll(db, sql: """
+                SELECT n.repo_id FROM repo_notes n WHERE \(KnowledgeActivity.nonemptyNoteSQL)
+                """))
         }
     }
 
@@ -214,8 +207,11 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     /// 仅更新 content 与 AI 来源标记；行不存在则创建一行（status="unread"）。
     /// content 传 nil 表示清空。editedAt 自动设为 now。
     func updateContent(repoId: Int64, content: String?, isAIGenerated: Bool) async throws {
-        let nowISO = ISO8601DateFormatter.shared.string(from: Date())
-        try await database.writer.write { db in
+        let editedAt = try await database.writer.write { db in
+            let now = Date()
+            let nowISO = ISO8601DateFormatter.shared.string(from: now)
+            let previous = try String.fetchOne(db, sql: "SELECT content FROM repo_notes WHERE repo_id = ?",
+                                               arguments: [repoId])
             // AI 标记必须与 content 同步更新，否则用户手改 AI 笔记后仍会被误标。
             try db.execute(
                 sql: """
@@ -230,8 +226,15 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
                 """,
                 arguments: [repoId, content, isAIGenerated, nowISO]
             )
+            let oldBody = KnowledgeActivity.body(previous)
+            let newBody = KnowledgeActivity.body(content)
+            if !newBody.isEmpty && newBody != oldBody {
+                try KnowledgeActivity.append(oldBody.isEmpty ? .wroteNote : .editedNote, repoID: repoId,
+                                             at: now, source: isAIGenerated ? .aiNote : .starcat, db: db)
+            }
+            return nowISO
         }
-        postContentDidChange(repoId: repoId, content: content, editedAt: nowISO)
+        postContentDidChange(repoId: repoId, content: content, editedAt: editedAt)
     }
 
     /// 仅更新 status；行不存在则创建一行（content=NULL）。editedAt 自动设为 now。
@@ -240,12 +243,13 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     /// repo 明确移出知识库后，UI / Companion 重复保存同一个 `using` 值不会覆盖用户选择。
     /// 从 `using` 改成其它状态也只更新阅读状态，不反向修改知识库归属。
     func updateStatus(repoId: Int64, status: RepoStatus) async throws {
-        let nowISO = ISO8601DateFormatter.shared.string(from: Date())
         let insertedLibraryState = status == .using
             ? LibraryState.inLibrary.rawValue
             : LibraryState.outsideLibrary.rawValue
-        let insertedLibraryUpdatedAt: String? = status == .using ? nowISO : nil
         let didEnterLibrary = try await database.writer.write { db in
+            let now = Date()
+            let nowISO = ISO8601DateFormatter.shared.string(from: now)
+            let insertedLibraryUpdatedAt: String? = status == .using ? nowISO : nil
             let previous = try Row.fetchOne(
                 db,
                 sql: "SELECT status, library_state FROM repo_notes WHERE repo_id = ?",
@@ -284,9 +288,17 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
                 """,
                 arguments: [repoId, status.rawValue, insertedLibraryState, insertedLibraryUpdatedAt, nowISO]
             )
-            return status == .using
+            let entered = status == .using
                 && previousStatus != .using
                 && previousLibraryState != .inLibrary
+            if (previousStatus == .using) != (status == .using) {
+                try KnowledgeActivity.append(status == .using ? .startedUsing : .stoppedUsing,
+                                             repoID: repoId, at: now, db: db)
+            }
+            if entered {
+                try KnowledgeActivity.append(.enteredLibrary, repoID: repoId, at: now, source: .autoLibrary, db: db)
+            }
+            return entered
         }
         if didEnterLibrary {
             postLibraryStateDidChange(repoId: repoId, state: .inLibrary)
@@ -312,8 +324,9 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     }
 
     func updateLibraryState(repoId: Int64, state: LibraryState) async throws {
-        let nowISO = ISO8601DateFormatter.shared.string(from: Date())
         try await database.writer.write { db in
+            let now = Date()
+            let nowISO = ISO8601DateFormatter.shared.string(from: now)
             switch state {
             case .inLibrary:
                 try db.execute(
@@ -341,6 +354,10 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
                     """,
                     arguments: [nowISO, repoId]
                 )
+            }
+            if db.changesCount > 0 {
+                try KnowledgeActivity.append(state == .inLibrary ? .enteredLibrary : .leftLibrary,
+                                             repoID: repoId, at: now, db: db)
             }
         }
         postLibraryStateDidChange(repoId: repoId, state: state)

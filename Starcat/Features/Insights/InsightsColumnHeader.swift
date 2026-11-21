@@ -2,37 +2,39 @@
 //  InsightsColumnHeader.swift
 //  Starcat
 //
-//  洞察两栏共用的紧凑顶栏；自然高度与用于对齐的显示高度必须分开测量。
+//  洞察内容栏的紧凑顶栏，随标题与范围控件自然伸缩。
 //
 
 import SwiftUI
 
-/// 保留内容字号和控件尺寸，只向主窗口报告需要的高度，再使用两栏共同高度对齐。
-struct InsightsColumnHeader<Content: View>: View {
-    let height: CGFloat
-    private let content: Content
+/// 最小高度与内边距沿用洞察顶栏的紧凑规格。
+enum InsightsColumnChrome {
+    static let minimumHeaderHeight: CGFloat = 64
+    static let headerVerticalPadding: CGFloat = 8
+    static let contentTopPadding: CGFloat = 10
+}
 
-    /// 高度由同一主窗口协调，不写入设置，也不在多个窗口之间共享。
-    init(height: CGFloat, @ViewBuilder content: () -> Content) {
-        self.height = height
-        self.content = content()
-    }
+/// 固定内容的垂直理想尺寸，允许长译文和大字号撑开顶栏。
+struct InsightsColumnHeader<Title: View, Controls: View>: View {
+    @ViewBuilder let title: Title
+    @ViewBuilder let controls: Controls
 
     var body: some View {
-        content
-            .padding(.vertical, InsightsColumnChrome.headerVerticalPadding)
-            // 测量时忽略外层高度提案，否则上一轮撑高的 frame 会再次上报，永远无法收缩。
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .background {
-                GeometryReader { geometry in
-                    Color.clear.preference(
-                        key: InsightsColumnHeaderHeightPreferenceKey.self,
-                        value: geometry.size.height
-                    )
-                }
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 12) {
+                title
+                Spacer(minLength: 16)
+                controls
             }
-            // 首次测量尚未回传时也允许内容自然增高，不能把控件裁在 64pt 内。
-            .frame(minHeight: height, alignment: .topLeading)
+            VStack(alignment: .leading, spacing: 10) {
+                title
+                controls
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, InsightsColumnChrome.headerVerticalPadding)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(minHeight: InsightsColumnChrome.minimumHeaderHeight, alignment: .topLeading)
     }
 }

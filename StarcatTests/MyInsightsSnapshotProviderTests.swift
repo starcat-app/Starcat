@@ -134,7 +134,7 @@ struct MyInsightsSnapshotProviderTests {
         #expect(action(.missingReadme, in: snapshot) == 2)
         #expect(action(.missingIndexableContent, in: snapshot) == 1)
         #expect(action(.indexIssues, in: snapshot) == 1)
-        #expect(!snapshot.actionItems.contains(where: { $0.id == .allActions }))
+        #expect(snapshot.actionItems.map(\.id) == InsightsActionID.allCases)
         #expect(distribution("readme", in: snapshot.knowledgeCoverageItems) == 1)
         #expect(distribution("indexable", in: snapshot.knowledgeCoverageItems) == 2)
         #expect(distribution("embeddingReady", in: snapshot.knowledgeCoverageItems) == 1)
@@ -348,7 +348,7 @@ struct MyInsightsSnapshotProviderTests {
         items.first(where: { $0.id == id })?.count
     }
 
-    private func action(_ id: InsightsSelection, in snapshot: MyInsightsSnapshot) -> Int? {
+    private func action(_ id: InsightsActionID, in snapshot: MyInsightsSnapshot) -> Int? {
         snapshot.actionItems.first(where: { $0.id == id })?.count
     }
 

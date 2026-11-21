@@ -125,6 +125,25 @@ enum DatabaseMigrations {
         registerV25(into: &migrator)
         registerV26(into: &migrator)
         registerV27(into: &migrator)
+        registerV28(into: &migrator)
+    }
+
+    /// 每个账号有自己的库。采集起点与新账本原子创建，空账本也可以证明本机覆盖期。
+    private static func registerV28(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v28-knowledge-activity") { db in
+            try db.execute(sql: """
+                CREATE TABLE knowledge_activity_coverage (
+                    id INTEGER PRIMARY KEY CHECK (id = 1), started_at REAL NOT NULL
+                );
+                CREATE TABLE knowledge_activity (
+                    id INTEGER PRIMARY KEY, repo_id INTEGER NOT NULL, kind TEXT NOT NULL,
+                    occurred_at REAL NOT NULL, source TEXT NOT NULL
+                );
+                CREATE INDEX idx_knowledge_activity_time ON knowledge_activity(occurred_at);
+                """)
+            try db.execute(sql: "INSERT INTO knowledge_activity_coverage VALUES (1, ?)",
+                           arguments: [Date().timeIntervalSince1970])
+        }
     }
 
     /// 旧 payload 原样保留；升级时一次性提取摘要，日常恢复不再读取全量正文。
