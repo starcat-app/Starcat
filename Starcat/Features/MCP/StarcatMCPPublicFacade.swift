@@ -100,6 +100,22 @@ final class StarcatMCPPublicFacade {
              "get_cache_statistics", "clear_cache", "list_managed_skills", "import_skill", "update_skill",
              "remove_skill", "check_skill_updates", "set_public_settings", "export_diagnostics", "read_export_chunk":
             return try await callLocalOperation(name: name, arguments: arguments, app: app)
+        case "evaluate_system_one":
+            let input = try DecisionSystemOneInput.decode(from: .object(arguments))
+            if dryRun {
+                // 预览必须走与真实执行相同的协议校验，但绝不触碰引擎或模型加载。
+                let request = try input.evaluationRequest()
+                let questionCounts = Dictionary(grouping: request.questions.values, by: \.type.rawValue)
+                    .mapValues { Value.int($0.count) }
+                return preview(name, target: .object([
+                    "question_count": .int(request.questions.count),
+                    "question_types": .object(questionCounts),
+                    "asset_count": .int(request.assets?.count ?? 0),
+                    "uses_images": .bool(request.assets?.isEmpty == false)
+                ]))
+            }
+            let response = try await app.decisionSystemOneService.evaluate(input)
+            return try StarcatMCPJSON.value(response)
         case "get_task_status":
             return try tasks.status(id: arguments["task_id"]?.stringValue ?? "")
         case "get_task_result":

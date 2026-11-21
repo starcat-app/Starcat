@@ -126,7 +126,9 @@ struct DecisionSystemOneInput: Decodable {
     let assets: [String: DecisionImageAsset]?
 
     func evaluationRequest() throws -> DecisionEvaluationRequest {
-        guard let model, !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        // Jev SDK 的最低版本不再要求 model；公开入口省略 model 时按 App 配置选择。
+        // 仍拒绝显式空值，避免客户端误以为它能改变执行模型。
+        if let model, model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw DecisionInputError("arguments.model: expected a non-empty model name")
         }
         guard state.isDecisionContent else { throw DecisionInputError("arguments.state: expected string, object or array") }
@@ -148,7 +150,14 @@ struct DecisionSystemOneInput: Decodable {
         if questions.values.contains(where: { $0.type == .box }), assets == nil {
             throw DecisionInputError("arguments.assets: box requires an image")
         }
-        return DecisionEvaluationRequest(state: .json(state), questions: questions, operation: .external, assets: assets)
+        // Jev 协议允许 state 直接是字符串；引擎契约用 .text 表达这个常见形态，
+        // 只有对象 / 数组才保留为通用 JSON，避免下游把纯文本再按 JSON 解释。
+        let engineState: DecisionState
+        if case .string(let text) = state {
+            engineState = .text(text)
+        } else {
+            engineState = .json(state)
+        }
     }
 }
 

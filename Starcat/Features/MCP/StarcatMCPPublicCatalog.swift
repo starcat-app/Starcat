@@ -161,6 +161,11 @@ enum StarcatMCPPublicCatalog {
         ], required: ["query", "repo_ids"], network: "configured_embedding_and_reranker"),
         .init(name: "start_summary", summary: "Explicitly start cached-or-generated repository summary as an App-owned task; may consume AI quota.", properties: selector.merging(preview) { _, new in new }, permission: "write", network: "configured_ai", task: true),
         .init(name: "start_tag_suggestions", summary: "Explicitly generate tag suggestions; suggestions are never automatically applied.", properties: selector.merging(preview) { _, new in new }, permission: "write", network: "configured_ai", task: true),
+        .init(name: "evaluate_system_one", summary: "Evaluate a Jev-compatible System One request with the App-selected decision engine. Returns answers synchronously; may consume AI quota and accepts model only for protocol compatibility.", properties: [
+            "state": .object(["description": .string("A string, object or array accepted by the decision protocol")]),
+            "questions": .object([:]), "assets": .object([:]), "model": string(),
+            "dry_run": .object(["type": .string("boolean"), "default": .bool(true)])
+        ], required: ["state", "questions"], permission: "write", network: "configured_decision_engine"),
         .init(name: "start_note_draft", summary: "Generate a note draft using the App README cache/download workflow. Returns a draft without saving the note.", properties: selector.merging(preview) { _, new in new }.merging([
             "include_private_notes": boolean
         ]) { _, new in new }, permission: "write", network: "github_and_configured_ai", task: true),

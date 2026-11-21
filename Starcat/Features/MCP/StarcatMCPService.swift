@@ -31,6 +31,7 @@ final class StarcatMCPService {
     private let facade: StarcatMCPFacade
     private let writeFacade: StarcatMCPWriteFacade
     private let notificationService: ReleaseNotificationService?
+    private let decisionSystemOneService: DecisionSystemOneService?
     // 固定本次 service 的 Bonjour 名称，确保配对地址和 Host/Origin 白名单一致。
     // ProcessInfo.hostName 可能是网络提供的公网名称，不能当成本地可解析地址。
     private let localHostName = SCDynamicStoreCopyLocalHostName(nil) as String?
@@ -137,7 +138,8 @@ final class StarcatMCPService {
         deviceStore: StarcatMCPDeviceStore,
         facade: StarcatMCPFacade,
         writeFacade: StarcatMCPWriteFacade,
-        notificationService: ReleaseNotificationService? = nil
+        notificationService: ReleaseNotificationService? = nil,
+        decisionSystemOneService: DecisionSystemOneService? = nil
     ) {
         self.settings = settings
         self.entitlementGate = entitlementGate
@@ -146,6 +148,7 @@ final class StarcatMCPService {
         self.facade = facade
         self.writeFacade = writeFacade
         self.notificationService = notificationService
+        self.decisionSystemOneService = decisionSystemOneService
     }
 
     var endpointURL: String {

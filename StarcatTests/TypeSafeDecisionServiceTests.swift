@@ -394,6 +394,92 @@ struct TypeSafeClientTests {
 
 // MARK: - System One 输入与答案校验
 
+/// System One 公共执行器的路由契约：只跟随用户显式选择，不新增跨引擎兜底。
+@MainActor @Suite("DecisionSystemOneService routing")
+struct DecisionSystemOneServiceTests {
+    /// 只记录请求的假引擎，用来确认公开入口没有改写协议或选择其他模型。
+    private final class StubEngine: DecisionEngineProviding, @unchecked Sendable {
+        let id: DecisionEngineID
+        let availability: DecisionEngineAvailability
+        private(set) var requests: [DecisionEvaluationRequest] = []
+
+        init(id: DecisionEngineID, availability: DecisionEngineAvailability = .available) {
+            self.id = id
+            self.availability = availability
+        }
+
+        func evaluate(_ request: DecisionEvaluationRequest) async throws -> DecisionEvaluationResponse {
+            requests.append(request)
+            return DecisionEvaluationResponse(
+                answers: [:],
+                model: "stub-\(id.rawValue)",
+                usage: TypeSafeUsage(inputTokens: 1, outputTokens: 1)
+            )
+        }
+    }
+
+    private func makeSettings(engine: DecisionEngineID) -> AppSettings {
+        let settings = AppSettings(defaults: UserDefaults(suiteName: "test.starcat.systemone.\(UUID().uuidString)")!)
+        settings.decisionEngineEnabled = true
+        settings.decisionEngineID = engine
+        return settings
+    }
+
+    private func makeInput(model: String? = "caller-compatible-model") throws -> DecisionSystemOneInput {
+        let modelJSON = model.map {
+            let encoded = String(data: try! JSONEncoder().encode($0), encoding: .utf8)!
+            return "\"model\":\(encoded),"
+        } ?? ""
+        let json = """
+        {\(modelJSON)"state":"checkout is blank","questions":{"q":{"type":"noul","instructions":"Is this empty?"}}}
+        """
+        return try JSONDecoder().decode(DecisionSystemOneInput.self, from: Data(json.utf8))
+    }
+
+    @Test("关闭服务、未注册或不可用引擎都直接失败")
+    func rejectsUnavailableEngines() async throws {
+        let settings = makeSettings(engine: .jev)
+        settings.decisionEngineEnabled = false
+        let disabled = DecisionSystemOneService(engineRegistry: DecisionEngineRegistry(engines: []), settings: settings)
+        await #expect(throws: DecisionEngineError.self) {
+            _ = try await disabled.evaluate(try makeInput())
+        }
+
+        settings.decisionEngineEnabled = true
+        settings.decisionEngineID = .laya
+        let missing = DecisionSystemOneService(engineRegistry: DecisionEngineRegistry(engines: []), settings: settings)
+        await #expect(throws: DecisionEngineError.self) {
+            _ = try await missing.evaluate(try makeInput())
+        }
+
+        settings.decisionEngineID = .jev
+        let unavailable = StubEngine(id: .jev, availability: .unavailable(reason: "loading"))
+        let engine = DecisionSystemOneService(
+            engineRegistry: DecisionEngineRegistry(engines: [unavailable]),
+            settings: settings
+        )
+        await #expect(throws: DecisionEngineError.self) {
+            _ = try await engine.evaluate(try makeInput())
+        }
+        #expect(unavailable.requests.isEmpty)
+    }
+
+    @Test("执行请求使用外部操作并忽略调用方 model")
+    func evaluatesSelectedEngine() async throws {
+        let engine = StubEngine(id: .jev)
+        let service = DecisionSystemOneService(
+            engineRegistry: DecisionEngineRegistry(engines: [engine]),
+            settings: makeSettings(engine: .jev)
+        )
+
+        let response = try await service.evaluate(try makeInput())
+        let request = try #require(engine.requests.first)
+        #expect(request.operation == .external)
+        #expect(request.state == .text("checkout is blank"))
+        #expect(response.model == "stub-jev")
+    }
+}
+
 @Suite("DecisionSystemOne contract")
 struct DecisionSystemOneTests {
     private func decode(_ json: String) throws -> DecisionSystemOneInput {
