@@ -26,17 +26,21 @@ final class StarcatMCPPublicFacade {
     private let signedInUserID: () -> Int64?
 
     /// 标签查询只依赖当前身份和数据库，隔离库可以经过相同的账户校验与读取路径。
-    init(database: any DatabaseManaging, signedInUserID: @escaping () -> Int64?) {
+    /// 隔离库场景不传 tasks，使用独立任务存储；let 属性只能在 designated init 初始化。
+    init(database: any DatabaseManaging, signedInUserID: @escaping () -> Int64?,
+         tasks: StarcatMCPTaskStore = StarcatMCPTaskStore()) {
         self.database = database
         self.signedInUserID = signedInUserID
+        self.tasks = tasks
     }
 
     convenience init(dependencies: AppDependencies, facade: StarcatMCPFacade) {
-        self.init(database: dependencies.database, signedInUserID: { [weak dependencies] in dependencies?.authSession.state.user?.id })
+        // 界面启动的评估与公共调用共享任务身份及切号屏障。
+        self.init(database: dependencies.database,
+                  signedInUserID: { [weak dependencies] in dependencies?.authSession.state.user?.id },
+                  tasks: dependencies.publicMCPTasks)
         self.dependencies = dependencies
         self.facade = facade
-        // 界面启动的评估与公共调用共享任务身份及切号屏障。
-        self.tasks = dependencies.publicMCPTasks
     }
 
     /// 整个切库窗口都拒绝新调用；仅等待任务退出后立即解锁仍会留出异步切库空隙。
