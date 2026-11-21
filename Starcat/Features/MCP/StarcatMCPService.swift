@@ -489,6 +489,9 @@ final class StarcatMCPService {
                 )
             }
             try StarcatMCPAccess.requireWrite(settings)
+            if let encoding = request.header("Content-Encoding"), encoding.lowercased() != "identity" {
+                return Self.decisionResponse(statusCode: 415, message: "Send an uncompressed System One request.")
+            }
             let contentType = request.header("Content-Type") ?? ""
             let input: DecisionSystemOneInput
             if contentType.lowercased().hasPrefix("multipart/form-data") {
@@ -520,11 +523,11 @@ final class StarcatMCPService {
             return Self.decisionResponse(statusCode: 403, message: StarcatMCPError.requiresPro.localizedDescription)
         } catch let error as StarcatPublicCapabilityError {
             return Self.decisionResponse(statusCode: 403, message: error.localizedDescription)
-        } catch DecisionEngineError.engineUnavailable {
-            return Self.decisionResponse(statusCode: 503, message: "Decision engine is unavailable")
+        } catch DecisionEngineError.engineUnavailable(_, let reason) {
+            return Self.decisionResponse(statusCode: 503, message: reason)
         } catch DecisionEngineError.engineNotRegistered {
             return Self.decisionResponse(statusCode: 400, message: "Decision engine is not registered")
-        } catch DecisionEngineError.invalidAnswer {
+        } catch DecisionEngineError.invalidAnswer, TypeSafeClientError.invalidAnswer {
             return Self.decisionResponse(statusCode: 502, message: "Decision engine returned an invalid answer")
         } catch let error as StarcatMCPError {
             return Self.decisionResponse(statusCode: 400, message: error.localizedDescription)

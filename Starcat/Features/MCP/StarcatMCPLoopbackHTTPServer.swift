@@ -11,7 +11,7 @@
 //  关键约束：
 //  - 默认只监听 `127.0.0.1`；可信网络模式必须传入独立 TLS identity 才能绑定所有接口；
 //  - P0 使用 stateless HTTP，一次连接处理一个请求，不支持 SSE/server push；
-//  - 请求体上限 8 MiB，避免 agent 误传大 payload 撑爆 App 内存。
+//  - MCP 请求体上限 8 MiB，System One 图片请求体上限 32 MiB。
 //
 
 import Foundation
@@ -189,7 +189,7 @@ final class StarcatMCPLoopbackHTTPServer {
             // 成功后仍需用户在 App 内确认。其它路径继续走原有 Bearer 校验。
             if request.path == "/pairing/exchange", let routed = await routeHandler(request) {
                 outcome = routed.statusCode < 400 ? .succeeded : .failed
-                send(Self.httpData(for: routed), on: connection)
+                send(routed.httpData, on: connection)
                 return
             }
             if let error = requestValidator(request) {
@@ -198,7 +198,7 @@ final class StarcatMCPLoopbackHTTPServer {
             }
             if let routed = await publicRouteHandler(request) {
                 outcome = routed.statusCode < 400 ? .succeeded : .failed
-                send(Self.httpData(for: routed), on: connection)
+                send(routed.httpData, on: connection)
                 return
             }
 
@@ -211,7 +211,14 @@ final class StarcatMCPLoopbackHTTPServer {
             let response = await runtime.handle(httpRequest)
             outcome = response.statusCode < 400 ? .succeeded : .failed
             diagnostic.event(phase: "responded", fields: ["status": .integer(response.statusCode)])
-            send(Self.httpData(for: response), on: connection)
+            let routed = StarcatHTTPServerRouteResponse(
+                statusCode: response.statusCode,
+                body: response.bodyData ?? Data(),
+                headers: response.headers
+            )
+            send(routed.httpData, on: connection)
+        } catch let error as StarcatHTTPServerError {
+            send(error.httpData, on: connection)
         } catch {
             send(StarcatHTTPServerError.badRequest(error.localizedDescription).httpData, on: connection)
         }
@@ -219,19 +226,15 @@ final class StarcatMCPLoopbackHTTPServer {
 
     private func readRequest(from connection: NWConnection) async throws -> StarcatHTTPServerRequest {
         var buffer = Data()
-        // Jev HTTP 契约允许 32 MiB JSON/multipart 请求；MCP 请求很小，但共用
-        // 一个 listener 时统一放宽到协议上限，避免决策图片请求被半途切断。
-        let maxBytes = 32 * 1024 * 1024
-
-        while buffer.count < maxBytes {
+        while true {
             let chunk = try await receiveChunk(from: connection)
             guard !chunk.isEmpty else { break }
             buffer.append(chunk)
-            if let request = StarcatHTTPServerRequest(data: buffer) {
+            if let request = try StarcatHTTPServerRequest(data: buffer) {
                 return request
             }
         }
-        throw StarcatMCPError.invalidArguments("Invalid or oversized HTTP request")
+        throw StarcatHTTPServerError.badRequest("Incomplete HTTP request.")
     }
 
     private func receiveChunk(from connection: NWConnection) async throws -> Data {
@@ -256,65 +259,9 @@ final class StarcatMCPLoopbackHTTPServer {
         })
     }
 
-    private static func httpData(for response: HTTPResponse) -> Data {
-        let body = response.bodyData ?? Data()
-        var headers = response.headers
-        headers["Content-Length"] = "\(body.count)"
-        if headers["Content-Type"] == nil {
-            headers["Content-Type"] = "application/json"
-        }
-        headers["Connection"] = "close"
-
-        let reason: String
-        switch response.statusCode {
-        case 200: reason = "OK"
-        case 202: reason = "Accepted"
-        case 400: reason = "Bad Request"
-        case 401: reason = "Unauthorized"
-        case 403: reason = "Forbidden"
-        case 404: reason = "Not Found"
-        case 405: reason = "Method Not Allowed"
-        default: reason = "Error"
-        }
-
-        var head = "HTTP/1.1 \(response.statusCode) \(reason)\r\n"
-        for (key, value) in headers {
-            head += "\(key): \(value)\r\n"
-        }
-        head += "\r\n"
-
-        var out = Data(head.utf8)
-        out.append(body)
-        return out
-    }
-
-    private static func httpData(for response: StarcatHTTPServerRouteResponse) -> Data {
-        var headers = response.headers
-        headers["Content-Length"] = "\(response.body.count)"
-        headers["Content-Type"] = headers["Content-Type"] ?? "application/json"
-        headers["Connection"] = "close"
-
-        let reason: String
-        switch response.statusCode {
-        case 200: reason = "OK"
-        case 400: reason = "Bad Request"
-        case 403: reason = "Forbidden"
-        case 404: reason = "Not Found"
-        case 409: reason = "Conflict"
-        default: reason = "Error"
-        }
-        var head = "HTTP/1.1 \(response.statusCode) \(reason)\r\n"
-        for (key, value) in headers {
-            head += "\(key): \(value)\r\n"
-        }
-        head += "\r\n"
-        var out = Data(head.utf8)
-        out.append(response.body)
-        return out
-    }
 }
 
-/// MCP 以外的窄路由响应。目前只用于一次性设备配对，不扩展成第二套业务 API。
+/// 共用 listener 响应编码，保证认证拒绝与业务响应使用相同的 HTTP 首部结束符。
 struct StarcatHTTPServerRouteResponse: Sendable {
     let statusCode: Int
     let headers: [String: String]
@@ -325,22 +272,65 @@ struct StarcatHTTPServerRouteResponse: Sendable {
         self.body = body
         self.headers = headers
     }
+
+    var httpData: Data {
+        var headers = self.headers
+        headers["Content-Length"] = "\(body.count)"
+        headers["Content-Type"] = headers["Content-Type"] ?? "application/json"
+        headers["Connection"] = "close"
+
+        let reason: String
+        switch statusCode {
+        case 200: reason = "OK"
+        case 202: reason = "Accepted"
+        case 400: reason = "Bad Request"
+        case 401: reason = "Unauthorized"
+        case 403: reason = "Forbidden"
+        case 404: reason = "Not Found"
+        case 405: reason = "Method Not Allowed"
+        case 409: reason = "Conflict"
+        case 413: reason = "Payload Too Large"
+        case 415: reason = "Unsupported Media Type"
+        case 421: reason = "Misdirected Request"
+        case 502: reason = "Bad Gateway"
+        case 503: reason = "Service Unavailable"
+        default: reason = "Error"
+        }
+        var head = "HTTP/1.1 \(statusCode) \(reason)\r\n"
+        for (key, value) in headers {
+            head += "\(key): \(value)\r\n"
+        }
+        head += "\r\n"
+        var out = Data(head.utf8)
+        out.append(body)
+        return out
+    }
 }
 
 struct StarcatHTTPServerRequest: Sendable {
+    private static let headerLimit = 64 * 1024
+    private static let headerSeparator = Data("\r\n\r\n".utf8)
+
     let method: String
     let path: String
     let headers: [String: String]
     let body: Data
 
-    init?(data: Data) {
-        guard let separatorRange = data.range(of: Data("\r\n\r\n".utf8)) else { return nil }
+    init?(data: Data) throws {
+        guard let separatorRange = data.range(of: Self.headerSeparator) else {
+            guard data.count < Self.headerLimit else {
+                throw StarcatHTTPServerError.badRequest("HTTP headers are too large.")
+            }
+            return nil
+        }
         let headerData = data[..<separatorRange.lowerBound]
-        guard let headerText = String(data: headerData, encoding: .utf8) else { return nil }
+        guard headerData.count < Self.headerLimit,
+              let headerText = String(data: headerData, encoding: .utf8)
+        else { throw StarcatHTTPServerError.badRequest("Invalid HTTP headers.") }
         let lines = headerText.split(separator: "\r\n", omittingEmptySubsequences: false).map(String.init)
         guard let requestLine = lines.first else { return nil }
         let requestParts = requestLine.split(separator: " ").map(String.init)
-        guard requestParts.count >= 2 else { return nil }
+        guard requestParts.count >= 2 else { throw StarcatHTTPServerError.badRequest("Invalid HTTP request line.") }
 
         var headers: [String: String] = [:]
         for line in lines.dropFirst() {
@@ -350,13 +340,19 @@ struct StarcatHTTPServerRequest: Sendable {
             headers[key] = value
         }
 
-        let bodyStart = data.distance(from: data.startIndex, to: separatorRange.upperBound)
-        let contentLengthHeader = headers.first { $0.key.lowercased() == "content-length" }?.value
-        let contentLength = contentLengthHeader.flatMap(Int.init) ?? 0
-        guard data.count >= bodyStart + contentLength else { return nil }
+        let path = requestParts[1]
+        let contentLengthHeader = headers.first { $0.key.lowercased() == "content-length" }?.value ?? "0"
+        guard let contentLength = Int(contentLengthHeader), contentLength >= 0 else {
+            throw StarcatHTTPServerError.badRequest("Invalid Content-Length.")
+        }
+        // 只按 body 字节计数；SDK multipart 的 HTTP 首部不占 System One 的 32 MiB 限额。
+        let bodyLimit = (path == "/v1/systemone" ? 32 : 8) * 1024 * 1024
+        guard contentLength <= bodyLimit else { throw StarcatHTTPServerError.payloadTooLarge }
+        let bodyStart = separatorRange.upperBound
+        guard data.endIndex - bodyStart >= contentLength else { return nil }
 
         self.method = requestParts[0]
-        self.path = requestParts[1]
+        self.path = path
         self.headers = headers
         self.body = Data(data[bodyStart..<(bodyStart + contentLength)])
     }
@@ -367,46 +363,36 @@ struct StarcatHTTPServerRequest: Sendable {
     }
 }
 
-enum StarcatHTTPServerError {
+enum StarcatHTTPServerError: Error {
     case badRequest(String)
     case unauthorized
     case forbidden(String)
     case notFound
+    case payloadTooLarge
 
     var httpData: Data {
         let status: Int
-        let reason: String
         let message: String
         switch self {
         case .badRequest(let value):
             status = 400
-            reason = "Bad Request"
             message = value
         case .unauthorized:
             status = 401
-            reason = "Unauthorized"
             message = "Missing or invalid Bearer token."
         case .forbidden(let value):
             status = 403
-            reason = "Forbidden"
             message = value
         case .notFound:
             status = 404
-            reason = "Not Found"
             message = "Use POST /mcp."
+        case .payloadTooLarge:
+            status = 413
+            message = "HTTP request body exceeds the size limit."
         }
 
         let body = (try? JSONSerialization.data(withJSONObject: ["error": message])) ?? Data(#"{"error":"MCP request failed."}"#.utf8)
-        let head = """
-        HTTP/1.1 \(status) \(reason)\r
-        Content-Type: application/json\r
-        Content-Length: \(body.count)\r
-        WWW-Authenticate: Bearer\r
-        Connection: close\r
-        \r
-        """
-        var out = Data(head.utf8)
-        out.append(body)
-        return out
+        let headers = status == 401 ? ["WWW-Authenticate": "Bearer"] : [:]
+        return StarcatHTTPServerRouteResponse(statusCode: status, body: body, headers: headers).httpData
     }
 }
