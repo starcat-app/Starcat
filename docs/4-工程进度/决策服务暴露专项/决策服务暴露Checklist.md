@@ -25,11 +25,13 @@
 - [x] C06 提供 `POST /v1/systemone`，支持 JSON Base64 和 multipart（`8cc89d8b`、`6279b9d5`）。覆盖响应格式、图片启用头、认证与写权限、请求体大小上限。
 - [x] C07 在 `supports/starcat-docs` 添加双语手册、导航和 CLI／MCP 入口链接（`abcf047`）。Node 22 下 `mint validate` 与 `mint broken-links` 通过。
 - [x] C08 完成定向测试、双渠道构建、公共能力静态检查与交付复核。
+- [x] C09 在双语手册中区分仅本机 HTTP 与开启「允许其他设备连接」后的 HTTPS，并补充可直接运行的回环示例（手册 `14d991f`）。两种语言的示例均已实测，`mint validate` 与 `mint broken-links` 通过。
 
 ## 验证结果
 
 - `make test` 定向回归通过 12 个套件的 103 项测试。运行日志为 `build/DerivedData-Tests/Logs/Test/Test-Starcat-2026.11.21_22-35-57-+0800.xcresult`。
 - Jev 原生与 OpenRouter 使用模拟上游验证请求映射、路由和失败行为。Laya 使用本机已安装的真实多语言 checkpoint 对拍，覆盖文本批次与加载、卸载。
+- 在运行中的 Direct Debug App 开启「允许其他设备连接」时，向 `127.0.0.1:5555` 发送明文 HTTP 复现 `curl (52)`。同端口 HTTPS 无凭据返回 `401`，带本地 API Key 的中文 Swift 网络库问题返回 `200`、`model=laya-multilingual-mlx`、`noul=0.6673`。
 - 官方 Python SDK `typesafe-sdk[zstd]==0.7.5` 使用真实回环 listener 和替身引擎验证。`compression=False` 时，JSON 文本批次与 `attach_assets` multipart Box 均通过，SDK 成功读取 `model`、`usage`、零基 `score.legend` 和 `box.confidence: null`。默认压缩的大请求返回 `415`，手册提供未压缩配置。
 - `make build-appstore` 与 `make build-direct` 的 Debug 构建和产物校验均通过。
 - `python3 scripts/check-public-capabilities.py` 验证 133 个工具与 179 条登记。CLI 的 `go test ./...` 和 `go mod verify` 通过。
