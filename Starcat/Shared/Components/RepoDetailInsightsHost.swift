@@ -336,6 +336,7 @@ struct RepoDetailInsightsHost<ReadmeContent: View>: View {
 /// 两个浮层共享正文区的上下边界。缺少对应栏时，以正文容器边缘为基准。
 enum RepoDetailOverlayLayout {
     static let verticalGap: CGFloat = 4
+    static let minimumNotesDrawerWidth: CGFloat = 400
 
     static func verticalInsets(topChromeInset: CGFloat, bottomChromeInset: CGFloat) -> EdgeInsets {
         EdgeInsets(
@@ -344,6 +345,16 @@ enum RepoDetailOverlayLayout {
             bottom: bottomChromeInset + verticalGap,
             trailing: 0
         )
+    }
+
+    /// 右边缘固定，所以左拖使宽度增加。窗口收窄时以实际显示宽度起算，避免拖动初段没有响应。
+    static func notesDrawerWidth(
+        availableWidth: CGFloat,
+        preferredWidth: CGFloat,
+        horizontalDrag: CGFloat
+    ) -> CGFloat {
+        let startingWidth = min(availableWidth, max(minimumNotesDrawerWidth, preferredWidth))
+        return min(availableWidth, max(minimumNotesDrawerWidth, startingWidth - horizontalDrag))
     }
 }
 
