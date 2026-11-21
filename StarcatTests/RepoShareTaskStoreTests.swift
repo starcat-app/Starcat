@@ -91,6 +91,41 @@ struct RepoShareTaskStoreTests {
         #expect(try await store.createAndWait(repo: repo, operations: operations) == "https://starcat.ink/s/2")
     }
 
+    @Test("分享窗口显式重建跳过已有链接并发布新快照")
+    func explicitRecreateSkipsExistingShareRecord() async throws {
+        let store = RepoShareTaskStore()
+        let repo = Repo.makeMinimal(owner: "starcat", name: "recreate-share")
+        let insight = makeInsight(oneLiner: "cached")
+        var cacheLookupCount = 0
+        var createCount = 0
+        let operations = RepoShareOperations(
+            cachedShare: { _ in
+                cacheLookupCount += 1
+                return makeResponse(url: "https://starcat.ink/s/existing")
+            },
+            cachedInsight: { _ in insight },
+            generateInsight: { _ in Issue.record("已有摘要时重建不应生成 AI 摘要"); return insight },
+            createShare: { _ in
+                createCount += 1
+                return makeResponse(url: "https://starcat.ink/s/recreated")
+            }
+        )
+
+        store.start(repo: repo, operations: operations)
+        let restored = await waitUntil { store.isSuccessful(repoID: repo.id) }
+        #expect(restored)
+        #expect(successURL(in: store, repoID: repo.id) == "https://starcat.ink/s/existing")
+        #expect(createCount == 0)
+
+        store.recreate(repoID: repo.id, operations: operations)
+        let recreated = await waitUntil {
+            successURL(in: store, repoID: repo.id) == "https://starcat.ink/s/recreated"
+        }
+        #expect(recreated)
+        #expect(cacheLookupCount == 1)
+        #expect(createCount == 1)
+    }
+
     @Test("公共分享取消等待原生成任务退出，迟到结果不能创建链接")
     func publicCancellationWaitsForUnderlyingTask() async throws {
         let store = RepoShareTaskStore()
