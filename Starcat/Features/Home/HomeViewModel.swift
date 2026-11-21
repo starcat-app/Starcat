@@ -2177,7 +2177,23 @@ final class HomeViewModel {
             rule: rule,
             semanticHitMap: semanticHitMap
         )
-        return SmartCollectionRuleFilter.apply(repos: repos, rule: rule, context: context).count
+        // 规则求值是逐 repo 的纯 CPU 循环（topics JSON 解码 + ISO8601 日期解析），
+        // 大库时留在 MainActor 会卡住侧栏 / 贡献草坪；Sendable 快照交给并发执行器。
+        return await Self.evaluateRuleCountOnConcurrentExecutor(
+            repos: repos,
+            rule: rule,
+            context: context
+        )
+    }
+
+    /// 并发执行器上的纯 CPU 规则求值；输入输出均为 Sendable 值，不触碰任何 actor 状态。
+    @concurrent
+    private nonisolated static func evaluateRuleCountOnConcurrentExecutor(
+        repos: [Repo],
+        rule: SmartCollectionRule,
+        context: SmartCollectionRuleFilterContext
+    ) async -> Int {
+        SmartCollectionRuleFilter.apply(repos: repos, rule: rule, context: context).count
     }
 
     func buildSmartCollectionFilterContext(
@@ -4162,6 +4178,11 @@ final class HomeViewModel {
     /// - Health 缺失时保守降级：不会把 repo 算进 High Value，但 archived / 元数据缺失
     ///   仍能进入 Needs Review。
     /// - 日期窗口使用固定天数，后续如需用户可调再提升到设置项。
+    ///
+    /// `nonisolated`：纯函数谓词，除主线程视图外，也被智能集合计数的
+    /// `@concurrent` 求值（`SmartCollectionSystemCountsLoader.counts`）在并发执行器调用；
+    /// 只访问 Sendable 值字段与每次调用都返回新实例的 `ISO8601DateFormatter.shared`。
+    nonisolated
     static func matchesSmartCollection(
         repo: Repo,
         health: RepoHealthSnapshot?,

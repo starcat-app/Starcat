@@ -89,4 +89,44 @@ enum SmartCollectionSystemCountsLoader {
             )
         }
     }
+
+    /// 从快照求值全部系统集合计数。
+    ///
+    /// 纯 CPU 循环（按 kind 过滤全量 starred repos + topics JSON 解码 + ISO8601 日期解析）
+    /// 之前落在视图的 MainActor，大库时是智能集合首页进入卡顿的主因之一。
+    /// 快照是 Sendable 值，`@concurrent` 让求值整体离开主线程执行，
+    /// 结果回到调用方（MainActor）后再统一发布。
+    @concurrent
+    static func counts(from snapshot: Snapshot, now: Date = Date()) async -> [SmartCollectionKind: Int] {
+        let repos = snapshot.starredRepos
+        var nextCounts: [SmartCollectionKind: Int] = [:]
+        nextCounts.reserveCapacity(SmartCollectionKind.allCases.count)
+        for kind in SmartCollectionKind.allCases {
+            switch kind {
+            case .library:
+                nextCounts[kind] = snapshot.knowledgeCount
+            case .outsideLibraryStars:
+                nextCounts[kind] = repos.filter { repo in
+                    (snapshot.libraryStateByRepoID[repo.id] ?? .outsideLibrary) != .inLibrary
+                }.count
+            case .noTags:
+                nextCounts[kind] = snapshot.noTagsCount
+            case .using:
+                nextCounts[kind] = repos.filter {
+                    snapshot.statusByRepoID[$0.id] == .using
+                }.count
+            case .needsReview, .unmaintained, .highValue, .recentlyActive:
+                nextCounts[kind] = repos.filter { repo in
+                    HomeViewModel.matchesSmartCollection(
+                        repo: repo,
+                        health: snapshot.healthByRepoID[repo.id],
+                        status: snapshot.statusByRepoID[repo.id],
+                        kind: kind,
+                        now: now
+                    )
+                }.count
+            }
+        }
+        return nextCounts
+    }
 }
