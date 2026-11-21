@@ -26,6 +26,7 @@ final class StarcatMCPLoopbackHTTPServer {
     private let tlsIdentity: SecIdentity?
     private let requestValidator: @MainActor (StarcatHTTPServerRequest) -> StarcatHTTPServerError?
     private let routeHandler: @MainActor (StarcatHTTPServerRequest) async -> StarcatHTTPServerRouteResponse?
+    private let publicRouteHandler: @MainActor (StarcatHTTPServerRequest) async -> StarcatHTTPServerRouteResponse?
     private let queue = DispatchQueue(label: "com.starcat.mcp.http")
     private var listener: NWListener?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
@@ -36,13 +37,15 @@ final class StarcatMCPLoopbackHTTPServer {
         runtime: any StarcatMCPHTTPRuntime,
         tlsIdentity: SecIdentity? = nil,
         requestValidator: @escaping @MainActor (StarcatHTTPServerRequest) -> StarcatHTTPServerError?,
-        routeHandler: @escaping @MainActor (StarcatHTTPServerRequest) async -> StarcatHTTPServerRouteResponse? = { _ in nil }
+        routeHandler: @escaping @MainActor (StarcatHTTPServerRequest) async -> StarcatHTTPServerRouteResponse? = { _ in nil },
+        publicRouteHandler: @escaping @MainActor (StarcatHTTPServerRequest) async -> StarcatHTTPServerRouteResponse? = { _ in nil }
     ) {
         self.port = port
         self.runtime = runtime
         self.tlsIdentity = tlsIdentity
         self.requestValidator = requestValidator
         self.routeHandler = routeHandler
+        self.publicRouteHandler = publicRouteHandler
     }
 
     func start() throws {
@@ -184,13 +187,18 @@ final class StarcatMCPLoopbackHTTPServer {
             let request = try await readRequest(from: connection)
             // `/pairing/exchange` 在认证前处理：它只接受五分钟有效的一次性 secret，
             // 成功后仍需用户在 App 内确认。其它路径继续走原有 Bearer 校验。
-            if let routed = await routeHandler(request) {
+            if request.path == "/pairing/exchange", let routed = await routeHandler(request) {
                 outcome = routed.statusCode < 400 ? .succeeded : .failed
                 send(Self.httpData(for: routed), on: connection)
                 return
             }
             if let error = requestValidator(request) {
                 send(error.httpData, on: connection)
+                return
+            }
+            if let routed = await publicRouteHandler(request) {
+                outcome = routed.statusCode < 400 ? .succeeded : .failed
+                send(Self.httpData(for: routed), on: connection)
                 return
             }
 
@@ -211,7 +219,9 @@ final class StarcatMCPLoopbackHTTPServer {
 
     private func readRequest(from connection: NWConnection) async throws -> StarcatHTTPServerRequest {
         var buffer = Data()
-        let maxBytes = 8 * 1024 * 1024
+        // Jev HTTP 契约允许 32 MiB JSON/multipart 请求；MCP 请求很小，但共用
+        // 一个 listener 时统一放宽到协议上限，避免决策图片请求被半途切断。
+        let maxBytes = 32 * 1024 * 1024
 
         while buffer.count < maxBytes {
             let chunk = try await receiveChunk(from: connection)

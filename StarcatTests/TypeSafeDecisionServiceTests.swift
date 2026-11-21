@@ -528,6 +528,34 @@ struct DecisionSystemOneTests {
         }
     }
 
+    @Test("multipart 归一化为 base64 图片并保留 Jev 引用校验")
+    func multipartNormalizationBuildsBase64Assets() throws {
+        let png = Data([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a])
+        let requestJSON = #"{"model":"jev-1.14.0","state":"photo","questions":{"q":{"type":"noul","instructions":"Is this `photo`?"}},"assets":{"photo":{"type":"image","part":"photo-part"}}}"#
+        var body = Data()
+        body.append(Data("--boundary\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"request\"\r\n".utf8))
+        body.append(Data("Content-Type: application/json\r\n\r\n".utf8))
+        body.append(Data(requestJSON.utf8))
+        body.append(Data("\r\n".utf8))
+        body.append(Data("--boundary\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"photo-part\"\r\n".utf8))
+        body.append(Data("Content-Type: image/png\r\n\r\n".utf8))
+        body.append(png)
+        body.append(Data("\r\n".utf8))
+        body.append(Data("--boundary--\r\n".utf8))
+
+        let input = try DecisionSystemOneInput.normalize(
+            multipartBody: body,
+            contentType: "multipart/form-data; boundary=boundary"
+        )
+        #expect(input.assets?["photo"]?.format == "png")
+        let dataBase64 = try #require(input.assets?["photo"]?.dataBase64)
+        #expect(Data(base64Encoded: dataBase64) == png)
+        let request = try input.evaluationRequest()
+        #expect(request.assets?["photo"]?.dataBase64 == png.base64EncodedString())
+    }
+
     @Test("答案必须匹配题目封闭集、范围与 score legend")
     func answerValidation() throws {
         let choice = DecisionQuestion(

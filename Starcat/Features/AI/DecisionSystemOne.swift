@@ -52,7 +52,27 @@ struct DecisionImageAsset: Codable, Equatable, Sendable {
     let format: String
     let dataBase64: String
 
-    enum CodingKeys: String, CodingKey { case type, format, dataBase64 = "data_base64" }
+    /// `part` 只出现在 Jev multipart 传输层；JSON 请求在归一化前不能直接使用它。
+    let part: String?
+
+    enum CodingKeys: String, CodingKey { case type, format, dataBase64 = "data_base64", part }
+
+    /// JSON 请求的默认路径不携带 multipart 引用；这里给解码和调用端一个稳定默认值。
+    init(type: String, format: String, dataBase64: String, part: String? = nil) {
+        self.type = type
+        self.format = format
+        self.dataBase64 = dataBase64
+        self.part = part
+    }
+
+    /// multipart 的 JSON part 只引用原始字节；空的 format/base64 会在归一化或执行校验中被拒绝。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        format = try container.decodeIfPresent(String.self, forKey: .format) ?? ""
+        dataBase64 = try container.decodeIfPresent(String.self, forKey: .dataBase64) ?? ""
+        part = try container.decodeIfPresent(String.self, forKey: .part)
+    }
 }
 
 /// 单题与原生 wire 结构相同，criteria 的形状由题型决定，进入引擎前统一校验。
@@ -137,7 +157,8 @@ struct DecisionSystemOneInput: Decodable {
         if let assets {
             guard !assets.isEmpty else { throw DecisionInputError("arguments.assets: expected at least one image") }
             for (key, asset) in assets {
-                guard !key.isEmpty, asset.type == "image", ["png", "jpeg", "jpg"].contains(asset.format),
+                guard !key.isEmpty, asset.type == "image", asset.part == nil,
+                      ["png", "jpeg", "jpg"].contains(asset.format),
                       !asset.dataBase64.isEmpty, Data(base64Encoded: asset.dataBase64) != nil
                 else { throw DecisionInputError("arguments.assets.\(key): expected a base64 PNG or JPEG image") }
                 let referencesAsset = questions.values.contains { $0.referencesAsset(key: key) }
@@ -158,6 +179,167 @@ struct DecisionSystemOneInput: Decodable {
         } else {
             engineState = .json(state)
         }
+        return DecisionEvaluationRequest(state: engineState, questions: questions, operation: .external, assets: assets)
+    }
+}
+
+/// Jev `/v1/systemone` 的 multipart 归一化。
+///
+/// 官方协议规定：首个 part 必须叫 `request` 且承载 UTF-8 JSON；每个图片 part
+/// 通过 JSON `assets.<reference>.part` 引用。这里不实现第二套执行协议，只把
+/// 图片字节替换成已有 `data_base64`，让 CLI / MCP / HTTP 继续共用一个执行器。
+extension DecisionSystemOneInput {
+    private struct MultipartPart {
+        let name: String
+        let contentType: String?
+        let body: Data
+    }
+
+    static func normalize(
+        multipartBody body: Data,
+        contentType header: String?
+    ) throws -> Self {
+        let boundary = try boundary(from: header)
+        let parts = try parse(body, boundary: boundary)
+        guard let requestPart = parts.first, requestPart.name == "request" else {
+            throw DecisionInputError("multipart.request: the first part must be named request")
+        }
+
+        do {
+            var input = try JSONDecoder().decode(Self.self, from: requestPart.body)
+            let imageParts = parts.dropFirst()
+            var byName: [String: MultipartPart] = [:]
+            for part in imageParts {
+                // Content-Type 可省略；缺失时由 imageFormat 根据 Jev 元数据或图片 magic bytes 判断。
+                if let contentType = part.contentType,
+                   !["image/png", "image/jpeg", "image/jpg", "application/octet-stream"].contains(contentType.lowercased()) {
+                    throw DecisionInputError("multipart.\(part.name): expected image/png, image/jpeg, image/jpg, application/octet-stream or no content type")
+                }
+                guard byName[part.name] == nil else {
+                    throw DecisionInputError("multipart.\(part.name): duplicate part name")
+                }
+                byName[part.name] = part
+            }
+
+            var normalizedAssets: [String: DecisionImageAsset] = [:]
+            for (reference, asset) in input.assets ?? [:] {
+                guard let partName = asset.part else {
+                    // multipart JSON 仍允许直接放 data_base64；这里保持 Jev 行为，
+                    // 由 evaluationRequest 做相同的 base64 与引用校验。
+                    normalizedAssets[reference] = asset
+                    continue
+                }
+                guard let part = byName[partName] else {
+                    throw DecisionInputError("multipart.\(partName): asset \(reference) references a missing part")
+                }
+                byName.removeValue(forKey: partName)
+                let format = try imageFormat(asset: asset, part: part)
+                normalizedAssets[reference] = DecisionImageAsset(
+                    type: asset.type,
+                    format: format,
+                    dataBase64: part.body.base64EncodedString(),
+                    part: nil
+                )
+            }
+            guard byName.isEmpty else {
+                throw DecisionInputError("multipart.\(byName.keys.sorted().first ?? "part"): image part is not referenced by any asset")
+            }
+            input = Self(
+                model: input.model,
+                state: input.state,
+                questions: input.questions,
+                assets: input.assets == nil ? nil : normalizedAssets
+            )
+            return input
+        } catch let error as DecisionInputError {
+            throw error
+        } catch {
+            throw DecisionInputError("multipart.request: expected a UTF-8 JSON System One request")
+        }
+    }
+
+    private static func boundary(from header: String?) throws -> String {
+        let marker = "boundary="
+        guard let header, header.lowercased().hasPrefix("multipart/form-data"),
+              let range = header.range(of: marker, options: .caseInsensitive),
+              let boundary = header[range.upperBound...].split(separator: ";").first.map(String.init)?.trimmingCharacters(in: CharacterSet(charactersIn: " \""))
+        else {
+            throw DecisionInputError("headers.Content-Type: expected multipart/form-data with boundary")
+        }
+        guard !boundary.isEmpty else {
+            throw DecisionInputError("headers.Content-Type: boundary must not be empty")
+        }
+        return boundary
+    }
+
+    private static func parse(_ body: Data, boundary: String) throws -> [MultipartPart] {
+        let boundaryData = Data("--\(boundary)".utf8)
+        var parts: [MultipartPart] = []
+        var remainder = Data(body)
+        while let boundaryRange = remainder.range(of: boundaryData) {
+            var part = Data(remainder[..<boundaryRange.lowerBound])
+            remainder = Data(remainder[boundaryRange.upperBound...])
+            let isFinalPart = remainder.starts(with: Data("--".utf8))
+            if part.starts(with: Data("\r\n".utf8)) {
+                part = part.dropFirst(2)
+            }
+            if remainder.starts(with: Data("\r\n".utf8)) {
+                remainder = remainder.dropFirst(2)
+            }
+            if part.isEmpty {
+                // 只允许在首个 boundary 前出现 preamble；终结 boundary 前必须有实际 part。
+                guard !isFinalPart else {
+                    throw DecisionInputError("multipart: malformed final part framing")
+                }
+                continue
+            }
+            guard let headerEnd = part.range(of: Data("\r\n\r\n".utf8)) else {
+                throw DecisionInputError("multipart: malformed part headers")
+            }
+            let headerText = String(data: part[..<headerEnd.lowerBound], encoding: .utf8)
+            let body = Data(part[headerEnd.upperBound...])
+            guard let headerText, body.count >= 2, body.suffix(2) == Data("\r\n".utf8) else {
+                throw DecisionInputError("multipart: malformed part framing")
+            }
+            var name: String?
+            var contentType: String?
+            for line in headerText.split(separator: "\r\n") {
+                let fields = line.split(separator: ":", maxSplits: 1).map(String.init)
+                guard fields.count == 2 else { continue }
+                if fields[0].lowercased() == "content-type" {
+                    contentType = fields[1].trimmingCharacters(in: .whitespaces)
+                } else if fields[0].lowercased() == "content-disposition",
+                          let value = fields[1].range(of: "name=\"", options: .caseInsensitive)?.upperBound {
+                    name = String(fields[1][value...].prefix(while: { $0 != "\"" }))
+                }
+            }
+            guard let name, !name.isEmpty else {
+                throw DecisionInputError("multipart: every part requires a non-empty name")
+            }
+            parts.append(MultipartPart(name: name, contentType: contentType, body: body.dropLast(2)))
+            if isFinalPart { break }
+        }
+        guard remainder.starts(with: Data("--".utf8)) else {
+            throw DecisionInputError("multipart: missing closing boundary")
+        }
+        guard !parts.isEmpty else {
+            throw DecisionInputError("multipart: no parts found")
+        }
+        return parts
+    }
+
+    private static func imageFormat(asset: DecisionImageAsset, part: MultipartPart) throws -> String {
+        let contentType = part.contentType?.lowercased()
+        let knownFormat: String? = ["image/png": "png", "image/jpeg": "jpeg", "image/jpg": "jpg"][contentType ?? ""]
+        if let format = knownFormat {
+            return format
+        }
+        if ["png", "jpeg", "jpg"].contains(asset.format) {
+            return asset.format
+        }
+        if part.body.starts(with: Data([0x89, 0x50, 0x4e, 0x47])) { return "png" }
+        if part.body.starts(with: Data([0xff, 0xd8])) { return "jpeg" }
+        throw DecisionInputError("multipart.\(part.name): expected PNG or JPEG bytes")
     }
 }
 
