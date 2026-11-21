@@ -47,6 +47,7 @@ Search Center 内容过滤、误杀控制、来源胶囊筛选、主题适配与
 |---|---|---|---|---|
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
 | `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-11-15 按 dong4j 要求经 `4712a2b6` 合入 Skill 管理 `3162ca5d`，包含研究文档、M0–M3 实现及开窗崩溃修复。dong4j 确认目前可用，后续优化与剩余验收直接在本工作区进行；每日推荐已合入本地 `dev`，2026-11-16 再整合列表与详情动效、七项性能修复及独立洞察图标改动；CLI/MCP 能力与浏览器配对经 `8eea1a1b` 合入，四个支持仓也已同步至各自 `dev`。2026-11-19 从 `d436acf6` 构建 Direct `1.9.6 Beta 1`。 | 继续承载后续开发。每次发布后同步主仓库及全部 supports 独立项目的本地与远端 `dev/main`，新增变更不得回写已公开 tag。 |
+| `dong4j/feat-tag-graph-detail` | 本地 worktree：`orca/workspaces/Starcat/langostino`；无远端分支 | 标签图谱项目卡片新增「打开详情」入口，复用 `RepoDetailWindowController` 独立详情窗。基线经 dong4j 授权快进自 `d436acf6` 至 `dev@380e756f`。 | `开发中`；2026-11-22 实施卡片按钮、`onOpenDetail` 闭包透传与 17 语言文案，改动未提交。 | 人工界面验收与测试确认后合回 `dev`。 |
 | `codex/laya-mlx-swift-poc` | 本地；无独立 worktree、无远端分支 | Laya MLX 决策引擎 PoC 的历史分支。 | `已合并`；分支头 `706f6bff` 已是 `dev` 的 ancestor，独有提交为 0。 | 暂时保留本地分支；如需删除，等待 dong4j 单独授权。 |
 | `main` | 本地 + `origin/main`；仓库根目录 worktree（正式发布期间检出） | 远端默认稳定主线和发布基线。 | `长期保留`；2026-11-19 在 Direct `1.9.6 Beta 1` 发布后快进到 `d436acf6`，核实本地和远端 `dev/main` 均指向该提交。 | 保持稳定；发布收尾覆盖全部独立项目，回读远端 refs 确认同步结果，不改写已公开 tag。 |
 

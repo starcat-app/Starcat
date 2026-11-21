@@ -463,7 +463,10 @@ struct HomeView: View {
                         TagGraphWorkspace(reader: dependencies.database.writer, isCurrent: {
                             authSession.state.user?.id == userID && dependencies.database.currentUserId == userID
                                 && dependencies.databaseScopeRevision == revision
-                        }, escape: tagGraphEscape, onClose: { showsTagGraph = false })
+                        }, escape: tagGraphEscape, onClose: { showsTagGraph = false }, onOpenDetail: { repo in
+                            // 复用主窗口同款详情独立窗；同仓库重复打开只会激活原窗口。
+                            RepoDetailWindowController.show(repo: repo, dependencies: dependencies, homeViewModel: viewModel)
+                        })
                         .id(revision)
                         .disabled(false)
                         .accessibilityHidden(false)

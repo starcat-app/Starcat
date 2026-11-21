@@ -14,6 +14,8 @@ struct TagGraphWorkspace: View {
     let isCurrent: () -> Bool
     let escape: Int
     let onClose: () -> Void
+    // 卡片底部「打开详情」的落点，由宿主页面接到 RepoDetailWindowController。
+    let onOpenDetail: (Repo) -> Void
     @State private var model = TagGraphViewModel()
     @Environment(\.colorScheme) private var scheme
     @Environment(\.starcatReduceMotion) private var reduceMotion
@@ -34,7 +36,8 @@ struct TagGraphWorkspace: View {
             FollowGraphSelectionCard(node: rendererPresented ? model.selectedNode : nil,
                                      canvasSize: canvasSize, toolbarHeight: toolbarHeight,
                                      contentHeight: $cardContentHeight) { node in
-                TagGraphNodeCard(node: node, model: model, reader: reader, isCurrent: isCurrent) {
+                TagGraphNodeCard(node: node, model: model, reader: reader, isCurrent: isCurrent,
+                                 onOpenDetail: onOpenDetail) {
                     focus(node.id)
                 }
             }

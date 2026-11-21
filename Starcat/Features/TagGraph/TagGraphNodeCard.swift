@@ -9,6 +9,8 @@ struct TagGraphNodeCard: View {
     let model: TagGraphViewModel
     let reader: any DatabaseReader
     let isCurrent: () -> Bool
+    // 仓库节点专属：把读出的完整 Repo 交给调用方，用于打开详情独立窗口。
+    let onOpenDetail: (Repo) -> Void
     let onLocate: () -> Void
     @Environment(\.locale) private var locale
     @Environment(\.starcatReduceMotion) private var reduceMotion
@@ -36,6 +38,9 @@ struct TagGraphNodeCard: View {
             HStack(spacing: 10) {
                 creationDate
                 Spacer(minLength: 4)
+                if node.kind == .repo {
+                    openDetailButton
+                }
                 FollowGraphLocateButton(action: onLocate)
             }
             if node.kind == .tag {
@@ -91,6 +96,23 @@ struct TagGraphNodeCard: View {
         }
         .font(.caption)
         .accessibilityElement(children: .combine)
+    }
+
+    /// 打开完整仓库详情独立窗口。样式对齐 `FollowGraphLocateButton`；
+    /// 资料尚未读出时保留入口位置但不可点，等 `Repo` 就绪再放行。
+    private var openDetailButton: some View {
+        Button {
+            if let repo { onOpenDetail(repo) }
+        } label: {
+            Label("tagGraph.card.openDetail", systemImage: "macwindow.on.rectangle")
+                .labelStyle(.iconOnly)
+                .foregroundStyle(.secondary)
+                .frame(width: 28, height: 28)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(repo == nil)
+        .help("tagGraph.card.openDetail")
     }
 
     /// 数字由 Canvas 确认。维持相同的「更多」按钮样式，尾页入场后自动收起。
