@@ -240,6 +240,28 @@ struct StarcatMCPPublicCapabilityTests {
         }
     }
 
+    @Test("System One schema 兼容 Jev state，写权限默认 dry run")
+    func systemOneSchema() throws {
+        let spec = try #require(StarcatMCPPublicCatalog.specs.first { $0.name == "evaluate_system_one" })
+        #expect(spec.permission == "write")
+        #expect(spec.schema.objectValue?["required"] == .array([.string("state"), .string("questions")]))
+        for state: Value in [.string("checkout"), .object(["text": .string("demo")]), .array([.string("demo")])] {
+            try StarcatMCPInputValidator.validate(.object([
+                "state": state,
+                "questions": .object(["q": .object(["type": .string("noul"), "instructions": .string("demo")])]),
+                "dry_run": .bool(true)
+            ]), schema: spec.schema)
+        }
+        #expect(throws: StarcatMCPError.self) {
+            try StarcatMCPInputValidator.validate(.object([
+                "state": .object(["text": .string("demo")]),
+                "questions": .object(["q": .object(["type": .string("noul")])]),
+                "model": .string("caller-model"),
+                "unknown": .bool(true)
+            ]), schema: spec.schema)
+        }
+    }
+
     @Test("整个 Skill 导出只接受已加载 Skill 标识，不接受本地输出路径")
     func skillArchiveExportContract() throws {
         let spec = try #require(StarcatMCPPublicCatalog.specs.first { $0.name == "export_repo_skill" })

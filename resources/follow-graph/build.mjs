@@ -10,6 +10,7 @@ const result = await build({
   target: 'safari18', outfile: `${output}/follow-graph.js`, metafile: true,
   legalComments: 'eof'
 });
+// The following and tag graphs share one renderer. Its dependency notices cover both hosts.
 const packages = new Map();
 for (const input of Object.keys(result.metafile.inputs)) {
   if (!input.startsWith('node_modules/')) continue;

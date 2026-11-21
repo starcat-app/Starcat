@@ -351,86 +351,16 @@ struct RepoAIWindowContentView: View {
     /// 标题空白区域的窗口拖动由 `RepoAIWindowController` 在 AppKit 层叠加的
     /// `RepoAIWindowDragStripView` 承担（SwiftUI 全幅内容会吞掉 mouseDown，
     /// `isMovableByWindowBackground` 单独不生效，2026-11-04 修订）。
-    /// 左上角用当前仓库 logo（对齐 RAG 工作台身份标识），不再用 sparkles 泛化图标。
     private var panelHeader: some View {
-        HStack(spacing: 10) {
-            RemoteAvatar(
-                urlString: repo.ownerAvatar ?? RepoAvatarURL.from(owner: repo.owner),
-                size: 20,
-                showBorder: false
+        RepoPanelHeader(repo: repo, title: "ai.assistant.window.panelTitle") {
+            RepoPanelHeaderActions(
+                onClose: onClose,
+                onOpenDetachedWindow: onOpenDetachedWindow,
+                onToggleExpanded: onInlineResizeTapped,
+                isExpanded: isInlineMaximized,
+                closeHelpKey: "ai.assistant.window.close.help"
             )
-
-            Text(
-                verbatim: String(
-                    format: String.l10n("ai.assistant.window.titleFormat"),
-                    repo.fullName
-                )
-            )
-            .font(interfaceScale.font(.panelTitle, weight: .semibold))
-            .lineLimit(1)
-
-            Spacer(minLength: 12)
-
-            panelHeaderActions
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 12)
-        .padding(.vertical, 10)
-    }
-
-    @ViewBuilder
-    private var panelHeaderActions: some View {
-        if #available(macOS 26.0, *) {
-            // 标题栏短时操作共享玻璃采样区域，避免相邻按钮形成割裂的材质边界。
-            GlassEffectContainer(spacing: 6) {
-                HStack(spacing: 6) {
-                    panelHeaderActionButtons
-                }
-            }
-        } else {
-            HStack(spacing: 6) {
-                panelHeaderActionButtons
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var panelHeaderActionButtons: some View {
-        if let onOpenDetachedWindow {
-            Button(action: onOpenDetachedWindow) {
-                Image(systemName: "rectangle.on.rectangle")
-                    .font(interfaceScale.font(.iconSmall, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .repoAIHeaderControlSurface()
-            .help("ai.assistant.inline.detach.help")
-        }
-
-        if let onInlineResizeTapped {
-            Button(action: onInlineResizeTapped) {
-                Image(systemName: isInlineMaximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                    .font(interfaceScale.font(.iconSmall, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .repoAIHeaderControlSurface()
-            .help(isInlineMaximized ? "ai.assistant.inline.resize.restore.help" : "ai.assistant.inline.resize.maximize.help")
-        }
-
-        SheetCloseButton(
-            action: onClose,
-            iconFont: .system(size: 16, weight: .medium),
-            frameSize: 26,
-            helpKey: "ai.assistant.window.close.help"
-        )
-        .repoAIHeaderControlSurface()
     }
 
     // MARK: - 初始化
@@ -1508,18 +1438,9 @@ struct RepoAIWindowContentView: View {
             await prepareChatIfNeeded()
         }
 
-        var replacement = Transaction()
-        replacement.disablesAnimations = true
-        withTransaction(replacement) {
+        await RepoPanelContentTransition.replace(opacity: $panelContentOpacity, reduceMotion: reduceMotion) {
             isPreparingChat = false
             panelMode = newMode
-            panelContentOpacity = reduceMotion ? 1 : 0
-        }
-
-        guard !reduceMotion else { return }
-        await Task.yield()
-        withAnimation(.easeOut(duration: 0.12)) {
-            panelContentOpacity = 1
         }
     }
 
@@ -2475,9 +2396,129 @@ extension RequestPrepStep {
     }
 }
 
+/// 统一笔记和 AI 面板的标题布局，同源同尺寸的 owner 头像可以共用缓存。
+struct RepoPanelHeader<Actions: View>: View {
+    let repo: Repo
+    let title: LocalizedStringKey
+    @ViewBuilder let actions: () -> Actions
+
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+
+    var body: some View {
+        HStack(spacing: 10) {
+            RemoteAvatar(
+                urlString: repo.ownerAvatar ?? RepoAvatarURL.from(owner: repo.owner),
+                size: StarcatTypography.iconLarge.pointSize,
+                showBorder: false
+            )
+            .accessibilityHidden(true)
+
+            Text(title)
+                .font(interfaceScale.font(.panelTitle))
+                .lineLimit(1)
+                .help(title)
+
+            Spacer(minLength: 12)
+
+            actions()
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 12)
+        .padding(.vertical, 10)
+    }
+}
+
+/// 笔记与 AI 浮层使用相同的操作顺序、点击热区和图标。
+struct RepoPanelHeaderActions: View {
+    let onClose: () -> Void
+    var onOpenDetachedWindow: (() -> Void)? = nil
+    var onToggleExpanded: (() -> Void)? = nil
+    var isExpanded = false
+    var isDetachDisabled = false
+    var closeHelpKey: LocalizedStringKey = "common.close"
+
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+
+    var body: some View {
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: 6) {
+                actions
+            }
+        } else {
+            actions
+        }
+    }
+
+    private var actions: some View {
+        HStack(spacing: 6) {
+            if let onOpenDetachedWindow {
+                iconButton(
+                    "rectangle.on.rectangle",
+                    help: "ai.assistant.inline.detach.help",
+                    action: onOpenDetachedWindow
+                )
+                .disabled(isDetachDisabled)
+            }
+            if let onToggleExpanded {
+                iconButton(
+                    isExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                    help: isExpanded ? "ai.assistant.inline.resize.restore.help" : "ai.assistant.inline.resize.maximize.help",
+                    action: onToggleExpanded
+                )
+            }
+            SheetCloseButton(
+                action: onClose,
+                iconFont: .system(size: 16, weight: .medium),
+                frameSize: 26,
+                helpKey: closeHelpKey
+            )
+            .repoPanelHeaderControlSurface()
+            .accessibilityLabel(Text(closeHelpKey))
+        }
+    }
+
+    private func iconButton(
+        _ icon: String,
+        help: LocalizedStringKey,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(interfaceScale.font(.iconSmall, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .repoPanelHeaderControlSurface()
+        .help(help)
+        .accessibilityLabel(Text(help))
+    }
+}
+
+/// 先移除旧正文，再淡入新正文，避免两份文字与原生编辑器快照重叠。
+enum RepoPanelContentTransition {
+    @MainActor
+    static func replace(opacity: Binding<Double>, reduceMotion: Bool, update: () -> Void) async {
+        var replacement = Transaction()
+        replacement.disablesAnimations = true
+        withTransaction(replacement) {
+            update()
+            opacity.wrappedValue = reduceMotion ? 1 : 0
+        }
+
+        guard !reduceMotion else { return }
+        await Task.yield()
+        withAnimation(.easeOut(duration: 0.12)) {
+            opacity.wrappedValue = 1
+        }
+    }
+}
+
 private extension View {
     @ViewBuilder
-    func repoAIHeaderControlSurface() -> some View {
+    func repoPanelHeaderControlSurface() -> some View {
         if #available(macOS 26.0, *) {
             glassEffect(.regular.interactive(), in: Circle())
         } else {

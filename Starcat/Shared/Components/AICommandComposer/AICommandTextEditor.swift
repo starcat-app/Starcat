@@ -54,7 +54,7 @@ struct AICommandTextEditor: NSViewRepresentable {
         textView.importsGraphics = false
         textView.allowsUndo = true
         textView.drawsBackground = false
-        textView.font = font
+        MarkdownTypography.applyEditorFont(font, to: textView)
         textView.isEditable = isEditable
         textView.textColor = .labelColor
         textView.insertionPointColor = .labelColor
@@ -91,7 +91,13 @@ struct AICommandTextEditor: NSViewRepresentable {
         context.coordinator.parent = self
         guard let textView = scrollView.documentView as? AICommandTextView else { return }
 
-        textView.font = font
+        if MarkdownTypography.applyEditorFont(font, to: textView) {
+            // 设置变更时内容未必变化，仍须按新行高测量并刷新 @ 候选锚点。
+            DispatchQueue.main.async {
+                context.coordinator.reportHeight(for: textView)
+                context.coordinator.reportMentionAnchor(for: textView)
+            }
+        }
         textView.placeholder = placeholder
         textView.setAccessibilityLabel(placeholder)
         textView.onCommand = { [weak coordinator = context.coordinator] command in
@@ -207,7 +213,7 @@ private final class AICommandTextView: NSTextView {
         placeholder.draw(
             at: NSPoint(x: textContainerInset.width, y: textContainerInset.height),
             withAttributes: [
-                .font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .font: font ?? MarkdownTypography.nativeFont(scale: .standard),
                 .foregroundColor: NSColor.placeholderTextColor
             ]
         )

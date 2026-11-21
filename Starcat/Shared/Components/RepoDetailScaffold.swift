@@ -211,7 +211,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     @State private var metadataPanelHeight: CGFloat = 0
 
     /// 父级详情栏明确提议的可用高度。Hero 超高时用它计算内部滚动视口，
-    /// 避免 480pt 笔记和 AI 步骤面板把下方 README 完全挤出屏幕。
+    /// 避免元信息与标签把下方 README 完全挤出屏幕。
     ///
     /// 这里不能再测量 Scaffold 自己布局完成后的高度：AI 面板会抬高子树自然高度，
     /// 自测结果再反过来放宽 Hero 上限会形成尺寸反馈，最终让 NavigationSplitView
@@ -236,10 +236,10 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// 推荐列表 popover 展示状态。只有 `recommendationVM.items` 非空时才允许打开。
     @State private var showsRecommendations = false
 
-    /// Manage 详情 README / 洞察切换行高度。其它场景保持 0，AI 浮层用原来的 16pt 顶距。
+    /// 正文顶部入口栏的实际高度。同高切仓时上报值不变，保留当前测量结果。
     @State private var aiOverlayTopChromeInset: CGFloat = 0
 
-    /// README 状态栏真实高度。AI 浮层底边贴在状态栏上沿，而不是覆盖状态栏。
+    /// README 状态栏真实高度，供 AI 摘要与笔记浮层共同避让。
     @State private var aiOverlayBottomChromeInset: CGFloat = 0
 
     /// 当前 repo 的真实知识库状态。
@@ -304,6 +304,20 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// 为什么不能等首次点击再创建：VM 写入与 popover/sheet 内容求值同事务时，
     /// 内容可能先于 VM 写入求值 → 空内容的小圆圈浮层（2026-11-01 dong4j 反馈）。
     @State private var repoIssuesVM: RepoIssuesViewModel?
+
+    @State private var subscriberCountRefreshRequest: (fullName: String, scope: RepoDetailDatabaseScope, id: UUID)?
+
+    /// 刷新信号只对点击时的仓库和账号有效，切换详情后不会继承上一页的主动刷新。
+    private var subscriberCountRefresh: RepoSubscriberCountRefresh {
+        let scope = RepoDetailDatabaseScope(dependencies)
+        let fullName = repo.fullName
+        let request = subscriberCountRefreshRequest
+        let id = request?.fullName == fullName && request?.scope == scope ? request?.id : nil
+        return RepoSubscriberCountRefresh(id: id) {
+            guard RepoDetailDatabaseScope(dependencies) == scope else { return }
+            subscriberCountRefreshRequest = (fullName, scope, UUID())
+        }
+    }
 
     // v2.2 修订（2026-06-16, dong4j）：原 `@State private var showSecurityScoreSheet`
     // 已下沉到 `RepoMetadataHeaderView` —— OpenSSF 入口图标从右上 trailing actions
@@ -409,55 +423,56 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     }
 
     var body: some View {
-        // GeometryReader 在布局开始时就锁定 NavigationSplitView 给详情栏的真实 proposal。
-        // 子树即使因 AI 步骤、草稿或 480pt 编辑器突然增高，也只能在这个 viewport 内滚动，
-        // 不能把自己的自然高度继续向上传给三栏根容器。
         GeometryReader { proxy in
             let viewportSize = proxy.size
 
-            // v2.1 修订（2026-06-11）：原 `.overlay(alignment: .bottomTrailing)` 浮动刷新
-            // 按钮已删除（与 cacheFooter 内置按钮视觉重叠造成 bug,详见文件头 v2.1 修订段）。
-            VStack(alignment: .leading, spacing: 0) {
-                if let topBanner, !topBanner.isEmpty {
-                    Text(verbatim: topBanner)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .manageListFilterBarChrome()
-                        // 透明，让根节点 `detailHeroTintBackground` 透到这句和标题栏背后。
-                        .background(.clear)
-                    Divider()
-                }
-                metadataPanelViewport(availableHeight: viewportSize.height)
-                body_(updateScrollReport)
-                    .onPreferenceChange(RepoDetailAIOverlayTopInsetPreference.self) { newValue in
-                        guard aiOverlayTopChromeInset != newValue else { return }
-                        aiOverlayTopChromeInset = newValue
+            RepoNotesHost(repo: repo) { notesWorkspace in
+                VStack(alignment: .leading, spacing: 0) {
+                    if let topBanner, !topBanner.isEmpty {
+                        Text(verbatim: topBanner)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .manageListFilterBarChrome()
+                            .background(.clear)
+                        Divider()
                     }
-                    .onPreferenceChange(RepoDetailAIOverlayBottomInsetPreference.self) { newValue in
-                        guard aiOverlayBottomChromeInset != newValue else { return }
-                        aiOverlayBottomChromeInset = newValue
-                    }
-                    .overlay(alignment: .bottom) {
-                        if isRepositoryAIAvailable {
-                            // 所有 repo-backed 详情共用同一个底部 AI 主入口；独立窗口
-                            // 仍只能从该面板内部的“在独立窗口中打开”派生。
-                            RepoAIFloatingOverlay(
-                                repo: repo,
-                                topChromeInset: aiOverlayTopChromeInset,
-                                bottomChromeInset: aiOverlayBottomChromeInset
+                    metadataPanelViewport(availableHeight: viewportSize.height)
+                    body_(updateScrollReport)
+                        .onPreferenceChange(RepoDetailAIOverlayTopInsetPreference.self) { newValue in
+                            guard aiOverlayTopChromeInset != newValue else { return }
+                            aiOverlayTopChromeInset = newValue
+                        }
+                        .onPreferenceChange(RepoDetailAIOverlayBottomInsetPreference.self) { newValue in
+                            guard aiOverlayBottomChromeInset != newValue else { return }
+                            aiOverlayBottomChromeInset = newValue
+                        }
+                        .overlay(alignment: .bottom) {
+                            // 摘要使用 AppKit child window；打开抽屉时卸下锚点，避免它遮住笔记。
+                            if isRepositoryAIAvailable, notesWorkspace?.isDrawerOpen != true {
+                                RepoAIFloatingOverlay(
+                                    repo: repo,
+                                    topChromeInset: aiOverlayTopChromeInset,
+                                    bottomChromeInset: aiOverlayBottomChromeInset
+                                )
+                            }
+                        }
+                        .overlay {
+                            RepoNoteDrawerOverlay(
+                                workspace: notesWorkspace,
+                                verticalInsets: RepoDetailOverlayLayout.verticalInsets(
+                                    topChromeInset: aiOverlayTopChromeInset,
+                                    bottomChromeInset: aiOverlayBottomChromeInset
+                                )
                             )
                         }
-                    }
+                }
+                .frame(
+                    width: viewportSize.width,
+                    height: viewportSize.height,
+                    alignment: .top
+                )
             }
-            .frame(
-                width: viewportSize.width,
-                height: viewportSize.height,
-                alignment: .top
-            )
-            // 这是详情栏的最终隔离边界。正常内容通过 Hero / README 自己的滚动容器访问；
-            // clipped 只阻止异常的自然尺寸再次污染 NavigationSplitView 三栏布局。
-            .clipped()
             .onAppear {
                 updateDetailViewportHeight(viewportSize.height)
             }
@@ -465,6 +480,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                 updateDetailViewportHeight(newHeight)
             }
         }
+        .environment(\.repoSubscriberCountRefresh, subscriberCountRefresh)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // 根节点 tint：必须在 `CollapsibleRepoMetadataPanel` 外，否则 `.clipped()` 裁掉
         // 向上延伸；滚 README 折叠 hero 时同步淡出。
@@ -562,7 +578,6 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             // 下次打开由 `prepare(owner:repo:)` 复位到新仓库。
             issuesWindow?.dismissWorkspace()
             issuesWindow = nil
-            aiOverlayTopChromeInset = 0
             libraryState = .outsideLibrary
             isLibraryOperationInFlight = false
             isShowingUnstarDataChoice = false
@@ -797,8 +812,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         return min(max((normalizedOffset - collapseStart) / collapseDistance, 0), 1)
     }
 
-    /// Hero 内部滚动视口。始终保留同一个 ScrollView 结构，避免长笔记展开后
-    /// 因条件分支重建 `RepoNotesSection`，进而丢失编辑 buffer 或中断 AI 会话。
+    /// Hero 内部滚动视口。保留同一个 ScrollView 结构，避免折叠时重建标签或阅读状态控件。
     private func metadataPanelViewport(availableHeight: CGFloat) -> some View {
         ScrollView(.vertical) {
             metadataPanel
@@ -846,7 +860,8 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     private var metadataPanel: some View {
         CollapsibleRepoMetadataPanel(
             collapseProgress: $metadataPanelCollapseProgress,
-            panelHeight: $metadataPanelHeight
+            panelHeight: $metadataPanelHeight,
+            showsBottomDivider: !(repo.isStarred && dependencies.authSession.state.isAuthenticated)
         ) {
             VStack(alignment: .leading, spacing: 0) {
                 RepoMetadataHeaderView(
@@ -858,6 +873,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                     libraryState: libraryState,
                     onLanguageTapped: onLanguageTapped,
                     showsContributorsStat: showsContributorsStat,
+                    loadsMissingSubscriberCount: viewData.loadsMissingSubscriberCount,
                     // 工作台加载后优先使用不含 PR 的精确计数，尚未加载时沿用本地元数据。
                     openIssuesCount: repoIssuesVM?.openCount ?? repo.openIssuesCount,
                     onIssuesTapped: issuesEntryAction,
@@ -1211,5 +1227,77 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
               keys.contains(WikiRepoKey(owner: repo.owner, repo: repo.name)),
               wikiRepoKey == wikiLookupKey(for: repo) else { return }
         wikiLinks = []
+    }
+}
+
+/// 笔记浮层独立持有拖拽状态，使连续宽度更新只重排浮层。高度仍由正文视口和上下栏间距决定。
+private struct RepoNoteDrawerOverlay: View {
+    let workspace: RepoNotesWorkspace?
+    let verticalInsets: EdgeInsets
+
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+    @State private var preferredWidth: CGFloat?
+    @GestureState private var horizontalDrag: CGFloat? = nil
+
+    var body: some View {
+        let isDrawerOpen = workspace?.isDrawerOpen == true
+        let isMaximized = workspace?.isDrawerMaximized == true
+        let horizontalInset: CGFloat = isMaximized ? 4 : 16
+
+        GeometryReader { proxy in
+            ZStack {
+                if let workspace, isDrawerOpen {
+                    let availableWidth = max(0, proxy.size.width - horizontalInset * 2)
+                    let idealWidth = preferredWidth ?? max(480, proxy.size.width * 0.62)
+                    let width = isMaximized ? availableWidth : RepoDetailOverlayLayout.notesDrawerWidth(
+                        availableWidth: availableWidth,
+                        preferredWidth: idealWidth,
+                        horizontalDrag: horizontalDrag ?? 0
+                    )
+
+                    RepoNoteDrawer(workspace: workspace)
+                        .frame(width: width, height: proxy.size.height)
+                        .overlay(alignment: .leading) {
+                            if !isMaximized, availableWidth > RepoDetailOverlayLayout.minimumNotesDrawerWidth {
+                                resizeHandle(availableWidth: availableWidth, idealWidth: idealWidth)
+                                    .allowsHitTesting(workspace.isDrawerOpen)
+                            }
+                        }
+                        .padding(.horizontal, horizontalInset)
+                        .transition(reduceMotion ? .identity : .move(edge: .trailing))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+        }
+        .padding(verticalInsets)
+        .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.85), value: isDrawerOpen)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: isMaximized)
+    }
+
+    /// 手柄会和面板左边缘一起移动，用全局坐标计算位移才能避免拉动时来回跳动。
+    private func resizeHandle(availableWidth: CGFloat, idealWidth: CGFloat) -> some View {
+        Capsule()
+            .fill(Color.secondary.opacity(horizontalDrag == nil ? 0.4 : 0.85))
+            .frame(width: 3, height: 36)
+            .frame(width: 12)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .pointerStyle(.columnResize)
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .updating($horizontalDrag) { value, drag, transaction in
+                        drag = value.translation.width
+                        transaction.animation = nil
+                    }
+                    .onEnded { value in
+                        guard value.translation.width != 0 else { return }
+                        preferredWidth = RepoDetailOverlayLayout.notesDrawerWidth(
+                            availableWidth: availableWidth,
+                            preferredWidth: idealWidth,
+                            horizontalDrag: value.translation.width
+                        )
+                    }
+            )
+            .accessibilityHidden(true)
     }
 }

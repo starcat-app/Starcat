@@ -469,8 +469,8 @@ private struct GitHubStarListAIGroupingRuleCard: View {
                     text: $instruction,
                     axis: .vertical
                 )
+                .starcatMarkdownBodyFont()
                 .textFieldStyle(.roundedBorder)
-                .font(interfaceScale.font(.caption))
                 .lineLimit(2...4)
             }
         }

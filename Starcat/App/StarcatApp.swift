@@ -246,6 +246,19 @@ struct StarcatApp: App {
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
 
+        // 报告是独立任务窗口，不阻塞设置或主窗口，也不在启动恢复时保留用户描述。
+        Window("diagnostics.report.title", id: DiagnosticReportWindow.sceneID) {
+            DiagnosticReportWindow()
+                .starcatAnimationOverride()
+                .environment(dependencies?.settings ?? AppSettings.shared)
+                .environment(\.starcatInterfaceScale, dependencies?.settings.interfaceScale ?? .standard)
+                .appLocaleEnvironment()
+        }
+        .commandsRemoved()
+        .windowResizability(.contentSize)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+
         Window("agent.workspace.window.title", id: AgentWorkspaceWindowController.sceneID) {
             if let dependencies {
                 AgentWorkspaceSceneRoot(dependencies: dependencies)
@@ -614,7 +627,7 @@ private struct SettingsWindowCommands: Commands {
 /// Starcat 顶部菜单命令。
 ///
 /// 这些入口全部复用已有业务路径：同步走 `SyncManager`，主窗口动作通过 focused
-/// context 路由，外链 / 诊断导出仍走原 AppKit / 工具类。
+/// context 路由，外链走 AppKit，诊断打开与设置入口共用的报告窗口。
 /// 这样菜单只是 macOS 可发现性增强，不新增第二套业务状态。
 private struct StarcatAppCommands: Commands {
     let dependencies: AppDependencies?
@@ -644,8 +657,8 @@ private struct StarcatAppCommands: Commands {
             )
             .disabled(!commandRouter.isRefreshAvailable(preferred: focusedRefreshAction))
 
-            Button("diagnostics.export.button") {
-                exportDiagnostics()
+            Button("diagnostics.report.open") {
+                openWindow(id: DiagnosticReportWindow.sceneID)
             }
         }
 
@@ -749,13 +762,6 @@ private struct StarcatAppCommands: Commands {
             Button("commands.help.releaseNotes") {
                 ReleaseNotesWindowController.show()
             }
-        }
-    }
-
-    @MainActor
-    private func exportDiagnostics() {
-        Task {
-            _ = await DiagnosticBundleExporter.exportFromPanel(settings: dependencies?.settings ?? AppSettings.shared)
         }
     }
 

@@ -143,6 +143,7 @@ struct GitHubStarListEditorSheet: View {
                     text: $description,
                     axis: .vertical
                 )
+                .starcatMarkdownBodyFont()
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(2...4)
             }
@@ -255,6 +256,7 @@ struct GitHubStarListEditorSheet: View {
                     text: $aiInstruction,
                     axis: .vertical
                 )
+                .starcatMarkdownBodyFont()
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(3...6)
                 .disabled(isLoadingAIRule)

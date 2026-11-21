@@ -1365,6 +1365,7 @@ private struct KnowledgeRAGBrowserScrollOffsetKey: PreferenceKey {
 }
 
 private struct KnowledgeRAGBrowserView: View {
+    @Environment(AppSettings.self) private var inputSettings: AppSettings?
     @Namespace private var selectionSpace
     @Bindable var viewModel: KnowledgeRAGBrowserViewModel
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -1399,9 +1400,9 @@ private struct KnowledgeRAGBrowserView: View {
         return font.ascender - font.descender + font.leading
     }
 
-    /// 召回测试是侧栏辅助工具，沿用正文输入层级，避免与主问答 composer 争夺视觉焦点。
+    /// 召回测试仍是内容输入，和主问答及其占位提示采用同一阅读字号。
     private var retrievalQueryFont: NSFont {
-        NSFont.systemFont(ofSize: interfaceScale.scaled(13))
+        MarkdownTypography.nativeFont(scale: interfaceScale, adjustment: inputSettings?.readmeFontSizeAdjustment ?? 0)
     }
 
     private var retrievalQueryMinHeight: CGFloat {
@@ -3081,6 +3082,7 @@ private struct RAGRetrievalHitInspection: Identifiable {
 /// 召回命中详情只读展示完整分片与评分，避免测试列表为了预览而截断关键信息。
 /// 分片窗口共用编辑与召回详情布局；编辑只提交人工覆盖层，只读模式绝不写回 README 等源数据。
 private struct KnowledgeRAGChunkEditor: View {
+    @Environment(AppSettings.self) private var markdownSettings: AppSettings?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
@@ -3276,7 +3278,7 @@ private struct KnowledgeRAGChunkEditor: View {
                     })
                 } else {
                     TextEditor(text: $content)
-                        .font(usesMonospacedEditor ? .body.monospaced() : .body)
+                        .starcatMarkdownBodyFont(design: usesMonospacedEditor ? .monospaced : .default)
                         .scrollContentBackground(.hidden)
                         .padding(8)
                         .frame(maxWidth: .infinity, minHeight: 250, maxHeight: .infinity)
@@ -3396,14 +3398,14 @@ private struct KnowledgeRAGChunkEditor: View {
 
     /// 与证据 popover 同分片 Markdown 气质，略放大以适配 680 详情窗。
     private func readOnlyChunkMarkdownTheme(scale: InterfaceScale) -> Theme {
-        Theme()
+        MarkdownTypography.theme(scale: scale, adjustment: markdownSettings?.readmeFontSizeAdjustment ?? 0)
             .text {
                 ForegroundColor(.primary)
-                FontSize(scale.scaled(13))
+                FontSize(MarkdownTypography.bodyFontSize(scale: scale, adjustment: markdownSettings?.readmeFontSizeAdjustment ?? 0))
             }
             .code {
                 FontFamilyVariant(.monospaced)
-                FontSize(.em(0.92))
+                FontSize(.em(MarkdownTypography.inlineCodeRatio))
                 BackgroundColor(.secondary.opacity(0.12))
             }
             .link {
@@ -3414,7 +3416,7 @@ private struct KnowledgeRAGChunkEditor: View {
                     .markdownMargin(top: .em(0.4), bottom: .em(0.25))
                     .markdownTextStyle {
                         FontWeight(.semibold)
-                        FontSize(scale.scaled(16))
+                        FontSize(.em(MarkdownTypography.Heading.h1.ratio))
                     }
             }
             .heading2 { configuration in
@@ -3422,7 +3424,7 @@ private struct KnowledgeRAGChunkEditor: View {
                     .markdownMargin(top: .em(0.35), bottom: .em(0.2))
                     .markdownTextStyle {
                         FontWeight(.semibold)
-                        FontSize(scale.scaled(15))
+                        FontSize(.em(MarkdownTypography.Heading.h2.ratio))
                     }
             }
             .heading3 { configuration in
@@ -3430,7 +3432,7 @@ private struct KnowledgeRAGChunkEditor: View {
                     .markdownMargin(top: .em(0.3), bottom: .em(0.15))
                     .markdownTextStyle {
                         FontWeight(.semibold)
-                        FontSize(scale.scaled(14))
+                        FontSize(.em(MarkdownTypography.Heading.h3.ratio))
                     }
             }
             .paragraph { configuration in
@@ -3448,7 +3450,7 @@ private struct KnowledgeRAGChunkEditor: View {
                         .relativeLineSpacing(.em(0.14))
                         .markdownTextStyle {
                             FontFamilyVariant(.monospaced)
-                            FontSize(.em(0.92))
+                            FontSize(.em(MarkdownTypography.codeBlockRatio))
                             BackgroundColor(nil)
                         }
                         .padding(.horizontal, 12)

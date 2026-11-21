@@ -3,10 +3,9 @@
 //  Starcat
 //
 //  本机 Skill 的按需只读阅读区。视图任务随选择／刷新取消，磁盘读取由后台读取器完成；
-//  Markdown 图片统一占位，避免读取不受信任正文时自动请求远端或本机附件。
+//  阅读器阻止图片与附件加载，避免读取不受信任正文时自动请求远端或本机资源。
 //
 
-import MarkdownUI
 import SwiftUI
 
 /// 单个条目的内容状态随 entryID 重建，旧条目的异步结果不能污染新选择。
@@ -62,7 +61,7 @@ struct SkillContentView: View {
                             .foregroundStyle(.secondary)
                     }
                     if tab == .overview { markdown(snapshot.markdown) }
-                    else { files(snapshot) }
+                    else { ScrollView { files(snapshot) } }
                 }
             } else if let text = item.markdown {
                 if tab == .overview { markdown(text) }
@@ -84,18 +83,12 @@ struct SkillContentView: View {
         .task(id: PreviewRequest(contentID: contentID, file: selectedFile)) { await loadPreview() }
     }
 
-    /// 两类图片 provider 都替换，行内图片也不得悄悄走默认 URLSession。
+    /// 复用仓库 Skills 的阅读工具；来源策略继续阻止图片、附件和非 http/https 链接。
     private func markdown(_ text: String) -> some View {
-        Markdown(SkillFrontmatter.stripFrontmatter(text))
-            .markdownImageProvider(SkillBlockedImageProvider())
-            .markdownInlineImageProvider(SkillBlockedInlineImageProvider())
-            .markdownTextStyle {
-                FontSize(interfaceScale.scaled(StarcatTypography.body.pointSize))
-                ForegroundColor(.primary)
-            }
-            .environment(\.openURL, OpenURLAction { url in
-                SkillPreviewLinkPolicy.allows(url) ? .systemAction(url) : .discarded
-            })
+        MarkdownDocumentWebView(
+            markdown: SkillFrontmatter.stripFrontmatter(text),
+            resourcePolicy: .localTextOnly
+        )
     }
 
     private func files(_ snapshot: SkillContentSnapshot) -> some View {
@@ -256,17 +249,4 @@ struct SkillContentView: View {
         case .unsupported: "questionmark.square"
         }
     }
-}
-
-/// URL 仅用于符合 MarkdownUI 的协议签名，不读取图片内容。
-private struct SkillBlockedImageProvider: ImageProvider {
-    func makeImage(url: URL?) -> some View {
-        Label("skills.detail.images.blocked", systemImage: "photo")
-            .font(.caption).foregroundStyle(.secondary)
-    }
-}
-
-/// 行内图片同样返回本机符号，绝不调用默认的网络图片 provider。
-private struct SkillBlockedInlineImageProvider: InlineImageProvider {
-    func image(with url: URL, label: String) async throws -> Image { Image(systemName: "photo") }
 }

@@ -218,6 +218,8 @@ final class AppDependencies {
     let githubIssueSummaryStore = GitHubNotificationIssueSummaryStore(persistenceCache: .shared)
     /// 单仓 AI 摘要的进程内会话表。按 repo 保留生成 Task 与 UI 状态，切换详情不取消。
     let repoAIInsightSessionStore: RepoAIInsightSessionStore
+    /// Labs 决策引擎的 Jev 兼容执行器；CLI / MCP / HTTP 只调用这一个入口。
+    let decisionSystemOneService: DecisionSystemOneService
     let aiBackgroundBillingAlerts: AIBackgroundBillingAlerts
     /// RepoContextPacker 的共享入口。单仓 AI 与知识库 RAG 必须复用同一缓存、设置和临时目录清理约束。
     let repoAIContextProvider: RepoAIContextProvider
@@ -1231,6 +1233,11 @@ final class AppDependencies {
             settings: self.settings,
             readmeRepository: readmeRepo
         )
+        let decisionSystemOneService = DecisionSystemOneService(
+            engineRegistry: decisionEngineRegistry,
+            settings: self.settings
+        )
+        self.decisionSystemOneService = decisionSystemOneService
         let decisionTagSuggestionRouter = DecisionTagSuggestionRouter(
             decisionProvider: repositoryDecisionService,
             settings: self.settings
@@ -1533,7 +1540,8 @@ final class AppDependencies {
             deviceStore: mcpDeviceStore,
             facade: mcpFacade,
             writeFacade: mcpWriteFacade,
-            notificationService: notificationService
+            notificationService: notificationService,
+            decisionSystemOneService: decisionSystemOneService
         )
 
         // 2026-06-12 向量索引改进：摘要生成成功后触发单 repo 向量重建。

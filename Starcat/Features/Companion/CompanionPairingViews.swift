@@ -14,54 +14,113 @@ struct CompanionPairingApprovalSheet: View {
     let store: CompanionDeviceStore
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
+    private var browserName: String { approval.browser == "safari" ? "Safari" : "Chrome" }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("companion.pairing.title").font(.title3.weight(.semibold))
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("companion.pairing.title")
+                        .font(.title3.weight(.semibold))
                     Text("companion.pairing.compare")
+                        .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 12)
                 SheetCloseButton { store.reject(requestID: approval.id) }
             }
-            Text(verbatim: approval.name).font(.headline)
-            Text(verbatim: approval.browser == "safari" ? "Safari" : "Chrome")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            Text(verbatim: approval.code)
-                .font(.system(size: 36, weight: .semibold, design: .monospaced))
-                .tracking(8)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-            Text("companion.pairing.scope")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Text("companion.pairing.expires")
-                Text(approval.expiresAt, style: .time)
+
+            browserIdentity
+            verificationCode
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "checkmark.shield")
+                    .accessibilityHidden(true)
+                Text("companion.pairing.scope")
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+
             if store.approvalFailed {
                 Text("companion.pairing.saveFailed")
+                    .font(.callout)
                     .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
             }
-            HStack {
+
+            Divider()
+
+            HStack(spacing: 8) {
                 Spacer()
                 Button("companion.pairing.reject") { store.reject(requestID: approval.id) }
+                    .buttonStyle(.bordered)
                     .keyboardShortcut(.cancelAction)
                 Button("companion.pairing.approve") { store.approve(requestID: approval.id) }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
             }
+            .controlSize(.large)
         }
         .padding(24)
         .frame(width: 480)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: store.approvalFailed)
+    }
+
+    private var browserIdentity: some View {
+        HStack(spacing: 8) {
+            Image(approval.browser)
+                .renderingMode(.original)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 24, height: 24)
+                .accessibilityHidden(true)
+
+            Text(verbatim: browserName)
+                .font(.headline)
+            if let version = approval.browserVersion, !version.isEmpty {
+                Text(verbatim: version)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var verificationCode: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 8) {
+                ForEach(Array(approval.code.enumerated()), id: \.offset) { _, digit in
+                    Text(verbatim: String(digit))
+                        .font(.system(size: 30, weight: .semibold, design: .monospaced))
+                        .frame(width: 48, height: 56)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(Color.primary.opacity(0.12))
+                        }
+                }
+            }
+            // 核对时数字顺序必须与浏览器一致，VoiceOver 也应按单个数字读出。
+            .environment(\.layoutDirection, .leftToRight)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: approval.code.map { String($0) }.joined(separator: " ")))
+
+            HStack(spacing: 6) {
+                Image(systemName: "clock")
+                    .accessibilityHidden(true)
+                Text("companion.pairing.expires")
+                Text(approval.expiresAt, style: .time)
+                    .monospacedDigit()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityElement(children: .combine)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 

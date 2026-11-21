@@ -12,7 +12,7 @@ import MCP
 extension StarcatMCPPublicCatalog {
     /// 目录和执行器一起维护，动态 CLI 无需再为每个新增 App 操作编写命令分支。
     static let operationSpecs: [StarcatMCPPublicSpec] = [
-        .init(name: "create_repo_share", summary: "Create a public repository share with the App's existing cached-summary, generation and publishing flow; returns the share URL.", properties: selector.merging(preview) { _, new in new }, permission: "write", network: "configured_ai_and_sharing", task: true),
+        .init(name: "create_repo_share", summary: "Create a public repository share with the App's existing cached-summary, generation and publishing flow; force_recreate bypasses the reusable link record; returns the share URL.", properties: selector.merging(preview) { _, new in new }.merging(["force_recreate": boolean]) { _, new in new }, permission: "write", network: "configured_ai_and_sharing", task: true),
         .init(name: "refresh_repo_health", summary: "Refresh repository health using the same latest-signal service as the App.", properties: selector.merging(preview) { _, new in new }, permission: "write", network: "github", task: true),
         .init(name: "refresh_repo_security", summary: "Refresh OpenSSF with the App's rate limiter and health follow-up.", properties: selector.merging(preview) { _, new in new }, permission: "write", network: "openssf", task: true),
         .init(name: "refresh_repo_star_history", summary: "Refresh Star history through the App's shared download and cache service.", properties: selector.merging(preview) { _, new in new }.merging(["range": string(["3m", "1y", "all"])]) { _, new in new }, permission: "write", network: "github", task: true),
@@ -58,11 +58,22 @@ extension StarcatMCPPublicFacade {
             return try await callCodeGraphOperation(name: name, arguments: arguments, app: app)
         case "create_repo_share":
             let repo = try await resolve(arguments, app: app)
-            if dryRun { return preview(name, target: .object(["repository": .string(repo.fullName), "public_link": .bool(true)])) }
+            let forceRecreate = arguments["force_recreate"]?.boolValue ?? false
+            if dryRun {
+                return preview(name, target: .object([
+                    "repository": .string(repo.fullName),
+                    "public_link": .bool(true),
+                    "force_recreate": .bool(forceRecreate)
+                ]))
+            }
             try app.entitlementGate.requirePro(.aiSummary, usesLocalOnly: app.settings.isSummaryTaskResolvedToLocalAI)
             return try tasks.start(kind: name) {
                 let store = app.repoShareTaskStore
-                let url = try await store.createAndWait(repo: repo, operations: app.makeRepoShareOperations())
+                let url = try await store.createAndWait(
+                    repo: repo,
+                    operations: app.makeRepoShareOperations(reusesCachedShare: !forceRecreate),
+                    forceRecreate: forceRecreate
+                )
                 return .object(["url": .string(url), "repo_id": .int(Int(repo.id))])
             }
         case "refresh_repo_health", "refresh_repo_security", "refresh_repo_star_history", "refresh_repo_insights", "refresh_repo_recommendations", "scan_repo_skills", "subscribe_release":

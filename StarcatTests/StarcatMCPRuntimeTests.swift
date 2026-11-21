@@ -644,23 +644,107 @@ struct StarcatMCPRuntimeTests {
         originValidator: OriginValidator = .localhost(),
         allowedToolNames: Set<String>? = nil,
         exposesResources: Bool = true,
-        allowWrites: Bool = true
+        allowWrites: Bool = true,
+        database: InMemoryDatabaseManager? = nil,
+        publicCapabilities: StarcatMCPPublicFacade? = nil
     ) async throws -> StarcatMCPRuntime {
-        let db = try InMemoryDatabaseManager()
+        let parts = try await makeFacades(allowWrites: allowWrites, database: database, publicCapabilities: publicCapabilities)
+        let runtime = StarcatMCPRuntime(
+            facade: parts.facade,
+            writeFacade: parts.writeFacade,
+            originValidator: originValidator,
+            allowedToolNames: allowedToolNames,
+            exposesResources: exposesResources
+        )
+        try await runtime.start()
+        return runtime
+    }
+
+    /// 协议会话和服务启动门槛共用生产门面，只把账户库、权益及钥匙串替换为隔离测试依赖。
+    static func makeFacades(allowWrites: Bool, database: InMemoryDatabaseManager?,
+                            publicCapabilities: StarcatMCPPublicFacade?, isPro: Bool = true,
+                            entitlementProvider: (any ProEntitlementProviding)? = nil) async throws ->
+        (facade: StarcatMCPFacade, writeFacade: StarcatMCPWriteFacade, settings: AppSettings,
+         gate: EntitlementGate, keychain: InMemoryKeychain) {
+        let db = try database ?? InMemoryDatabaseManager()
+        if database == nil { try await seedRuntimeData(in: db) }
+
+        let settings = AppSettings(defaults: UserDefaults(suiteName: "test.starcat.mcp.runtime.\(UUID().uuidString)")!)
+        settings.mcpAllowWrites = allowWrites
+
+        let gate = EntitlementGate(
+            entitlementProvider: entitlementProvider ?? MCPRuntimeTestEntitlementProvider(isPro: isPro),
+            userIDProvider: { 1 }
+        )
+        let repoRepository = GRDBRepoRepository(database: db)
+        let tagRepository = GRDBTagRepository(database: db)
+        let repoTagRepository = GRDBRepoTagRepository(database: db)
+        let noteRepository = GRDBRepoNoteRepository(database: db)
+        let readmeRepository = ReadmeRepository(database: db)
+        let summaryRepository = GRDBAISummaryRepository(database: db)
+        let testKeychain = InMemoryKeychain()
+        let semanticSearch = SemanticSearchService(
+            embeddingRepository: GRDBRepoEmbeddingRepository(database: db),
+            settings: settings,
+            readmeRepository: readmeRepository,
+            noteRepository: noteRepository,
+            summaryRepository: summaryRepository,
+            entitlementGate: gate,
+            keychain: testKeychain
+        )
+        let insightService = RepoAIInsightService(
+            summaryRepository: summaryRepository,
+            readmeRepository: readmeRepository,
+            settings: settings,
+            keychain: testKeychain,
+            entitlementGate: gate
+        )
+        let facade = StarcatMCPFacade(
+            repoRepository: repoRepository,
+            readmeRepository: readmeRepository,
+            tagRepository: tagRepository,
+            repoTagRepository: repoTagRepository,
+            repoNoteRepository: noteRepository,
+            semanticSearchService: semanticSearch,
+            repoAIInsightService: insightService,
+            database: db,
+            aiUsageRepository: GRDBAIUsageRepository(database: db),
+            knowledgeBaseMetadataSnapshotCache: KnowledgeBaseMetadataSnapshotCache(),
+            entitlementGate: gate,
+            settings: settings
+        )
+        facade.publicCapabilities = publicCapabilities
+        let writeFacade = StarcatMCPWriteFacade(
+            repoRepository: repoRepository,
+            metadataCapability: RepositoryMetadataCapabilityExecutor(
+                source: DatabaseRepositoryMetadataCapabilitySource(
+                    repoRepository: repoRepository,
+                    repoNoteRepository: noteRepository
+                )
+            ),
+            tagCapability: RepositoryTagCapabilityExecutor(
+                source: DatabaseRepositoryTagCapabilitySource(
+                    repoRepository: repoRepository,
+                    tagRepository: GatedTagRepository(base: tagRepository, entitlementGate: gate),
+                    repoTagRepository: repoTagRepository
+                )
+            ),
+            starMutationService: MCPRuntimeStarMutationServiceStub(),
+            settings: settings,
+            entitlementGate: gate,
+            auditLog: StarcatMCPAuditLog(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("starcat-mcp-runtime-\(UUID().uuidString).jsonl"))
+        )
+        return (facade, writeFacade, settings, gate, testKeychain)
+    }
+
+    /// 常规协议用例使用既有数据，注入领域样例时避免混入其他仓库或标签。
+    private static func seedRuntimeData(in db: InMemoryDatabaseManager) async throws {
         try await db.insertRepoFixture(id: 1, owner: "apple", name: "swift")
         try await db.insertRepoFixture(id: 2, owner: "openai", name: "codex")
         try await db.writer.write { db in
             try db.execute(sql: "UPDATE repos SET is_starred = 0, starred_at = NULL WHERE id = 2")
         }
 
-        let settings = AppSettings(defaults: UserDefaults(suiteName: "test.starcat.mcp.runtime.\(UUID().uuidString)")!)
-        settings.mcpAllowWrites = allowWrites
-
-        let gate = EntitlementGate(
-            entitlementProvider: MCPRuntimeTestEntitlementProvider(isPro: true),
-            userIDProvider: { 1 }
-        )
-        let repoRepository = GRDBRepoRepository(database: db)
         let tagRepository = GRDBTagRepository(database: db)
         let repoTagRepository = GRDBRepoTagRepository(database: db)
         let actionTag = Tag.fixture(id: "mcp-act-test", name: "act/test")
@@ -703,71 +787,9 @@ struct StarcatMCPRuntimeTests {
             errorCategory: nil,
             correlationId: nil
         ))
-        let readmeRepository = ReadmeRepository(database: db)
-        let summaryRepository = GRDBAISummaryRepository(database: db)
-        let testKeychain = InMemoryKeychain()
-        let semanticSearch = SemanticSearchService(
-            embeddingRepository: GRDBRepoEmbeddingRepository(database: db),
-            settings: settings,
-            readmeRepository: readmeRepository,
-            noteRepository: noteRepository,
-            summaryRepository: summaryRepository,
-            entitlementGate: gate,
-            keychain: testKeychain
-        )
-        let insightService = RepoAIInsightService(
-            summaryRepository: summaryRepository,
-            readmeRepository: readmeRepository,
-            settings: settings,
-            keychain: testKeychain,
-            entitlementGate: gate
-        )
-        let facade = StarcatMCPFacade(
-            repoRepository: repoRepository,
-            readmeRepository: readmeRepository,
-            tagRepository: tagRepository,
-            repoTagRepository: repoTagRepository,
-            repoNoteRepository: noteRepository,
-            semanticSearchService: semanticSearch,
-            repoAIInsightService: insightService,
-            database: db,
-            aiUsageRepository: GRDBAIUsageRepository(database: db),
-            knowledgeBaseMetadataSnapshotCache: KnowledgeBaseMetadataSnapshotCache(),
-            entitlementGate: gate,
-            settings: settings
-        )
-        let writeFacade = StarcatMCPWriteFacade(
-            repoRepository: repoRepository,
-            metadataCapability: RepositoryMetadataCapabilityExecutor(
-                source: DatabaseRepositoryMetadataCapabilitySource(
-                    repoRepository: repoRepository,
-                    repoNoteRepository: noteRepository
-                )
-            ),
-            tagCapability: RepositoryTagCapabilityExecutor(
-                source: DatabaseRepositoryTagCapabilitySource(
-                    repoRepository: repoRepository,
-                    tagRepository: GatedTagRepository(base: tagRepository, entitlementGate: gate),
-                    repoTagRepository: repoTagRepository
-                )
-            ),
-            starMutationService: MCPRuntimeStarMutationServiceStub(),
-            settings: settings,
-            entitlementGate: gate,
-            auditLog: StarcatMCPAuditLog(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("starcat-mcp-runtime-\(UUID().uuidString).jsonl"))
-        )
-        let runtime = StarcatMCPRuntime(
-            facade: facade,
-            writeFacade: writeFacade,
-            originValidator: originValidator,
-            allowedToolNames: allowedToolNames,
-            exposesResources: exposesResources
-        )
-        try await runtime.start()
-        return runtime
     }
 
-    private static func initializeParams() -> [String: Any] {
+    static func initializeParams() -> [String: Any] {
         [
             "protocolVersion": "2025-03-26",
             "capabilities": [:],
@@ -813,7 +835,7 @@ struct StarcatMCPRuntimeTests {
         return (httpResponse.statusCode, data)
     }
 
-    private static func request(
+    static func request(
         id: Int,
         method: String,
         params: [String: Any]? = nil,
@@ -830,7 +852,7 @@ struct StarcatMCPRuntimeTests {
         return httpRequest(object, host: host)
     }
 
-    private static func notification(method: String, params: [String: Any]? = nil) -> HTTPRequest {
+    static func notification(method: String, params: [String: Any]? = nil) -> HTTPRequest {
         var object: [String: Any] = [
             "jsonrpc": "2.0",
             "method": method
@@ -864,6 +886,230 @@ struct StarcatMCPRuntimeTests {
         let body = try #require(response.bodyData)
         return try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
     }
+
+    @Test("决策 HTTP 路由沿用 MCP 门禁并返回兼容响应")
+    func decisionHTTPRouteReusesMCPGates() async throws {
+        let engine = DecisionHTTPStubEngine()
+        let entitlementProvider = MCPRuntimeTestEntitlementProvider(isPro: true)
+        let (service, settings, port) = try await Self.startDecisionServer(engine, entitlementProvider: entitlementProvider)
+        defer { service.stop() }
+        let token = service.bearerToken
+
+        let request = try JSONSerialization.data(withJSONObject: [
+            "state": "http fixture",
+            "questions": [
+                "useful": ["type": "noul", "instructions": "Is this useful?"],
+                "team": ["type": "choice", "criteria": ["billing": "Billing", "other": "Other"]],
+                "severity": ["type": "score", "criteria": ["Low", "High"]]
+            ]
+        ])
+        let success = try await Self.sendDecisionRequest(port: port, body: request, bearerToken: token)
+        #expect(success.statusCode == 200)
+        let successJSON = try #require(JSONSerialization.jsonObject(with: success.body) as? [String: Any])
+        let answers = try #require(successJSON["answers"] as? [String: Any])
+        #expect((answers["useful"] as? [String: Any])?["noul"] as? Double == 0.9)
+        #expect((answers["team"] as? [String: Any])?["choice"] as? String == "billing")
+        #expect((answers["severity"] as? [String: Any])?["legend"] as? [String: String] == ["0": "Low", "1": "High"])
+        #expect(successJSON["model"] as? String == "decision-http-stub")
+        #expect(successJSON["usage"] as? [String: Int] == ["input_tokens": 3, "output_tokens": 1])
+
+        let invalidOrigin = try await Self.sendDecisionRequest(
+            port: port, body: request, bearerToken: token, headers: ["Origin": "http://invalid.example"]
+        )
+        #expect(invalidOrigin.statusCode == 403)
+        let invalidHost = try await Self.sendDecisionRequest(
+            port: port, body: request, bearerToken: token, headers: ["Host": "invalid.example"]
+        )
+        #expect(invalidHost.statusCode == 421)
+        let unauthorized = try await Self.sendDecisionRequest(port: port, body: request, bearerToken: token + "-invalid")
+        #expect(unauthorized.statusCode == 401)
+
+        let compressed = try await Self.sendDecisionRequest(
+            port: port, body: request, bearerToken: token, headers: ["Content-Encoding": "zstd"]
+        )
+        #expect(compressed.statusCode == 415)
+
+        settings.decisionEngineEnabled = false
+        let engineDisabled = try await Self.sendDecisionRequest(port: port, body: request, bearerToken: token)
+        let engineError = try #require(JSONSerialization.jsonObject(with: engineDisabled.body) as? [String: String])
+        #expect(engineDisabled.statusCode == 503)
+        #expect(engineError["error"] == "Decision engine is disabled in Settings")
+        settings.decisionEngineEnabled = true
+
+        settings.mcpAllowWrites = false
+        let writeDisabled = try await Self.sendDecisionRequest(port: port, body: request, bearerToken: token)
+        #expect(writeDisabled.statusCode == 403)
+        settings.mcpAllowWrites = true
+
+        entitlementProvider.entitlement = .inactive
+        let noPro = try await Self.sendDecisionRequest(port: port, body: request, bearerToken: token)
+        #expect(noPro.statusCode == 403)
+        entitlementProvider.entitlement = .testEnvironment
+
+        settings.mcpServiceEnabled = false
+        let serviceDisabled = try await Self.sendDecisionRequest(port: port, body: request, bearerToken: token)
+        #expect(serviceDisabled.statusCode == 403)
+        #expect(engine.received.count == 1)
+    }
+
+    @Test("决策 HTTP 路由归一化 multipart 图片请求")
+    func decisionHTTPRouteNormalizesMultipart() async throws {
+        let engine = DecisionHTTPStubEngine()
+        let (service, _, port) = try await Self.startDecisionServer(engine)
+        defer { service.stop() }
+
+        let requestJSON = """
+        {"state":"photo","questions":{"q":{"type":"box","instructions":"Locate the button."}},"assets":{"photo":{"type":"image","part":"photo"}}}
+        """
+        var body = Data()
+        body.append(Data("--decision-boundary\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"request\"\r\n".utf8))
+        body.append(Data("Content-Type: application/json\r\n\r\n".utf8))
+        body.append(Data(requestJSON.utf8))
+        body.append(Data("\r\n".utf8))
+        body.append(Data("--decision-boundary\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"photo\"; filename=\"photo.png\"\r\n".utf8))
+        body.append(Data("Content-Type: image/png\r\n\r\n".utf8))
+        let image = Data([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a])
+        body.append(image)
+        body.append(Data("\r\n--decision-boundary--\r\n".utf8))
+
+        let contentType = "multipart/form-data; boundary=decision-boundary"
+        let missingHeader = try await Self.sendDecisionRequest(
+            port: port, body: body, bearerToken: service.bearerToken, contentType: contentType
+        )
+        #expect(missingHeader.statusCode == 400)
+
+        let response = try await Self.sendDecisionRequest(
+            port: port,
+            body: body,
+            bearerToken: service.bearerToken,
+            contentType: contentType,
+            headers: ["TypeSafe-Danger-Zone-Images": "true"]
+        )
+        #expect(response.statusCode == 200)
+        let payload = try #require(JSONSerialization.jsonObject(with: response.body) as? [String: Any])
+        let answers = try #require(payload["answers"] as? [String: [String: Any]])
+        #expect(answers["q"]?["confidence"] is NSNull)
+        #expect(engine.received.count == 1)
+        let asset = try #require(engine.received.first?.assets?["photo"])
+        #expect(asset.format == "png")
+        #expect(asset.part == nil)
+        #expect(asset.dataBase64 == image.base64EncodedString())
+    }
+
+    @Test("System One 按请求体计算 32 MiB 上限并保留 MCP 原上限")
+    func decisionHTTPBodyLimit() throws {
+        let decisionLimit = 32 * 1024 * 1024
+        func headers(path: String, length: Int) -> Data {
+            Data("POST \(path) HTTP/1.1\r\nContent-Length: \(length)\r\n\r\n".utf8)
+        }
+        let path = "/v1/systemone"
+        #expect(try StarcatHTTPServerRequest(data: headers(path: path, length: decisionLimit)) == nil)
+        #expect {
+            try StarcatHTTPServerRequest(data: headers(path: path, length: decisionLimit + 1))
+        } throws: { error in
+            guard case StarcatHTTPServerError.payloadTooLarge = error else { return false }
+            return true
+        }
+        #expect {
+            try StarcatHTTPServerRequest(data: headers(path: "/mcp", length: 8 * 1024 * 1024 + 1))
+        } throws: { error in
+            guard case StarcatHTTPServerError.payloadTooLarge = error else { return false }
+            return true
+        }
+    }
+
+    /// 通过真实 listener 验证调用方看到的响应，所有网络推理与权限变更均使用测试替身。
+    private static func startDecisionServer(
+        _ engine: DecisionHTTPStubEngine,
+        entitlementProvider: (any ProEntitlementProviding)? = nil
+    ) async throws -> (StarcatMCPService, AppSettings, Int) {
+        let port = try StarcatMCPPortAvailability.availableDynamicPort()
+        let parts = try await makeFacades(
+            allowWrites: true, database: nil, publicCapabilities: nil, entitlementProvider: entitlementProvider
+        )
+        parts.settings.mcpServicePort = port
+        parts.settings.mcpServiceEnabled = true
+        parts.settings.decisionEngineEnabled = true
+        parts.settings.decisionEngineID = .jev
+        let decisionService = DecisionSystemOneService(
+            engineRegistry: DecisionEngineRegistry(engines: [engine]),
+            settings: parts.settings
+        )
+        let service = StarcatMCPService(
+            settings: parts.settings,
+            entitlementGate: parts.gate,
+            localAPIKeyStore: .init(keychain: parts.keychain),
+            deviceStore: .init(keychain: parts.keychain),
+            facade: parts.facade,
+            writeFacade: parts.writeFacade,
+            decisionSystemOneService: decisionService
+        )
+        service.start()
+        for _ in 0..<100 {
+            if case .running = service.state { return (service, parts.settings, port) }
+            if case .failed = service.state { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        service.stop()
+        throw StarcatMCPError.invalidArguments("MCP service did not start for the decision HTTP test.")
+    }
+
+    private static func sendDecisionRequest(
+        port: Int,
+        body: Data,
+        bearerToken: String,
+        contentType: String = "application/json",
+        headers: [String: String] = [:]
+    ) async throws -> (statusCode: Int, body: Data) {
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/v1/systemone")!)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.timeoutInterval = 5
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        for (name, value) in headers {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
+        request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let httpResponse = try #require(response as? HTTPURLResponse)
+        return (httpResponse.statusCode, data)
+    }
+}
+
+/// HTTP 路由测试只需验证传输层归一化与门禁；用固定答案避免真实付费推理。
+@MainActor
+private final class DecisionHTTPStubEngine: DecisionEngineProviding {
+    let id: DecisionEngineID = .jev
+    var availability: DecisionEngineAvailability = .available
+    private(set) var received: [DecisionEvaluationRequest] = []
+
+    func evaluate(_ request: DecisionEvaluationRequest) async throws -> DecisionEvaluationResponse {
+        received.append(request)
+        return DecisionEvaluationResponse(
+            answers: request.questions.mapValues { question in
+                switch question.type {
+                case .noul:
+                    return DecisionAnswer(type: "noul", noul: 0.9)
+                case .choice:
+                    return DecisionAnswer(
+                        type: "choice", choice: "billing", confidence: 0.9,
+                        probabilities: ["billing": 0.9, "other": 0.1]
+                    )
+                case .score:
+                    return DecisionAnswer(
+                        type: "score", score: 1, confidence: 0.9, probabilities: ["0": 0, "1": 1],
+                        legend: .object(["0": .string("Low"), "1": .string("High")])
+                    )
+                case .box:
+                    return DecisionAnswer(type: "box", box: .init(top: 0.1, bottom: 0.8, left: 0.2, right: 0.9))
+                }
+            },
+            model: "decision-http-stub",
+            usage: TypeSafeUsage(inputTokens: 3, outputTokens: 1)
+        )
+    }
 }
 
 private actor AgentMCPToolCallRecorder {
@@ -880,7 +1126,7 @@ private actor AgentMCPToolCallRecorder {
 
 @MainActor
 private final class MCPRuntimeTestEntitlementProvider: ProEntitlementProviding {
-    let entitlement: ProEntitlement
+    var entitlement: ProEntitlement
 
     init(isPro: Bool) {
         self.entitlement = ProEntitlement(

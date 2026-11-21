@@ -186,6 +186,37 @@ enum RepoFileTreeBuilder {
         return root.makeNode().children ?? []
     }
 
+    /// 默认阅读只检查根目录；语言文件名兼容点、下划线和连字符，绝不递归打开子项目 README。
+    static func preferredReadme(in nodes: [RepoFileNode], locale: Locale) -> RepoFileNode? {
+        let language = locale.language.languageCode?.identifier ?? "en"
+        var suffixes = [locale.identifier.lowercased().replacingOccurrences(of: "_", with: "-")]
+        if language == "zh" {
+            // App 的简繁选择以 script 为准；跟随系统时也接受 TW/HK/MO 地区标记。
+            let isTraditional = locale.language.script?.identifier == "Hant"
+                || ["TW", "HK", "MO"].contains(locale.language.region?.identifier ?? "")
+            suffixes += isTraditional
+                ? ["zh-hant", "zh-tw", "zh-hk", "zh-mo", "tw", "hk", "mo"]
+                : ["zh-hans", "zh-cn", "cn"]
+        }
+        suffixes.append(language)
+        let names = suffixes.map { "readme-\($0).md" } + ["readme.md"]
+        let rootFiles = nodes.filter { !$0.isDirectory && $0.blobSHA != nil && !$0.path.contains("/") }
+        for name in names {
+            if let file = rootFiles.first(where: {
+                // 只归一化文件名主体，保留 .md 扩展名以免把其它格式误当 Markdown。
+                let lowercased = $0.name.lowercased()
+                guard lowercased.hasSuffix(".md") else { return false }
+                let stem = lowercased.dropLast(3)
+                    .replacingOccurrences(of: "_", with: "-")
+                    .replacingOccurrences(of: ".", with: "-")
+                return stem + ".md" == name
+            }) {
+                return file
+            }
+        }
+        return nil
+    }
+
     /// 该节点（含子孙）所有可下载文件的 path。
     static func descendantFilePaths(of node: RepoFileNode) -> [String] {
         if !node.isDirectory {

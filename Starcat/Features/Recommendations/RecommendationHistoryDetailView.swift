@@ -169,6 +169,7 @@ private struct RecommendationEvidenceHeader: View {
 /// 推荐理由是纯正文加受控项目链接；原生附件让头像和链接共用文字排版、换行及链接光标。
 /// MarkdownUI 会把链接内的图片走 AttributedString 路径丢弃，不能仅靠补 Markdown 图片修复。
 struct RecommendationEvidenceText: View {
+    @Environment(AppSettings.self) private var markdownSettings: AppSettings?
     let markdown: String
     let sources: [RecommendationSeed]
     @Environment(\.openURL) private var openURL
@@ -180,7 +181,7 @@ struct RecommendationEvidenceText: View {
             content: Self.attributedContent(
                 markdown: markdown,
                 avatars: avatars,
-                fontSize: interfaceScale.scaled(RAGConversationTypography.answerText.pointSize)
+                fontSize: MarkdownTypography.bodyFontSize(scale: interfaceScale, adjustment: markdownSettings?.readmeFontSizeAdjustment ?? 0)
             ),
             onOpen: { openURL($0) }
         )
@@ -212,7 +213,7 @@ struct RecommendationEvidenceText: View {
         let result = NSMutableAttributedString(attributedString: NSAttributedString(parsed))
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = fontSize * 0.22
-        let avatarSize = fontSize * 14 / RAGConversationTypography.answerText.pointSize
+        let avatarSize = fontSize * 14 / MarkdownTypography.bodySize
         result.addAttributes([
             .font: NSFont.systemFont(ofSize: fontSize),
             .foregroundColor: NSColor.labelColor,
@@ -309,7 +310,7 @@ extension RepoRecommendationItem {
             repoID: repoID, fullName: fullName, owner: parts.first ?? "",
             name: parts.count == 2 ? parts[1] : "", description: description,
             homepage: nil, language: language, stars: stars, forks: forks,
-            watchers: 0, subscribers: 0, openIssues: 0, ownerAvatar: nil,
+            watchers: 0, subscribers: nil, openIssues: 0, ownerAvatar: nil,
             defaultBranch: nil, licenseSpdx: nil, topics: [], platforms: [],
             pushedAt: nil, updatedAt: nil, createdAt: nil, isArchived: archived, isFork: false,
             latestReleaseTag: nil, latestReleaseAt: nil, latestReleaseURL: nil,

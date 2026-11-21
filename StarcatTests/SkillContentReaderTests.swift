@@ -130,7 +130,7 @@ struct SkillContentReaderTests {
     ])
     func linkPolicy(_ value: String) throws {
         let url = try #require(URL(string: value))
-        #expect(SkillPreviewLinkPolicy.allows(url) == ["https://github.com", "http://example.com"].contains(value))
+        #expect(ReadmeResourcePolicy.localTextOnly.allowsUserLink(url) == ["https://github.com", "http://example.com"].contains(value))
     }
 
     /// 显式渠道与物理临时根使测试不依赖宿主 App 的渠道或用户配置。

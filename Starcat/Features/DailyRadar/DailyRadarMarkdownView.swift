@@ -256,8 +256,9 @@ struct DailyRadarMarkdownView: NSViewRepresentable {
     final class PassthroughWebView: WKWebView {
         var onVisibleRangeChange: (() -> Void)?
         private var visibilityObservers: [NSObjectProtocol] = []
-        private var visibilityUpdateScheduled = false
+        private var visibilityUpdateTask: Task<Void, Never>?
         private var observesVisibility = true
+        private var tracksImageVisibility = true
 
         override func viewDidMoveToSuperview() {
             super.viewDidMoveToSuperview()
@@ -274,10 +275,10 @@ struct DailyRadarMarkdownView: NSViewRepresentable {
             scheduleVisibilityUpdate()
         }
 
-        /// clipView 滚动、祖先移动及全文高度变化都会改变裁切；合并同一轮布局的通知。
+        /// clipView 滚动、祖先移动及全文高度变化都会改变裁切；通知进入同一合并窗口。
         private func observeAncestors() {
             removeVisibilityObservers()
-            guard observesVisibility else { return }
+            guard observesVisibility, tracksImageVisibility else { return }
             var ancestor = superview
             while let view = ancestor {
                 view.postsFrameChangedNotifications = true
@@ -295,18 +296,31 @@ struct DailyRadarMarkdownView: NSViewRepresentable {
             visibilityObservers.append(NotificationCenter.default.addObserver(
                 forName: name, object: object, queue: .main
             ) { [weak self] _ in
-                Task { @MainActor [weak self] in self?.scheduleVisibilityUpdate() }
+                // 通知显式在 main queue 投递，无需再为每条滚动通知分配一个 Task。
+                MainActor.assumeIsolated { self?.scheduleVisibilityUpdate() }
             })
         }
 
         func scheduleVisibilityUpdate() {
-            guard observesVisibility, !visibilityUpdateScheduled else { return }
-            visibilityUpdateScheduled = true
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.visibilityUpdateScheduled = false
+            guard observesVisibility, tracksImageVisibility, visibilityUpdateTask == nil else { return }
+            // 合并窗口内的通知，但不反复取消倒计时，持续滚动也能加载当前视口图片。
+            // 回调时读取最新裁切范围；320px 预取留白仍由文档端负责。
+            visibilityUpdateTask = Task { @MainActor [weak self] in
+                do { try await Task.sleep(for: .milliseconds(50)) }
+                catch { return }
+                guard let self, !Task.isCancelled else { return }
+                self.visibilityUpdateTask = nil
                 self.onVisibleRangeChange?()
             }
+        }
+
+        /// 所有图源均已启动后不再观察滚动；新文档恢复监听，折叠中未启动的图片仍保留需求。
+        func setTracksImageVisibility(_ enabled: Bool) {
+            guard tracksImageVisibility != enabled else { return }
+            tracksImageVisibility = enabled
+            visibilityUpdateTask?.cancel()
+            visibilityUpdateTask = nil
+            observeAncestors()
         }
 
         /// visibleRect 已考虑祖先裁切，再显式相交 clipView，避免拿全文 bounds 当成视口。
@@ -332,6 +346,8 @@ struct DailyRadarMarkdownView: NSViewRepresentable {
 
         func stopObservingVisibility() {
             observesVisibility = false
+            visibilityUpdateTask?.cancel()
+            visibilityUpdateTask = nil
             onVisibleRangeChange = nil
             removeVisibilityObservers()
         }
@@ -349,9 +365,17 @@ struct DailyRadarMarkdownView: NSViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var parent: DailyRadarMarkdownView
         var identity = ""
-        var session = ""
+        var session = "" {
+            didSet {
+                lastPublishedRange = nil
+                hasPendingImages = true
+                if !session.isEmpty { webView?.setTracksImageVisibility(true) }
+            }
+        }
         weak var webView: PassthroughWebView?
         private var readySession: String?
+        private var lastPublishedRange: CGRect?
+        private var hasPendingImages = true
 
         init(parent: DailyRadarMarkdownView) { self.parent = parent }
 
@@ -359,18 +383,25 @@ struct DailyRadarMarkdownView: NSViewRepresentable {
             guard message.frameInfo.isMainFrame, message.name == "dailyHeight",
                   let body = message.body as? [String: Any],
                   let incomingSession = body["session"] as? String, incomingSession == session,
-                  let number = body["height"] as? Double else { return }
+                  let number = body["height"] as? Double,
+                  let pendingImageCount = body["pendingImages"] as? Int else { return }
             // 消息发生于 WebKit 布局回调，下一轮发布；旧页面排队的消息不能覆盖新报告或触发 ready。
             Task { @MainActor [weak self] in
-                self?.publishLayout(height: number, session: incomingSession)
+                self?.publishLayout(height: number, session: incomingSession, pendingImageCount: pendingImageCount)
             }
         }
 
         /// 初始布局不依赖 window.load 或图片请求；即使高度数值未变，也必须每会话通知一次 Reader。
         /// 与高度发布放在同一 MainActor 任务，宿主收起骨架时已经拿到有效正文高度。
-        func publishLayout(height: Double, session incomingSession: String) {
-            guard !session.isEmpty, incomingSession == session, height.isFinite, height > 0 else { return }
-            if abs(parent.height - height) > 0.5 { parent.height = height }
+        func publishLayout(height: Double, session incomingSession: String, pendingImageCount: Int) {
+            guard !session.isEmpty, incomingSession == session, height.isFinite, height > 0,
+                  pendingImageCount >= 0 else { return }
+            hasPendingImages = pendingImageCount > 0
+            webView?.setTracksImageVisibility(hasPendingImages)
+            if abs(parent.height - height) > 0.5 {
+                parent.height = height
+                lastPublishedRange = nil
+            }
             if readySession != session {
                 readySession = session
                 parent.onReady()
@@ -380,13 +411,19 @@ struct DailyRadarMarkdownView: NSViewRepresentable {
 
         /// session 同时在 JS 端核对，防止导航切换时跨进程排队的旧可见范围启动新页面图片。
         func publishVisibleRange() {
-            guard !session.isEmpty, let webView else { return }
-            let rect = webView.visibleDocumentRange
-            guard rect.minY.isFinite, rect.maxY.isFinite, rect.width.isFinite else { return }
-            webView.evaluateJavaScript(
-                "window.dailyRadarSetVisibleRange?.('\(session)',\(rect.minY),\(rect.maxY),\(rect.width));",
-                completionHandler: nil
-            )
+            guard hasPendingImages, let webView,
+                  let script = visibleRangeScript(for: webView.visibleDocumentRange) else { return }
+            webView.evaluateJavaScript(script, completionHandler: nil)
+        }
+
+        /// 同一裁切范围只跨进程发送一次。空视口仍需发送，以覆盖 JS 保留的上一次可见范围。
+        /// 首次 ready、文档替换和高度变化会重新发布；未就绪文档不能提前消耗去重状态。
+        func visibleRangeScript(for rect: CGRect) -> String? {
+            guard !session.isEmpty, readySession == session, hasPendingImages,
+                  rect.minY.isFinite, rect.maxY.isFinite, rect.width.isFinite,
+                  rect != lastPublishedRange else { return nil }
+            lastPublishedRange = rect
+            return "window.dailyRadarSetVisibleRange?.('\(session)',\(rect.minY),\(rect.maxY),\(rect.width));"
         }
 
         // 与 WKNavigationDelegate 的主线程回调签名一致，确保安全链接由宿主处理，
@@ -485,18 +522,19 @@ enum DailyRadarMarkdownDocument {
         """
         const session="\(session)";
         const content=document.querySelector("main");
-        const images=Array.from(content.querySelectorAll(".article-image"));
+        const pendingImages=new Set(content.querySelectorAll(".article-image"));
         let visibleRange=null;
         let queued=false;
         const send=()=>window.webkit.messageHandlers.dailyHeight.postMessage({
-            session,height:Math.ceil(content.getBoundingClientRect().height)
+            session,height:Math.ceil(content.getBoundingClientRect().height),pendingImages:pendingImages.size
         });
         const schedule=()=>{
-            if(queued)return;
+            if(queued||pendingImages.size===0)return;
             queued=true;
             requestAnimationFrame(()=>{queued=false;loadNearImages();});
         };
         const finish=(slot,state)=>{
+            pendingImages.delete(slot);
             slot.dataset.state=state;
             slot.setAttribute("aria-busy","false");
             send();
@@ -507,7 +545,8 @@ enum DailyRadarMarkdownDocument {
             const {top,bottom,width}=visibleRange;
             if(bottom<=top||width<=0)return;
             const ratio=window.innerWidth/width;
-            for(const slot of images){
+            // 已启动的图片不再参与几何扫描；隐藏的折叠图片仍留在集合等待 toggle。
+            for(const slot of pendingImages){
                 if(slot.dataset.state!=="pending"||!slot.getClientRects().length)continue;
                 const rect=slot.getBoundingClientRect();
                 const y=rect.top+window.scrollY;
@@ -518,11 +557,14 @@ enum DailyRadarMarkdownDocument {
                 let url;
                 try{url=new URL(source);}catch{finish(slot,"error");continue;}
                 if(url.protocol!=="https:"||url.username||url.password){finish(slot,"error");continue;}
+                pendingImages.delete(slot);
                 slot.dataset.state="loading";
                 image.addEventListener("load",()=>finish(slot,"loaded"),{once:true});
                 image.addEventListener("error",()=>finish(slot,"error"),{once:true});
                 image.src=source;
             }
+            // 不等待远程 load：一旦全部图源启动即可停止原生滚动监听，高度变化照常上报。
+            if(pendingImages.size===0)send();
         };
         window.dailyRadarSetVisibleRange=(incoming,top,bottom,width)=>{
             if(incoming!==session||![top,bottom,width].every(Number.isFinite))return;

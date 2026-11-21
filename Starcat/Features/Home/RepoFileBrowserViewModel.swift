@@ -72,6 +72,7 @@ final class RepoFileBrowserViewModel {
     private let downloader: any RepoFileDownloading
     private let folderPicker: any RepoFileFolderPicking
     private let treeCache: RepoFileTreeSessionCache
+    private let locale: Locale
     private var downloadTask: Task<Void, Never>?
     private var previewTask: Task<Void, Never>?
 
@@ -174,7 +175,8 @@ final class RepoFileBrowserViewModel {
         apiClient: any GitHubAPIClientProtocol,
         downloader: (any RepoFileDownloading)? = nil,
         folderPicker: any RepoFileFolderPicking = NSOpenPanelRepoFileFolderPicker(),
-        treeCache: RepoFileTreeSessionCache = .shared
+        treeCache: RepoFileTreeSessionCache = .shared,
+        locale: Locale = LocaleStore.shared.selection.effectiveLocale
     ) {
         self.target = target
         self.currentRef = target.ref
@@ -182,6 +184,7 @@ final class RepoFileBrowserViewModel {
         self.downloader = downloader ?? RepoFileDownloader()
         self.folderPicker = folderPicker
         self.treeCache = treeCache
+        self.locale = locale
     }
 
     func loadTree() async {
@@ -302,6 +305,10 @@ final class RepoFileBrowserViewModel {
                 let retainedMode = previewMode
                 reveal(file)
                 previewMode = retainedMode
+            } else if previewedPath == nil,
+                      let readme = RepoFileTreeBuilder.preferredReadme(in: nodes, locale: locale) {
+                // 默认阅读复用点击预览，不勾选下载；刷新时已有的手动阅读选择优先。
+                reveal(readme)
             }
         } catch is CancellationError {
             isRefreshing = false

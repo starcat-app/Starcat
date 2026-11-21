@@ -66,16 +66,16 @@ protocol RepoNoteRepositoryProtocol: Sendable {
 
     // MARK: - 写入
 
-    /// 整记录 upsert（同时落 content + status，调用方负责把 editedAt 设为现在）。
+    /// 整记录 upsert。正文变化时采用传入的 editedAt，缺省为当前时间，否则沿用原时间。
     func upsert(_ note: RepoNote) async throws
 
     /// 仅更新笔记内容和当前内容的 AI 来源标记。
     /// 不存在的 repo_notes 行会被自动创建（status 默认 "unread"）。
-    /// editedAt 自动设为 now。
+    /// 仅在正文实际变化时记录当前时间，包括从有内容清空。
     func updateContent(repoId: Int64, content: String?, isAIGenerated: Bool) async throws
 
     /// 仅更新状态。不存在的 repo_notes 行会被自动创建（content 为 nil）。
-    /// editedAt 自动设为 now。
+    /// 笔记编辑时间独立于阅读状态。
     /// 关键约束：设置 `.using` 时会同步入库；从 `.using` 改回其他状态不会自动移出知识库。
     func updateStatus(repoId: Int64, status: RepoStatus) async throws
 
@@ -100,7 +100,7 @@ protocol RepoNoteRepositoryProtocol: Sendable {
     ///
     /// 这个方法专为「README 加载完成时静默升级」设计，与 `updateStatus` 的区别是
     /// **绝不下行**（不会从 using 退回 read）。UI 层可以无脑调，不需要先 find 判断当前状态。
-    /// editedAt 仅在真正发生变更时更新，避免无意义改动触发 CloudKit 同步。
+    /// 首次打开 README 只记录阅读状态。
     func markAsReadIfNeeded(repoId: Int64) async throws
 }
 

@@ -43,7 +43,8 @@ struct RepoShareHost: ViewModifier {
                     taskStore: taskStore,
                     repoID: presentation.repoID,
                     onCancel: { taskStore.cancel(repoID: presentation.repoID) },
-                    onRetry: { retryShare(repoID: presentation.repoID) }
+                    onRetry: { retryShare(repoID: presentation.repoID) },
+                    onRecreate: { recreateShare(repoID: presentation.repoID) }
                 )
                 .id(presentation.repoID)
                 .appLocaleEnvironment()
@@ -80,6 +81,16 @@ struct RepoShareHost: ViewModifier {
     private func retryShare(repoID: Int64) {
         guard authorizeAIShare() else { return }
         taskStore.retry(repoID: repoID, operations: shareOperations)
+    }
+
+    /// 成功态的“重新创建”必须走绕过链接缓存的专用用例；旧公开页面仍由服务端保留。
+    @MainActor
+    private func recreateShare(repoID: Int64) {
+        guard authorizeAIShare() else { return }
+        taskStore.recreate(
+            repoID: repoID,
+            operations: dependencies.makeRepoShareOperations(reusesCachedShare: false)
+        )
     }
 
     /// 基础链接不受登录 / Pro 限制；只有真正执行 AI 分享时才进行权限检查。

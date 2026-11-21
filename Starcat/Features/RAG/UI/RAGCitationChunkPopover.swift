@@ -103,6 +103,7 @@ struct RAGPopoverSkeletonHandoff<Placeholder: View, Content: View>: View {
 
 /// 命中分片全文：顶部来源头（logo + 全名 + 来源·路径）+ Markdown 渲染正文 + 底部状态栏。
 struct RAGCitationChunkPopoverContent: View {
+    @Environment(AppSettings.self) private var markdownSettings: AppSettings?
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     let citation: RAGCitation
@@ -155,14 +156,14 @@ struct RAGCitationChunkPopoverContent: View {
 
     /// 弹层内 Markdown：比回答正文更紧，适合 400pt 宽的证据窗口。
     private func chunkMarkdownTheme(scale: InterfaceScale) -> Theme {
-        Theme()
+        MarkdownTypography.theme(scale: scale, adjustment: markdownSettings?.readmeFontSizeAdjustment ?? 0)
             .text {
                 ForegroundColor(.primary)
-                FontSize(scale.scaled(12))
+                FontSize(MarkdownTypography.bodyFontSize(scale: scale, adjustment: markdownSettings?.readmeFontSizeAdjustment ?? 0))
             }
             .code {
                 FontFamilyVariant(.monospaced)
-                FontSize(.em(0.92))
+                FontSize(.em(MarkdownTypography.inlineCodeRatio))
                 BackgroundColor(.secondary.opacity(0.12))
             }
             .link {
@@ -173,7 +174,7 @@ struct RAGCitationChunkPopoverContent: View {
                     .markdownMargin(top: .em(0.4), bottom: .em(0.25))
                     .markdownTextStyle {
                         FontWeight(.semibold)
-                        FontSize(scale.scaled(15))
+                        FontSize(.em(MarkdownTypography.Heading.h1.ratio))
                     }
             }
             .heading2 { configuration in
@@ -181,7 +182,7 @@ struct RAGCitationChunkPopoverContent: View {
                     .markdownMargin(top: .em(0.35), bottom: .em(0.2))
                     .markdownTextStyle {
                         FontWeight(.semibold)
-                        FontSize(scale.scaled(14))
+                        FontSize(.em(MarkdownTypography.Heading.h2.ratio))
                     }
             }
             .heading3 { configuration in
@@ -189,7 +190,7 @@ struct RAGCitationChunkPopoverContent: View {
                     .markdownMargin(top: .em(0.3), bottom: .em(0.15))
                     .markdownTextStyle {
                         FontWeight(.semibold)
-                        FontSize(scale.scaled(13))
+                        FontSize(.em(MarkdownTypography.Heading.h3.ratio))
                     }
             }
             .paragraph { configuration in
@@ -215,7 +216,7 @@ struct RAGCitationChunkPopoverContent: View {
                         .relativeLineSpacing(.em(0.12))
                         .markdownTextStyle {
                             FontFamilyVariant(.monospaced)
-                            FontSize(.em(0.92))
+                            FontSize(.em(MarkdownTypography.codeBlockRatio))
                             BackgroundColor(nil)
                         }
                         .padding(.horizontal, 9)

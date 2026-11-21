@@ -125,6 +125,59 @@ enum DatabaseMigrations {
         registerV25(into: &migrator)
         registerV26(into: &migrator)
         registerV27(into: &migrator)
+        registerV28(into: &migrator)
+        registerV29(into: &migrator)
+        registerV30(into: &migrator)
+    }
+
+    /// 每个账号有自己的库。采集起点与新账本原子创建，空账本也可以证明本机覆盖期。
+    /// 已运行专项预览版的账号库沿用原账本和采集起点。
+    private static func registerV30(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v30-knowledge-activity", merging: ["v28-knowledge-activity"]) { db, applied in
+            guard !applied.contains("v28-knowledge-activity") else { return }
+            try db.execute(sql: """
+                CREATE TABLE knowledge_activity_coverage (
+                    id INTEGER PRIMARY KEY CHECK (id = 1), started_at REAL NOT NULL
+                );
+                CREATE TABLE knowledge_activity (
+                    id INTEGER PRIMARY KEY, repo_id INTEGER NOT NULL, kind TEXT NOT NULL,
+                    occurred_at REAL NOT NULL, source TEXT NOT NULL
+                );
+                CREATE INDEX idx_knowledge_activity_time ON knowledge_activity(occurred_at);
+                """)
+            try db.execute(sql: "INSERT INTO knowledge_activity_coverage VALUES (1, ?)",
+                           arguments: [Date().timeIntervalSince1970])
+        }
+    }
+
+    /// 过去的精简快照可能将缺失计数写为零，旧行无法区分这两种情况。
+    /// 只清理有歧义的统计值，打开详情时再向 GitHub 核实。
+    private static func registerV29(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v29-recheck-legacy-zero-subscriber-counts") { db in
+            try db.execute(sql: "UPDATE repos SET subscribers_count = NULL WHERE subscribers_count = 0")
+        }
+    }
+
+    /// 旧版本的空笔记无法区分状态写入和主动清空，因此统一清除编辑时间。
+    private static func registerV28(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v28-clear-empty-repo-note-edited-at") { db in
+            let rows = try Row.fetchCursor(db, sql: """
+                SELECT repo_id, content FROM repo_notes WHERE edited_at IS NOT NULL
+                """)
+            var emptyNoteRepoIDs: [Int64] = []
+            while let row = try rows.next() {
+                let content: String? = row["content"]
+                if (content ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    emptyNoteRepoIDs.append(row["repo_id"])
+                }
+            }
+            for repoID in emptyNoteRepoIDs {
+                try db.execute(
+                    sql: "UPDATE repo_notes SET edited_at = NULL WHERE repo_id = ?",
+                    arguments: [repoID]
+                )
+            }
+        }
     }
 
     /// 旧 payload 原样保留；升级时一次性提取摘要，日常恢复不再读取全量正文。

@@ -121,8 +121,8 @@ struct SearchIntentRouterTests {
         fixture.settings.decisionEngineEnabled = true
         fixture.settings.externalContextEnabled = true
         fixture.engine.answers = [
-            SearchIntentRouter.needsPlanningQuestionID: DecisionNoulAnswer(probability: 0.92),
-            SearchIntentRouter.needsFreshEvidenceQuestionID: DecisionNoulAnswer(probability: 0.88)
+            SearchIntentRouter.needsPlanningQuestionID: DecisionAnswer(type: "noul", noul: 0.92),
+            SearchIntentRouter.needsFreshEvidenceQuestionID: DecisionAnswer(type: "noul", noul: 0.88)
         ]
 
         let outcome = await fixture.router.route(query: "帮我查最近比较火的 Linux 发行版")
@@ -152,8 +152,8 @@ struct SearchIntentRouterTests {
         fixture.settings.decisionSearchRoutingEnabled = true
         fixture.settings.decisionEngineEnabled = true
         fixture.engine.answers = [
-            SearchIntentRouter.needsPlanningQuestionID: DecisionNoulAnswer(probability: 0.01),
-            SearchIntentRouter.needsFreshEvidenceQuestionID: DecisionNoulAnswer(probability: 0.02)
+            SearchIntentRouter.needsPlanningQuestionID: DecisionAnswer(type: "noul", noul: 0.01),
+            SearchIntentRouter.needsFreshEvidenceQuestionID: DecisionAnswer(type: "noul", noul: 0.02)
         ]
 
         let outcome = await fixture.router.route(query: "linux distro")
@@ -169,8 +169,8 @@ struct SearchIntentRouterTests {
         fixture.settings.decisionSearchRoutingEnabled = true
         fixture.settings.decisionEngineEnabled = true
         fixture.engine.answers = [
-            SearchIntentRouter.needsPlanningQuestionID: DecisionNoulAnswer(probability: 0.60),
-            SearchIntentRouter.needsFreshEvidenceQuestionID: DecisionNoulAnswer(probability: 0.10)
+            SearchIntentRouter.needsPlanningQuestionID: DecisionAnswer(type: "noul", noul: 0.60),
+            SearchIntentRouter.needsFreshEvidenceQuestionID: DecisionAnswer(type: "noul", noul: 0.10)
         ]
 
         let outcome = await fixture.router.route(query: "linux distro")
@@ -203,8 +203,8 @@ struct SearchIntentRouterTests {
         fixture.settings.decisionSearchRoutingEnabled = true
         fixture.settings.decisionEngineEnabled = true
         fixture.engine.answers = [
-            SearchIntentRouter.needsPlanningQuestionID: DecisionNoulAnswer(probability: .infinity),
-            SearchIntentRouter.needsFreshEvidenceQuestionID: DecisionNoulAnswer(probability: 0.2)
+            SearchIntentRouter.needsPlanningQuestionID: DecisionAnswer(type: "noul", noul: .infinity),
+            SearchIntentRouter.needsFreshEvidenceQuestionID: DecisionAnswer(type: "noul", noul: 0.2)
         ]
 
         let outcome = await fixture.router.route(query: "最近比较火的 Linux 发行版")
@@ -227,8 +227,8 @@ struct SearchIntentRouterTests {
         fixture.settings.decisionEngineEnabled = true
         fixture.engine.delay = 0.2
         fixture.engine.answers = [
-            SearchIntentRouter.needsPlanningQuestionID: DecisionNoulAnswer(probability: 0.01),
-            SearchIntentRouter.needsFreshEvidenceQuestionID: DecisionNoulAnswer(probability: 0.01)
+            SearchIntentRouter.needsPlanningQuestionID: DecisionAnswer(type: "noul", noul: 0.01),
+            SearchIntentRouter.needsFreshEvidenceQuestionID: DecisionAnswer(type: "noul", noul: 0.01)
         ]
 
         let outcome = await fixture.router.route(query: "最近比较火的 Linux 发行版")
@@ -373,7 +373,7 @@ private final class FakeDecisionEngine: DecisionEngineProviding {
     let id: DecisionEngineID
     var error: Error?
     var availability: DecisionEngineAvailability = .available
-    var answers: [String: DecisionNoulAnswer] = [:]
+    var answers: [String: DecisionAnswer] = [:]
     var delay: TimeInterval = 0
     private(set) var requestCount = 0
     private(set) var lastRequest: DecisionEvaluationRequest?

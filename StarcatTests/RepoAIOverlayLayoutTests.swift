@@ -2,54 +2,36 @@
 //  RepoAIOverlayLayoutTests.swift
 //  StarcatTests
 //
-//  锁定 inline AI 浮层高度：有 README / 洞察 tab 时扣掉实测高度，
-//  没有 tab 的详情页继续留原来的 16pt 顶距。
+//  锁定详情浮层在两条栏外侧的共享间距。
 //
 
 import SwiftUI
 import Testing
 @testable import Starcat
 
-@Suite("AI 浮层高度")
+@Suite("详情浮层布局")
 struct RepoAIOverlayLayoutTests {
 
-    @Test("Manage 详情扣掉 tab 行高度，顶边贴在切换行底部")
-    func subtractsTabChromeInset() {
-        let height = RepoAIOverlayLayout.panelHeight(
-            availableHeight: 800,
+    @Test("笔记和 AI 浮层在两条栏的实测高度外各留 4pt")
+    func addsGapToMeasuredChromeInsets() {
+        let insets = RepoDetailOverlayLayout.verticalInsets(
             topChromeInset: 40,
-            isMaximized: false
+            bottomChromeInset: 24
         )
 
-        #expect(height == 800 - RepoAIOverlayLayout.panelBottomInset - 40)
+        #expect(insets.top == 44)
+        #expect(insets.bottom == 28)
     }
 
-    @Test("没有 tab 行时保留原来的 16pt 顶距")
-    func usesFallbackTopInsetWhenChromeMissing() {
-        let height = RepoAIOverlayLayout.panelHeight(
-            availableHeight: 800,
+    @Test("详情模式没有对应栏时从正文容器边缘留 4pt")
+    func usesBodyEdgesWhenChromeIsAbsent() {
+        let insets = RepoDetailOverlayLayout.verticalInsets(
             topChromeInset: 0,
-            isMaximized: false
+            bottomChromeInset: 0
         )
 
-        #expect(height == 800 - RepoAIOverlayLayout.panelBottomInset - RepoAIOverlayLayout.fallbackTopInset)
-    }
-
-    @Test("最大化只提高最小高度下限，顶距规则与展开态相同")
-    func maximizedUsesSameTopInsetRule() {
-        let expanded = RepoAIOverlayLayout.panelHeight(
-            availableHeight: 400,
-            topChromeInset: 36,
-            isMaximized: false
-        )
-        let maximized = RepoAIOverlayLayout.panelHeight(
-            availableHeight: 400,
-            topChromeInset: 36,
-            isMaximized: true
-        )
-
-        #expect(expanded == max(RepoAIOverlayLayout.panelMinHeight, 400 - 34 - 36))
-        #expect(maximized == max(RepoAIOverlayLayout.maximizedMinHeight, 400 - 34 - 36))
+        #expect(insets.top == 4)
+        #expect(insets.bottom == 4)
     }
 
     @Test("切换行高度 Preference 取较大值，避免被 0 默认值冲掉")
@@ -58,6 +40,32 @@ struct RepoAIOverlayLayoutTests {
         RepoDetailAIOverlayTopInsetPreference.reduce(value: &value) { 36 }
         RepoDetailAIOverlayTopInsetPreference.reduce(value: &value) { 0 }
         #expect(value == 36)
+    }
+
+    @Test("从左边缘左拖放宽、右拖收窄")
+    func resizesNotesDrawerFromLeadingEdge() {
+        #expect(RepoDetailOverlayLayout.notesDrawerWidth(
+            availableWidth: 800, preferredWidth: 480, horizontalDrag: -80
+        ) == 560)
+        #expect(RepoDetailOverlayLayout.notesDrawerWidth(
+            availableWidth: 800, preferredWidth: 480, horizontalDrag: 50
+        ) == 430)
+    }
+
+    @Test("笔记宽度遵守边界并从实际显示宽度开始拖动")
+    func clampsNotesDrawerWidthToAvailableSpace() {
+        #expect(RepoDetailOverlayLayout.notesDrawerWidth(
+            availableWidth: 650, preferredWidth: 800, horizontalDrag: 50
+        ) == 600)
+        #expect(RepoDetailOverlayLayout.notesDrawerWidth(
+            availableWidth: 650, preferredWidth: 480, horizontalDrag: -500
+        ) == 650)
+        #expect(RepoDetailOverlayLayout.notesDrawerWidth(
+            availableWidth: 650, preferredWidth: 480, horizontalDrag: 500
+        ) == 400)
+        #expect(RepoDetailOverlayLayout.notesDrawerWidth(
+            availableWidth: 320, preferredWidth: 480, horizontalDrag: 0
+        ) == 320)
     }
 }
 

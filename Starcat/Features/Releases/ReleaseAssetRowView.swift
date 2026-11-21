@@ -246,9 +246,8 @@ struct ReleaseAssetRowView: View {
 
 // MARK: - Thin progress ring
 
-/// 行内下载进度环。外层仍是 18pt 点击热区，圆环本身按旁路 SF Symbol 字号缩小，
-/// 避免铺满热区后比 `arrow.down.circle` / 绿色勾勾显大。
-private struct ReleaseAssetDownloadProgressRing: View {
+/// 行内进度环与同位置的操作图标对齐；点击热区由各页面的外层按钮决定。
+struct ReleaseAssetDownloadProgressRing: View {
     let progress: Double
     /// 与 compact captionSmall / standard caption 的 glyph 直径对齐。
     let side: CGFloat

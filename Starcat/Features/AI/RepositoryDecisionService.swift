@@ -106,7 +106,7 @@ final class RepositoryDecisionService {
                 existingListNames: existingListNamesByRepo[repo.id] ?? [],
                 existingTags: []
             )
-            var questions: [String: DecisionNoulQuestion] = [:]
+            var questions: [String: DecisionQuestion] = [:]
             questions.reserveCapacity(askableCandidates.count)
             for candidate in askableCandidates {
                 questions["list::\(candidate.listId)"] = Self.listMembershipQuestion(for: candidate)
@@ -147,8 +147,8 @@ final class RepositoryDecisionService {
 
     private static func listMembershipQuestion(
         for candidate: GitHubStarListAIContext
-    ) -> DecisionNoulQuestion {
-        DecisionNoulQuestion(
+    ) -> DecisionQuestion {
+        .noul(
             instructions: .object([
                 "main_question": "Should the repository described by `repository` and `readmeExcerpt` be added to this GitHub list?",
                 "list_name": candidate.name,
@@ -208,7 +208,7 @@ final class RepositoryDecisionService {
                 existingListNames: [],
                 existingTags: hints.repoTags
             )
-            var questions: [String: DecisionNoulQuestion] = [:]
+            var questions: [String: DecisionQuestion] = [:]
             questions.reserveCapacity(candidates.count)
             for name in candidates {
                 questions["tag::\(name)"] = Self.tagMembershipQuestion(for: name)
@@ -244,8 +244,8 @@ final class RepositoryDecisionService {
         return results
     }
 
-    private static func tagMembershipQuestion(for tagName: String) -> DecisionNoulQuestion {
-        DecisionNoulQuestion(
+    private static func tagMembershipQuestion(for tagName: String) -> DecisionQuestion {
+        .noul(
             instructions: .text("""
             Should the existing user tag "\(tagName)" be applied to the repository described by `repository` and `readmeExcerpt`? \
             `existingTags` lists tags the repository already has; do not re-suggest synonyms of them.
@@ -274,7 +274,7 @@ final class RepositoryDecisionService {
         in response: DecisionEvaluationResponse,
         questionID: String
     ) throws -> Double {
-        guard let probability = response.answers[questionID]?.probability,
+        guard let probability = response.answers[questionID]?.noul,
               probability.isFinite,
               (0...1).contains(probability)
         else {

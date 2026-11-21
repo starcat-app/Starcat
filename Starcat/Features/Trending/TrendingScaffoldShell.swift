@@ -152,17 +152,18 @@ struct TrendingScaffoldShell: View {
     /// 1. 查本地 DB（`findByOwnerName`）→ 命中返回 `(local, true)`，三段段渲染；
     /// 2. 未命中 → 退化到 `trending.makeEphemeralRepo()`，`isLocalHit = false`；
     ///
-    /// **不调 GitHub `/repos`**：与 `WeeklyDetailView.resolveRepo` 不同，trending
-    /// row 自带 v1.2 14 字段（owner_avatar / subscribers / default_branch /
-    /// open_issues 等），构造 ephemeral repo 已能让 hero 完整渲染。再调 API 既冗
-    /// 余也消耗 rate limit。后续若需要更多字段（如 license），把字段补到
-    /// `StarcatRepoCardDTO` v1.x 而非在视图层 fetch。
+    /// 本地行没有关注者数时保留 Trending 快照的已知计数；两边都缺才由共用 Hero 补查。
     private func resolveRepo() async {
+        let scope = RepoDetailDatabaseScope(dependencies)
         do {
-            if let local = try await dependencies.repoRepository.findByOwnerName(
+            if var local = try await dependencies.repoRepository.findByOwnerName(
                 owner: trending.owner,
                 name: trending.name
             ) {
+                guard !Task.isCancelled, RepoDetailDatabaseScope(dependencies) == scope else { return }
+                if trending.ghRepoId == 0 || trending.ghRepoId == local.id {
+                    local.subscribersCount = local.subscribersCount ?? Repo.subscriberCount(fromFeed: trending.subscribersCount)
+                }
                 displayRepo = dependencies.starredRegistry.applyingDisplayState(to: local)
                 isLocalHit = true
                 return
@@ -172,6 +173,7 @@ struct TrendingScaffoldShell: View {
             // 继续 fallback，不阻塞
         }
 
+        guard !Task.isCancelled, RepoDetailDatabaseScope(dependencies) == scope else { return }
         displayRepo = dependencies.starredRegistry.applyingDisplayState(to: trending.makeEphemeralRepo())
         isLocalHit = false
     }

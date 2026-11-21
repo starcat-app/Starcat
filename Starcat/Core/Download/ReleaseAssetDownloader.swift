@@ -17,6 +17,7 @@
 //
 
 import Foundation
+import Synchronization
 
 // MARK: - Errors
 
@@ -84,10 +85,14 @@ actor ReleaseAssetDownloader: ReleaseAssetDownloading {
         var lastError: Error?
 
         for source in Self.downloadSources(for: asset) {
+            try Task.checkCancellation()
             do {
                 try await download(from: source, token: token, to: destination, onProgress: onProgress)
                 return
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
+                try Task.checkCancellation()
                 lastError = error
                 AppLog.network.debug(
                     "Release asset download fallback: \(source.label, privacy: .public) failed — \(error.localizedDescription, privacy: .public)"
@@ -146,12 +151,9 @@ actor ReleaseAssetDownloader: ReleaseAssetDownloading {
         let response: URLResponse
         do {
             (tempURL, response) = try await downloadFile(for: request, onProgress: onProgress)
-        } catch is CancellationError {
-            throw NetworkError.cancelled
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
         } catch {
-            if (error as NSError).code == NSURLErrorCancelled {
-                throw NetworkError.cancelled
-            }
             throw NetworkError.transport(underlying: error)
         }
 
@@ -165,6 +167,7 @@ actor ReleaseAssetDownloader: ReleaseAssetDownloading {
         }
 
         let parent = destination.deletingLastPathComponent()
+        try Task.checkCancellation()
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
 
         if FileManager.default.fileExists(atPath: destination.path) {
@@ -190,44 +193,50 @@ actor ReleaseAssetDownloader: ReleaseAssetDownloading {
         for request: URLRequest,
         onProgress: (@Sendable (Double) -> Void)?
     ) async throws -> (URL, URLResponse) {
-        try await withCheckedThrowingContinuation { continuation in
-            final class ObservationBox: @unchecked Sendable {
-                var observation: NSKeyValueObservation?
+        let activeTask = Mutex<URLSessionDownloadTask?>(nil)
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                final class ObservationBox: @unchecked Sendable {
+                    var observation: NSKeyValueObservation?
+                }
+                let box = ObservationBox()
+
+                let task = session.downloadTask(with: request) { tempURL, response, error in
+                    box.observation?.invalidate()
+                    box.observation = nil
+
+                    if let error {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+                    guard let tempURL, let response else {
+                        continuation.resume(throwing: ReleaseAssetDownloadError.emptyResponse)
+                        return
+                    }
+                    // completion 返回后 URLSession 会删掉临时文件，必须先挪到我们自己的路径。
+                    let ownedTemp = FileManager.default.temporaryDirectory
+                        .appendingPathComponent("starcat-release-\(UUID().uuidString)")
+                    do {
+                        try FileManager.default.moveItem(at: tempURL, to: ownedTemp)
+                        continuation.resume(returning: (ownedTemp, response))
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
+                }
+
+                if let onProgress {
+                    onProgress(0)
+                    box.observation = task.progress.observe(\.fractionCompleted, options: [.new]) { progress, _ in
+                        onProgress(min(1, max(0, progress.fractionCompleted)))
+                    }
+                }
+
+                // Swift 任务可能在句柄登记前已被取消。两侧都检查，避免停在等待 HTTP 回包。
+                activeTask.withLock { $0 = task }
+                if Task.isCancelled { task.cancel() } else { task.resume() }
             }
-            let box = ObservationBox()
-
-            let task = session.downloadTask(with: request) { tempURL, response, error in
-                box.observation?.invalidate()
-                box.observation = nil
-
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                guard let tempURL, let response else {
-                    continuation.resume(throwing: ReleaseAssetDownloadError.emptyResponse)
-                    return
-                }
-                // completion 返回后 URLSession 会删掉临时文件，必须先挪到我们自己的路径。
-                let ownedTemp = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("starcat-release-\(UUID().uuidString)")
-                do {
-                    try FileManager.default.moveItem(at: tempURL, to: ownedTemp)
-                    continuation.resume(returning: (ownedTemp, response))
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-
-            if let onProgress {
-                onProgress(0)
-                box.observation = task.progress.observe(\.fractionCompleted, options: [.new]) { progress, _ in
-                    let value = min(1, max(0, progress.fractionCompleted))
-                    onProgress(value)
-                }
-            }
-
-            task.resume()
+        } onCancel: {
+            activeTask.withLock { $0 }?.cancel()
         }
     }
 }

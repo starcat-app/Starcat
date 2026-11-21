@@ -16,6 +16,7 @@ struct DailyRadarStoryCard: View {
     @Environment(\.starcatInterfaceScale) private var scale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
+    @Environment(\.starcatListInteractionSuppressed) private var interactionSuppressed
     @State private var hovered = false
 
     /// 列表徽标由服务端返回；旧接口缺失时整组隐藏，不改变既有卡片布局。
@@ -34,7 +35,7 @@ struct DailyRadarStoryCard: View {
                                             seed: story.id,
                                             textSafeLeading: featured ? 0.38 : 0)
                             // 只放大普通卡片的封面，并在原图片区裁剪；减少动态效果时保持静态。
-                            .scaleEffect(hovered && !featured && !reduceMotion ? 1.15 : 1)
+                            .scaleEffect(hovered && !featured && !reduceMotion && !interactionSuppressed ? 1.15 : 1)
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
                     }
@@ -136,7 +137,9 @@ struct DailyRadarStoryCard: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .onHover { hovering in
-            guard !reduceMotion else {
+            // 滚动穿过指针时不启动连续的封面缩放；静止后的悬停保留原有反馈。
+            guard hovered != hovering else { return }
+            guard !reduceMotion && !interactionSuppressed else {
                 hovered = hovering
                 return
             }

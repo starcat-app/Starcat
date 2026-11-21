@@ -112,7 +112,7 @@ struct TranslationPromptSheet: View {
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
             TextEditor(text: text)
-                .font(.body.monospaced())
+                .starcatMarkdownBodyFont(design: .monospaced)
                 .accessibilityLabel(title)
                 .frame(height: height)
                 .overlay(

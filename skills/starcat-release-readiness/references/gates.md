@@ -55,6 +55,8 @@
 
 ## 3. Changelog
 
+- 如已建立目标版本 Checklist，先核对范围、实际交付、未完成/待验收项与延期去向，再对照参与仓库的完整提交补漏；不能把打勾条目直接整篇复制成发布说明。
+- 每轮“第三方依赖、二进制与内嵌资源版本更新检查”必须有本轮结论（已升级并验证、无需升级或明确暂缓原因）；遗漏或未核实时列为待处理，不沿用上一轮勾选状态。
 - 检查以下四份 Markdown（2026-11 起随 starcat-site 同仓维护，见 Starcat#202）：
   - `supports/starcat-site/appstore/CHANGELOG.md`
   - `supports/starcat-site/appstore/CHANGELOG-ZH.md`

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Skill 管理工作台 · Starcat Direct</title>
+  <style>
+    :root{color-scheme:light dark;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;--back:#eceef1;--ink:#27292d;--muted:#5e646e;--panel:#fbfbfc;--edge:#d2d6dc;--blue:#0869cf}
+    *{box-sizing:border-box}body{margin:0;background:var(--back);color:var(--ink)}
+    main{width:min(1512px,100%);margin:auto;padding:16px 24px 24px}
+    header,footer,.tools,.route,.dialog-title,.dialog-actions{display:flex;align-items:center;gap:10px}
+    header{justify-content:space-between;margin-bottom:13px;min-height:34px}.route{flex-wrap:wrap}.route strong{font-size:14px}.route span,footer{font-size:13px;color:var(--muted)}
+    button,a,input,textarea{font:inherit}button,.doc{height:31px;border:1px solid var(--edge);border-radius:7px;background:var(--panel);color:var(--ink);padding:0 11px;font-size:13px;cursor:pointer}
+    button:hover,.doc:hover{background:color-mix(in srgb,var(--blue) 8%,var(--panel))}
+    .doc{display:inline-grid;place-items:center;text-decoration:none}button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+    #stage{margin:0 auto;background:var(--panel);overflow:hidden;border-radius:13px;box-shadow:0 16px 40px #252d381e,0 3px 8px #151b2514;outline:1px solid var(--edge)}
+    #stage>svg{display:block;width:100%;height:auto}#stage.compact{max-width:1040px}
+    [data-action]{cursor:pointer;outline:none}.focus-ring{stroke:none;pointer-events:none}
+    [data-action]:hover>.focus-ring{stroke:#4585c866;stroke-width:1}
+    [data-action]:focus-visible>.focus-ring{stroke:#418cea;stroke-width:2.5}
+    footer{justify-content:space-between;margin-top:14px;align-items:baseline;line-height:1.55}footer p{margin:0}#status{color:var(--muted)}
+    dialog{max-width:min(625px,92vw);width:570px;border:1px solid var(--edge);border-radius:14px;color:var(--ink);background:var(--panel);padding:22px;box-shadow:0 24px 70px #1113}
+    dialog::backdrop{background:#161b2455}.dialog-title{justify-content:space-between}.dialog-title h2{margin:0;font-size:18px}
+    dialog p{font-size:13px;color:var(--muted)}.page-list{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;padding:0;margin:14px 0 0;list-style:none}
+    .page-list button{text-align:left;width:100%;height:33px;border-color:transparent;background:none}.page-list button[aria-current=page]{background:#2376d01b;color:var(--blue)}
+    .page-list small{display:inline-block;width:34px;font:11px ui-monospace,Menlo,monospace;color:var(--muted)}
+    textarea{width:100%;min-height:70px;margin:14px 0;border:1px solid var(--edge);border-radius:6px;padding:8px;resize:vertical;background:var(--panel);color:var(--ink)}
+    .dialog-actions{justify-content:flex-end}.primary{background:var(--blue);color:white;border-color:transparent}
+    @media(prefers-color-scheme:dark){:root{--back:#242629;--ink:#f1f3f7;--muted:#b4b9c3;--panel:#303236;--edge:#474b52;--blue:#337dd2}}
+    @media(max-width:750px){main{padding:10px 8px}header{flex-wrap:wrap}footer{flex-direction:column;gap:4px}.tools{gap:6px}}
+    @media(prefers-reduced-motion:no-preference){#stage.page-changed>svg{animation:arrive .13s ease-out}@keyframes arrive{from{opacity:.84}to{opacity:1}}}
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="route"><button id="boards" type="button" aria-haspopup="dialog">画板目录</button><strong>Starcat Direct</strong><span id="current"></span></div>
+      <div class="tools"><button id="reset" type="button">重置此示例</button><a class="doc" href="../14-产品需求与Pencil原型.md">PRD</a></div>
+    </header>
+    <div id="stage" aria-label="Skill 管理工作台"></div>
+    <footer><p id="purpose"></p><p id="status" role="status" aria-live="polite"></p></footer>
+    <noscript>启用本地 JavaScript 即可评审交互，也可以打开同目录的 Pencil 文件。</noscript>
+  </main>
+  <dialog id="chooser" aria-labelledby="choice-title">
+    <div class="dialog-title"><h2 id="choice-title">画板目录</h2><button type="button" data-close>关闭</button></div>
+    <p>选择画板会载入该场景的初始样例。沿窗口内的按钮操作，可以接着评审同一份数据。</p>
+    <ul class="page-list" id="page-list"></ul>
+  </dialog>
+  <dialog id="editor" aria-labelledby="edit-title">
+    <form id="edit-form"><h2 id="edit-title"></h2><textarea id="value" aria-labelledby="edit-title"></textarea>
+      <div class="dialog-actions"><button type="button" data-close>取消</button><button type="submit" class="primary">确定</button></div>
+    </form>
+  </dialog>
+  <script src="场景.js"></script>
+  <script src="详情.js"></script>
+  <script src="画板.js"></script>
+  <script src="矢量.js"></script>
+  <script src="交互.js"></script>
+</body>
+</html>

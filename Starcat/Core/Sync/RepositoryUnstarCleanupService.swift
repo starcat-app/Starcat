@@ -178,6 +178,16 @@ final class RepositoryUnstarCleanupService {
                 try db.execute(sql: "DELETE FROM \(table) WHERE repo_id = ?", arguments: [repoID])
             }
 
+            let previous = try Row.fetchOne(db, sql: "SELECT status, library_state FROM repo_notes WHERE repo_id = ?",
+                                            arguments: [repoID])
+            let now = Date()
+            if previous?["status"] as String? == RepoStatus.using.rawValue {
+                try KnowledgeActivity.append(.stoppedUsing, repoID: repoID, at: now, source: .unstarCleanup, db: db)
+            }
+            if scope == .removeFromKnowledgeLibrary,
+               previous?["library_state"] as String? == LibraryState.inLibrary.rawValue {
+                try KnowledgeActivity.append(.leftLibrary, repoID: repoID, at: now, source: .unstarCleanup, db: db)
+            }
             switch scope {
             case .keepKnowledgeLibrary:
                 // 知识库归属独立于 Star；只保留承载归属所需的最小行。

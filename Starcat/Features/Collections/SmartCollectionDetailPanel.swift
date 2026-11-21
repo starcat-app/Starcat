@@ -178,7 +178,8 @@ struct SmartCollectionDetailPanel: View {
             ) { item in
                 SmartCollectionRepoCard(
                     item: item,
-                    chipAvailableWidth: chipAvailableWidth
+                    chipAvailableWidth: chipAvailableWidth,
+                    isScrollActive: isScrollActive
                 )
                     .contentShape(Rectangle())
                     .onTapGesture {
@@ -555,12 +556,14 @@ private struct SmartCollectionRepoCard: View {
     let item: SmartCollectionCardItem
     /// 由 panel 按列宽一次算出；卡片不得再用 GeometryReader 反向读取自身宽度。
     let chipAvailableWidth: CGFloat
+    let isScrollActive: Bool
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(HomeViewModel.self) private var viewModel
     @Environment(\.locale) private var locale
     @Environment(\.colorScheme) private var colorScheme
     @State private var isAddingToLibrary = false
+    @State private var isVisible = false
 
     private var forkTint: Color {
         StatSemanticColor.fork.resolved(colorScheme: colorScheme)
@@ -606,6 +609,8 @@ private struct SmartCollectionRepoCard: View {
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
         }
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
+        // LazyVStack 会预建屏外卡片，只给真正进入视口且停稳的卡片补查。
+        .onScrollVisibilityChange(threshold: 0.1) { isVisible = $0 }
     }
 
     private var header: some View {
@@ -717,7 +722,9 @@ private struct SmartCollectionRepoCard: View {
                 style: .full
             )
             MetaBadge(businessIcon: .forkCount, text: repo.forksCount.formattedShort, tint: forkTint)
-            MetaBadge(systemImage: "eye", text: repo.watchersCount.formattedShort, tint: watchersTint)
+            RepoSubscriberCountView(repo: repo, loadsIfMissing: isVisible && !isScrollActive) { count in
+                MetaBadge(systemImage: "eye", text: count?.formattedShort ?? "-", tint: watchersTint)
+            }
             MetaBadge(
                 systemImage: "exclamationmark.circle",
                 text: (repo.openIssuesCount ?? 0).formattedShort,

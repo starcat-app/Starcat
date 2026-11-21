@@ -49,6 +49,7 @@ protocol RepoRepositoryProtocol: Sendable {
     ///
     /// 用于 Search Center / Discovery / Trending 等“未 star 也可加入知识库”的路径。
     /// 该方法只维护 repo metadata；真正的知识库归属写在 `repo_notes.library_state`。
+    @MainActor
     func upsertExternalRepoForLibrary(repoDTO: GitHubRepoDTO, syncedAt: Date) async throws -> Repo
 
     /// 将当前详情页已有的 `Repo` 元数据写入 `repos`，但不创建 GitHub star 关系。
@@ -61,6 +62,10 @@ protocol RepoRepositoryProtocol: Sendable {
 
     /// 更新 repo 的远程访问状态。该状态只服务 UI 标记和后台降级，不改变 Star 或知识库归属。
     func updateAccessState(repoId: Int64, state: RepoAccessState, reason: String?, checkedAt: Date) async throws
+
+    /// 只写已有行的关注者计数，主动刷新可覆盖已有值。与调用方的账号检查在同一个 actor 上选定 writer。
+    @MainActor
+    func cacheSubscriberCount(repoID: Int64, count: Int, replacingExisting: Bool) async throws -> Int?
 
     // MARK: - 查询
 

@@ -1,15 +1,14 @@
 //
-//  DailyRadarPreviewColumnAnchors.swift
+//  MainWindowContentColumnAnchors.swift
 //  Starcat
 //
-//  每日热点原生预览的分栏几何桥接，
-//  让共同父层的阅读工作区覆盖内部 divider，同时保留侧栏与左侧分隔线。
+//  让洞察和每日热点在共同父层跨越中右栏，同时保留侧栏与左侧分隔线。
 //
 
 import SwiftUI
 
-/// 预览只关心两个内容宿主，不把其几何测量写回主窗口宽度或持久化布局。
-struct DailyRadarPreviewColumnAnchors: PreferenceKey {
+/// 只测量两个内容宿主，不把结果写回主窗口宽度或持久化布局。
+struct MainWindowContentColumnAnchors: PreferenceKey {
     enum Column: Hashable {
         case content
         case detail

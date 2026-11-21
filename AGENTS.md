@@ -374,6 +374,11 @@ Section {
 
 本项目内新增或维护的所有 skill 必须使用中文编写，包括 `SKILL.md`、`references/` 下的说明文档、示例、触发说明和操作步骤。代码、命令、文件路径、环境变量、脚本名、错误日志、YAML key 等技术字面量保持原文，不强行翻译。
 
+### 版本迭代与日常 Checklist
+
+- 用户提出“开始进行 X.Y.Z 的版本迭代”、增补版本范围或维护清单时，先读取项目 Skill [`skills/starcat-version-iteration/SKILL.md`](skills/starcat-version-iteration/SKILL.md) 与[版本迭代规范](docs/5-规范/版本迭代规范.md)，即使工具未自动加载 Skill 也执行此入口；分支、计划路径、每轮依赖检查及授权边界以该规范为准。
+- 日常开发交付先按该规范定位当前版本计划，获授权的本版任务同批维护 Checklist；Changelog 的逐任务询问豁免、收口整理及独立写入授权以 [Changelog 更新规范](docs/5-规范/Changelog-更新规范.md)为准。
+
 ### 文档修改
 
 - 修改任何文档前，先检查 `docs/1-立项/开发前问题清单.md` 确认是否有相关决策
@@ -400,6 +405,11 @@ Section {
 
 > 单一信任源：[`docs/5-规范/UI-颜色规范.md`](docs/5-规范/UI-颜色规范.md)
 > 文字 / 图标 `foregroundStyle` **只用 `.primary` 或 `.secondary`，禁止 `.tertiary`**。唯一例外需在代码注释里写明"故意弱化 + 产品意图"。
+
+### UI 规范：Markdown 字号与渲染器（强制，2026-11-19 起生效）
+
+> 单一信任源：[`docs/5-规范/UI-Markdown字号与渲染规范.md`](docs/5-规范/UI-Markdown字号与渲染规范.md)
+> Markdown 阅读、预览及内容输入（含占位提示）默认采用共享 16 号正文基准，仓库笔记采用共享 14 号基准。统一接入界面字号档位与现有阅读微调，禁止业务视图散写字号。单篇独立文档复用 WebView，原生会话、编辑预览及流式正文按规范保留 MarkdownUI；切换渲染器须明确授权与来源资源边界。新增或修改 Markdown 入口前必须读取该规范。
 
 ### UI 规范：Focus Ring 蓝框（强制）
 
@@ -468,21 +478,3 @@ Section {
 ---
 
 *最后更新：2026-11-15*
-
-
-<claude-mem-context>
-# Memory Context
-
-# claude-mem status
-
-This project has no memory yet. The current session will seed it; subsequent sessions will receive auto-injected context for relevant past work.
-
-Memory injection starts on your second session in a project.
-
-`/learn-codebase` is available if the user wants to front-load the entire repo into memory in a single pass (~5 minutes on a typical repo, optional). Otherwise memory builds passively as work happens.
-
-Live activity: http://localhost:37701
-How it works: `/how-it-works`
-
-This message disappears once the first observation lands.
-</claude-mem-context>

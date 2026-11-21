@@ -110,6 +110,8 @@ struct RepoDetailInsightsHost<ReadmeContent: View>: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
+    @Environment(RepoNotesWorkspace.self) private var notesWorkspace: RepoNotesWorkspace?
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @State private var contentMode: RepoDetailContentMode = .readme
@@ -165,34 +167,49 @@ struct RepoDetailInsightsHost<ReadmeContent: View>: View {
         }
     }
 
-    /// README / 洞察切换行。高度通过 PreferenceKey 上报给 Scaffold，
-    /// 让 AI 浮层顶边贴在本行底部分隔线下方，而不是盖住 tab。
+    /// 上报入口栏可见下沿，避免浮层的 4pt 留白叠加入口栏外侧的 padding。
     private var modeSwitcherChrome: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Spacer(minLength: 12)
-
-                // 复用 Starcat 自绘胶囊控件，避免 macOS 原生 segmented Picker
-                // 在详情页中显得厚重；右对齐后也不会抢占 README 阅读区的视觉焦点。
-                // horizontal 24 与 RepoLocalSections / Hero 一致，让「AI 生成」与「洞察」右缘齐平。
+        let outerPadding: CGFloat = 4
+        return VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                if notesWorkspace == nil {
+                    Spacer(minLength: 0)
+                }
                 PillSegmentedControl(
                     items: RepoDetailContentMode.allCases,
                     selection: $contentMode,
                     title: \.titleKey,
                     size: .compact
                 )
+                .fixedSize(horizontal: true, vertical: false)
                 .accessibilityLabel(Text("insights.repo.mode.label"))
+                if notesWorkspace != nil {
+                    Divider().frame(height: 18)
+                    RepoNotesEntry()
+                }
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background {
+                if notesWorkspace != nil {
+                    let shape = RoundedRectangle(cornerRadius: 8)
+                    shape.fill(StarcatSurface.panel(colorScheme: colorScheme))
+                        .overlay { shape.strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1) }
+                        .allowsHitTesting(false)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, outerPadding)
 
-            Divider()
+            if notesWorkspace == nil {
+                Divider()
+            }
         }
         .background {
             GeometryReader { proxy in
                 Color.clear.preference(
                     key: RepoDetailAIOverlayTopInsetPreference.self,
-                    value: proxy.size.height
+                    value: proxy.size.height - (notesWorkspace != nil ? outerPadding : 0)
                 )
             }
         }
@@ -316,10 +333,32 @@ struct RepoDetailInsightsHost<ReadmeContent: View>: View {
     }
 }
 
-/// 详情把 README / 洞察切换行（含底部分隔线）的高度上报给 Scaffold。
-///
-/// 为什么用 PreferenceKey 而不是写死高度：AI 浮层挂在整个 body 上，必须知道 tab
-/// 行实际占了多少；未 star 的详情不渲染切换行，显式写入 0。
+/// 两个浮层共享正文区的上下边界。缺少对应栏时，以正文容器边缘为基准。
+enum RepoDetailOverlayLayout {
+    static let verticalGap: CGFloat = 4
+    static let minimumNotesDrawerWidth: CGFloat = 400
+
+    static func verticalInsets(topChromeInset: CGFloat, bottomChromeInset: CGFloat) -> EdgeInsets {
+        EdgeInsets(
+            top: topChromeInset + verticalGap,
+            leading: 0,
+            bottom: bottomChromeInset + verticalGap,
+            trailing: 0
+        )
+    }
+
+    /// 右边缘固定，所以左拖使宽度增加。窗口收窄时以实际显示宽度起算，避免拖动初段没有响应。
+    static func notesDrawerWidth(
+        availableWidth: CGFloat,
+        preferredWidth: CGFloat,
+        horizontalDrag: CGFloat
+    ) -> CGFloat {
+        let startingWidth = min(availableWidth, max(minimumNotesDrawerWidth, preferredWidth))
+        return min(availableWidth, max(minimumNotesDrawerWidth, startingWidth - horizontalDrag))
+    }
+}
+
+/// 上报正文顶部到入口栏下沿的实际距离，供笔记和 AI 浮层定位。
 struct RepoDetailAIOverlayTopInsetPreference: PreferenceKey {
     static let defaultValue: CGFloat = 0
 
@@ -330,9 +369,7 @@ struct RepoDetailAIOverlayTopInsetPreference: PreferenceKey {
 
 /// README 状态栏的实际高度，由 `ReadmeStateView` 上报给详情 Scaffold。
 ///
-/// AI child window 的底边必须停在状态栏上沿；状态栏包含动态字体、垂直 padding
-/// 和不同状态下的按钮组合，不能用一个固定常量近似。没有 README 状态栏的详情模式
-/// 保持默认值 0，由 AI 面板继续使用自己的兼容兜底间距。
+/// 状态栏包含动态字体、垂直 padding 和不同状态下的按钮组合。没有状态栏时保持 0。
 struct RepoDetailAIOverlayBottomInsetPreference: PreferenceKey {
     static let defaultValue: CGFloat = 0
 

@@ -357,6 +357,7 @@ struct ActivityDetailView: View {
 
         if let excerpt = payload.excerpt, !excerpt.isEmpty {
             Markdown(excerpt)
+                .starcatMarkdownStyle()
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -376,6 +377,7 @@ struct ActivityDetailView: View {
                 }
                 if !comment.body.isEmpty {
                     Markdown(comment.body)
+                        .starcatMarkdownStyle()
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -463,7 +465,9 @@ struct ActivityDetailView: View {
                         style: .full
                     )
                     MetaBadge(businessIcon: .forkCount, text: repo.forksCount.formattedShort, tint: .secondary)
-                    MetaBadge(systemImage: "eye", text: repo.watchersCount.formattedShort, tint: StatSemanticColor.watchers.resolved(colorScheme: colorScheme))
+                    RepoSubscriberCountView(repo: repo, loadsIfMissing: true) { count in
+                        MetaBadge(systemImage: "eye", text: count?.formattedShort ?? "-", tint: StatSemanticColor.watchers.resolved(colorScheme: colorScheme))
+                    }
                     if repo.isArchived {
                         ArchivedBadge()
                     }

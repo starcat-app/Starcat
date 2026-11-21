@@ -2,8 +2,8 @@
 //  DailyRadarMarkdownRendererTests.swift
 //  StarcatTests
 //
-//  日报截图问题的离线回归：短指标列、HTML 折叠标题和上游错误嵌套链接。
-//  验证白名单重建的 HTML，不加载远程内容或操作实际应用窗口。
+//  日报 HTML 与图片加载的离线回归：表格、折叠标题、安全链接和滚动可见范围。
+//  验证生产渲染及脚本入口，不加载远程内容或操作实际应用窗口。
 //
 
 import Foundation
@@ -159,6 +159,36 @@ struct DailyRadarMarkdownRendererTests {
         #expect(context.exception == nil)
     }
 
+    /// 高频原生范围更新只排一次动画帧；已经启动的图片不能继续参与滚动几何扫描。
+    @Test func scrollingOnlyScansPendingImagesAndReportsWhenQueueDrains() throws {
+        let context = try imageScriptContext()
+        context.evaluateScript("""
+        window.dailyRadarSetVisibleRange('test-session',0,600,800);flush();
+        const nearReads=slots[0].geometryReads;
+        for(let top=0;top<100;top++)window.dailyRadarSetVisibleRange('test-session',top,top+600,800);
+        """)
+        #expect(context.evaluateScript("frames.length === 1")?.toBool() == true)
+        context.evaluateScript("flush();")
+        #expect(context.evaluateScript("slots[0].geometryReads === nearReads && requests.length === 1")?.toBool() == true)
+        // 折叠图片尚未启动时不能宣称队列已空；展开后按原可见范围启动。
+        context.evaluateScript("slots[0].image.emit('load');flush();")
+        #expect(context.evaluateScript("messages[messages.length-1].pendingImages === 2")?.toBool() == true)
+        context.evaluateScript("slots[2].hidden=false;events.toggle();flush();")
+        context.evaluateScript("window.dailyRadarSetVisibleRange('test-session',4800,5400,800);flush();")
+        #expect(context.evaluateScript("requests.length === 3 && messages[messages.length-1].pendingImages === 0")?.toBool() == true)
+        context.evaluateScript("window.dailyRadarSetVisibleRange('test-session',0,600,800);")
+        #expect(context.evaluateScript("frames.length === 0")?.toBool() == true)
+        #expect(context.exception == nil)
+    }
+
+    @Test func documentWithoutImagesImmediatelyStopsVisibilityDemand() throws {
+        let context = try imageScriptContext(empty: true)
+        #expect(context.evaluateScript("messages.length === 1 && messages[0].pendingImages === 0")?.toBool() == true)
+        context.evaluateScript("window.dailyRadarSetVisibleRange('test-session',0,600,800);flush();")
+        #expect(context.evaluateScript("requests.length === 0 && frames.length === 0")?.toBool() == true)
+        #expect(context.exception == nil)
+    }
+
     @Test func repositoryAvatarsUseTheSameNativeVisibilityAndEndLoadingOnFailure() throws {
         let context = try imageScriptContext(avatars: true)
         #expect(context.evaluateScript("requests.length === 0")?.toBool() == true)
@@ -220,25 +250,52 @@ struct DailyRadarMarkdownRendererTests {
         )
         let coordinator = view.makeCoordinator()
         coordinator.session = "first"
-        coordinator.publishLayout(height: 20, session: "first")
-        coordinator.publishLayout(height: 60, session: "first")
+        coordinator.publishLayout(height: 20, session: "first", pendingImageCount: 1)
+        coordinator.publishLayout(height: 60, session: "first", pendingImageCount: 1)
         #expect(readyHeights == [20])
         #expect(height == 60)
         coordinator.session = "second"
-        coordinator.publishLayout(height: 500, session: "first")
-        coordinator.publishLayout(height: .infinity, session: "second")
-        coordinator.publishLayout(height: 0, session: "second")
+        coordinator.publishLayout(height: 500, session: "first", pendingImageCount: 1)
+        coordinator.publishLayout(height: .infinity, session: "second", pendingImageCount: 1)
+        coordinator.publishLayout(height: 0, session: "second", pendingImageCount: 1)
         #expect(height == 60)
-        coordinator.publishLayout(height: 120, session: "second")
+        coordinator.publishLayout(height: 120, session: "second", pendingImageCount: 1)
         #expect(readyHeights == [20, 120])
         coordinator.session = ""
-        coordinator.publishLayout(height: 900, session: "second")
+        coordinator.publishLayout(height: 900, session: "second", pendingImageCount: 1)
         #expect(height == 120)
+    }
+
+    /// 直接调用生产桥接入口，不创建窗口：验证去重、空视口、布局变化和跨文档恢复。
+    @Test @MainActor func nativeVisibilityDeduplicatesAndStopsAfterAllSourcesStart() {
+        let view = DailyRadarMarkdownView(
+            markdown: "", identity: "visibility", onLink: { _ in }, height: .constant(12000)
+        )
+        let coordinator = view.makeCoordinator()
+        let range = CGRect(x: 0, y: 100, width: 800, height: 600)
+        coordinator.session = "first"
+        #expect(coordinator.visibleRangeScript(for: range) == nil)
+        coordinator.publishLayout(height: 12000, session: "first", pendingImageCount: 2)
+        #expect(coordinator.visibleRangeScript(for: range) != nil)
+        #expect(coordinator.visibleRangeScript(for: range) == nil)
+        coordinator.publishLayout(height: 13000, session: "first", pendingImageCount: 2)
+        #expect(coordinator.visibleRangeScript(for: range) != nil)
+        #expect(coordinator.visibleRangeScript(for: range.offsetBy(dx: 0, dy: 50)) != nil)
+        #expect(coordinator.visibleRangeScript(for: .zero) != nil)
+        #expect(coordinator.visibleRangeScript(for: .zero) == nil)
+        coordinator.publishLayout(height: 12000, session: "first", pendingImageCount: 0)
+        #expect(coordinator.visibleRangeScript(for: range) == nil)
+        coordinator.session = "second"
+        // 旧消息不能停止新文档的需求；新文档首次 ready 后，相同范围必须重新发送。
+        coordinator.publishLayout(height: 12000, session: "first", pendingImageCount: 0)
+        #expect(coordinator.visibleRangeScript(for: range) == nil)
+        coordinator.publishLayout(height: 12000, session: "second", pendingImageCount: 1)
+        #expect(coordinator.visibleRangeScript(for: range) != nil)
     }
 
     /// JavaScriptCore 中提供最小 DOM/动画队列；无网络、无窗口，运行生产脚本而非复刻加载判断。
     /// URL 仅供已通过 Swift 白名单的测试地址使用，安全边界由上面的真实 Markdown 用例覆盖。
-    private func imageScriptContext(avatars: Bool = false) throws -> JSContext {
+    private func imageScriptContext(avatars: Bool = false, empty: Bool = false) throws -> JSContext {
         let context = try #require(JSContext())
         context.evaluateScript("""
         var requests=[],messages=[],frames=[],events={},resizeCallback;
@@ -260,10 +317,10 @@ struct DailyRadarMarkdownRendererTests {
                 set src(value){this.source=value;requests.push(value);},get src(){return this.source;}
             };
             return {
-                top,hidden,image,height:300,width:800,dataset:{state:"pending"},attributes:{"aria-busy":"true"},
+                top,hidden,image,height:300,width:800,geometryReads:0,dataset:{state:"pending"},attributes:{"aria-busy":"true"},
                 querySelector:()=>image,
                 getClientRects(){return this.hidden?[]:[this.getBoundingClientRect()];},
-                getBoundingClientRect(){return {top:this.top,height:this.height,width:this.width};},
+                getBoundingClientRect(){this.geometryReads++;return {top:this.top,height:this.height,width:this.width};},
                 setAttribute(name,value){this.attributes[name]=value;}
             };
         }
@@ -282,6 +339,7 @@ struct DailyRadarMarkdownRendererTests {
             slots.forEach(slot=>{slot.height=20;slot.width=20;});
             """)
         }
+        if empty { context.evaluateScript("slots=[];") }
         context.evaluateScript(DailyRadarMarkdownDocument.imageScript(session: "test-session"))
         try #require(context.exception == nil)
         return context

@@ -36,7 +36,7 @@ struct RepoNote: Codable, FetchableRecord, MutablePersistableRecord, Equatable {
     /// 是否 AI 生成（P1+ 使用，v1 始终为 false）。
     var isAIGenerated: Bool
 
-    /// 最后编辑时间，ISO8601。
+    /// 正文最后一次实际变化的时间，ISO8601。主动清空正文也计作一次编辑。
     var editedAt: String?
 
     enum CodingKeys: String, CodingKey {
@@ -187,7 +187,7 @@ extension Notification.Name {
     /// **userInfo**：
     /// - `"repoId": Int64`       —— 变更对应的 `repos.id`
     /// - `"content": String`     —— 空笔记用空字符串表示
-    /// - `"editedAt": String?`   —— 落库时间 ISO-8601 字符串
+    /// - `"editedAt": String?`   —— 落库后的正文编辑时间，ISO-8601 字符串
     ///
     /// **订阅方**：`CompanionEventHub`，用于把 Starcat 内部笔记变更轻量推送到
     /// Browser Plugin 已打开的 GitHub 页面，避免用户手动刷新页面。

@@ -141,7 +141,25 @@ actor ShareAPI {
 
     /// 复用本地记录并合并同一仓库正在提交的请求，避免多窗口重复发布。
     func shareRepo(request: ShareRepoRequest) async throws -> ShareCreateResponse {
-        if let cached = cachedRepoShare(fullName: request.repo.fullName) { return cached }
+        try await publishRepoShare(request: request, reusesCachedShare: true)
+    }
+
+    /// 显式重建公开分享页。
+    ///
+    /// 该路径必须绕过本地缓存并覆盖同一仓库身份下的长期记录；旧公开 URL 仍由服务端保留。
+    /// 并发调用若已有同仓请求在途，则复用在途请求，避免一次点击产生多个远端快照。
+    func recreateRepoShare(request: ShareRepoRequest) async throws -> ShareCreateResponse {
+        try await publishRepoShare(request: request, reusesCachedShare: false)
+    }
+
+    private func publishRepoShare(
+        request: ShareRepoRequest,
+        reusesCachedShare: Bool
+    ) async throws -> ShareCreateResponse {
+        if reusesCachedShare,
+           let cached = cachedRepoShare(fullName: request.repo.fullName) {
+            return cached
+        }
         let key = repoShareKey(fullName: request.repo.fullName)
         if let pending = repoShareTasks[key] { return try await pending.value }
         let serviceURL = baseURL

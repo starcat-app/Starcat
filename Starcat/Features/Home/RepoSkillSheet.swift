@@ -155,13 +155,15 @@ struct RepoSkillSheet: View {
     private var header: some View {
         RepoWorkspaceHeader(target: RepoFileBrowserTarget(repo: session.repo)) {
             if DistributionChannel.current.isDirect, let preview {
-                Button("skills.import.addToLibrary") {
+                Button {
                     try? SkillWorkspaceSceneCoordinator.shared.openRepositoryImport(.init(repo: session.repo, skill: preview)) { sceneID in
                         openWindow(id: sceneID)
                     }
+                } label: {
+                    Label("skills.import.addToLibrary", systemImage: "plus")
                 }
                 .disabled(session.isInstalling || preview.installationIssue != nil)
-                .buttonStyle(RepoSkillHeaderButtonStyle())
+                .buttonStyle(.bordered)
             }
             RepoSkillScanNotice(session: session)
             SyncIconButton(isRefreshing: session.isLoading, disabled: session.isInstalling,

@@ -293,7 +293,7 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
                     COALESCE(SUM(CASE WHEN n.status = 'using' THEN 1 ELSE 0 END), 0) AS using_count,
                     COALESCE(SUM(CASE WHEN
                         EXISTS (SELECT 1 FROM repo_tags rt WHERE rt.repo_id = r.id)
-                        OR NULLIF(TRIM(n.content), '') IS NOT NULL
+                        OR \(KnowledgeActivity.nonemptyNoteSQL)
                         OR n.status IN ('read', 'using')
                     THEN 1 ELSE 0 END), 0) AS organized_count,
                     COALESCE(SUM(CASE WHEN
@@ -304,7 +304,7 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
                     THEN 1 ELSE 0 END), 0) AS unread_count,
                     COALESCE(SUM(CASE WHEN n.library_state = 'in_library' THEN 1 ELSE 0 END), 0)
                         AS library_count,
-                    COALESCE(SUM(CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL THEN 1 ELSE 0 END), 0)
+                    COALESCE(SUM(CASE WHEN \(KnowledgeActivity.nonemptyNoteSQL) THEN 1 ELSE 0 END), 0)
                         AS noted_count,
                     COALESCE(SUM(CASE WHEN EXISTS (
                         SELECT 1 FROM repo_tags rt WHERE rt.repo_id = r.id
@@ -380,22 +380,7 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
                 ORDER BY count DESC, name COLLATE NOCASE ASC
                 """
         )
-        let topics = try namedCounts(
-            db,
-            sql: """
-                SELECT LOWER(TRIM(topic.value)) AS name, COUNT(DISTINCT r.id) AS count
-                FROM repos r
-                LEFT JOIN repo_notes n ON n.repo_id = r.id
-                JOIN json_each(
-                    CASE WHEN json_valid(r.topics) THEN r.topics ELSE '[]' END
-                ) topic
-                WHERE \(scopePredicate)
-                  AND topic.type = 'text'
-                  AND NULLIF(TRIM(topic.value), '') IS NOT NULL
-                GROUP BY LOWER(TRIM(topic.value))
-                ORDER BY count DESC, name COLLATE NOCASE ASC
-                """
-        )
+        let topics = try namedCounts(db, sql: KnowledgeProfileFactsProvider.topicCountsSQL(scope: .starred))
         let licenses = try namedCounts(
             db,
             sql: """
@@ -682,81 +667,69 @@ struct GRDBMyInsightsSnapshotProvider: MyInsightsSnapshotProviding, Sendable {
         )
     }
 
-    private static func action(_ selection: InsightsSelection, count: Int) -> InsightsActionItem {
-        let metadata: (title: String, detail: String, image: String, tint: String)
-        switch selection {
+    private static func action(_ id: InsightsActionID, count: Int) -> InsightsActionItem {
+        let metadata: (title: String, detail: String, tint: String)
+        switch id {
         case .untagged:
             metadata = (
                 "insights.action.untagged",
                 "insights.action.untagged.detail",
-                "tag.slash",
                 "orange"
             )
         case .unread:
             metadata = (
                 "insights.action.unread",
                 "insights.action.unread.detail",
-                "book.closed.fill",
                 "blue"
             )
         case .missingReadme:
             metadata = (
                 "insights.action.missingReadme",
                 "insights.action.missingReadme.detail",
-                "doc.questionmark.fill",
                 "yellow"
             )
         case .missingIndexableContent:
             metadata = (
                 "insights.action.missingIndexableContent",
                 "insights.action.missingIndexableContent.detail",
-                "doc.text.magnifyingglass",
                 "yellow"
             )
         case .indexIssues:
             metadata = (
                 "insights.action.indexIssues",
                 "insights.action.indexIssues.detail",
-                "exclamationmark.magnifyingglass",
                 "red"
             )
         case .healthPending:
             metadata = (
                 "insights.action.healthPending",
                 "insights.action.healthPending.detail",
-                "gauge.with.dots.needle.67percent",
                 "pink"
             )
         case .openSSFPending:
             metadata = (
                 "insights.action.openSSFPending",
                 "insights.action.openSSFPending.detail",
-                "shield.lefthalf.filled",
                 "cyan"
             )
         case .maintenanceRisk:
             metadata = (
                 "insights.action.maintenanceRisk",
                 "insights.action.maintenanceRisk.detail",
-                "wrench.and.screwdriver.fill",
                 "orange"
             )
         case .securityRisk:
             metadata = (
                 "insights.action.securityRisk",
                 "insights.action.securityRisk.detail",
-                "lock.trianglebadge.exclamationmark.fill",
                 "red"
             )
-        default:
-            preconditionFailure("Only attention selections can become action items")
         }
         return InsightsActionItem(
-            id: selection,
+            id: id,
             titleKey: metadata.title,
             detailKey: metadata.detail,
             count: count,
-            systemImage: metadata.image,
             tintName: metadata.tint
         )
     }

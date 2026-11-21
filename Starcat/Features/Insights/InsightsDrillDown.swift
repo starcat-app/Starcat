@@ -10,7 +10,7 @@ import Foundation
 
 /// 洞察页面可下钻的统计语义。
 enum InsightsDrillDownTarget: Equatable {
-    case action(InsightsSelection)
+    case action(InsightsActionID)
     case status(RepoStatus)
     case language(String?)
 }
@@ -32,8 +32,9 @@ enum InsightsDrillDownRouter {
         var filters = GlobalRepoFilterState.neutral
 
         switch target {
-        case .action(let selection):
-            switch selection {
+        case .action(let action):
+            guard action.isAvailable(in: scope) else { return nil }
+            switch action {
             case .untagged:
                 filters.tagAvailabilityFilter = .missing
             case .unread:
@@ -52,8 +53,6 @@ enum InsightsDrillDownRouter {
                 filters.insightsRiskFilter = .maintenance
             case .securityRisk:
                 filters.insightsRiskFilter = .security
-            default:
-                return nil
             }
 
         case .status(let status):

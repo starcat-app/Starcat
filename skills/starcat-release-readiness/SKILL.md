@@ -35,6 +35,7 @@ description: 准备、修复并审计 Starcat macOS App 的 App Store 与 Direct
 - `docs/3-设计/详细设计/01-数据库设计.md`
 - `docs/5-规范/Git-分支与Worktree规范.md`
 - `docs/5-规范/Changelog-更新规范.md`
+- `docs/5-规范/版本迭代规范.md` 与目标版本 Checklist（如已建立）
 - `docs/6-发版与上架/SOP-双渠道签名与发布.md`
 - `docs/6-发版与上架/SOP-手动发布命令清单.md`
 
@@ -47,7 +48,7 @@ description: 准备、修复并审计 Starcat macOS App 的 App Store 与 Direct
 1. 仓库、分支、worktree、dirty 状态和独立 `supports/*` 仓库。
 2. 目标版本、上一个正式 tag、提交范围和远端 tag 冲突。
 3. 数据库迁移发布边界与同版本迁移收口。
-4. 四份 Changelog 的版本状态、双语和渠道差异。
+4. 目标版本 Checklist 的未完成/未验收项、每轮依赖与二进制版本检查结果，以及四份 Changelog 的版本状态、双语和渠道差异；清单作为主要日志素材，相关仓库提交用于补漏，未经授权不写日志。
 5. 单测、普通构建、脚本静态检查和必要的迁移测试矩阵。
 6. 获得授权后才检查分发产物、签名、公证、Store archive / 本地 export pkg 或 Direct DMG。App Store 正式包必须显式使用 `/Applications/Xcode.app/Contents/Developer` 中的正式版 Xcode；Beta、RC 或 Preview 立即记为 `BLOCKED`。Automatic Signing 的 archive 是中间产物；App Store 最终签名门禁以 `destination=export` 生成并解包验证的 pkg 为准。
 7. Direct 完整发布授权需包含 GitHub Release：先生成最终 DMG/SHA256 和本地 appcast，再由发布脚本通过本机 gh 上传、回读校验并公开附件，最后发布官网 appcast；不使用 GitHub Actions，也不再向阿里云上传 DMG/SHA256。

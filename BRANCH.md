@@ -6,7 +6,7 @@
 >
 > 操作规范：[`docs/5-规范/Git-分支与Worktree规范.md`](docs/5-规范/Git-分支与Worktree规范.md)
 >
-> 最后核对：2026-11-19
+> 最后核对：2026-11-21
 
 ## 登记说明
 
@@ -111,6 +111,8 @@ worktree 干净且无独有本地数据，以非强制方式删除后端专项 w
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
+| `codex/knowledge-profile` | 已合入本地 `dev` 并删除 `../Starcat-knowledge-profile` 和本地分支。 | 2026-11-21 按 dong4j 授权，专项分支头 `9690682d` 经 `e9af0e3f` 合入，包含 #210 的个人知识画像、洞察双栏布局和年报共享统计。151 项定向测试和双渠道 Debug 构建通过。确认独有提交为 0、专项 worktree 干净、Secrets 与主工作区一致后，经 `git worktree remove` 和 `git branch -d` 清理。后续在主工作区 `dev` 开发。 |
+| `codex/tag-cooccurrence-graph` | 已合入本地 `dev` 并删除专项 worktree 和本地分支。 | 2026-11-21 按 dong4j 授权，分支头 `916fb3e1` 的 35 个专项提交经 `662ec862` 合入 `dev`。确认独有提交为 0、专项 worktree 干净、本机配置与主工作区一致后，通过 `git worktree remove` 和 `git branch -d` 清理。标签与仓库归属图（HOM-242 / #211）后续在主工作区 `dev` 继续验收。 |
 | 五仓 `codex/cli-browser-access` | 已删除五组本地分支及 worktree。 | 2026-11-16 按 dong4j 授权，主仓分支头 `22bda9c7` 经 `8eea1a1b` 合入 `dev`；CLI、Skill、Chrome、Safari 分别快进至 `2a0ba9f`、`3aed05b`、`8ec2484`、`4808117`。整合回归 374 项、24 Suite，CLI/Skill 与 96 项浏览器控制流检查通过。删除前逐仓确认分支为 `dev` 祖先、独有提交 0、`git cherry` 与三点 diff 为空、专项 worktree 干净；Secrets 与主工作区一致，仅有可再生工程/构建产物，CLI 已在主工作区重建，无旧工作区运行程序或已安装浏览器宿主引用。先支持仓、后主仓，以非强制 `git worktree remove` 与 `git branch -d` 清理。主工作区双渠道构建和最终复核见 `docs/4-工程进度/CLI与MCP能力开放专项/2026-11-16-dev合并与worktree清理记录.md`；剩余范围和人工验收继续开放，未操作远端。 |
 | `codex/list-detail-motion` | 已删除本地分支及 worktree。 | 2026-11-16 按 dong4j 授权，分支头 `a0db1dd9` 的专题实现、七项性能修复和独立洞察图标经 `fd3c66b7` 合入本地 `dev`；冲突处理保留推荐与 Issues 的后续修复。145 项、9 个 Suite 集成回归及双渠道构建与产物校验通过。删除前确认分支为 `dev` 祖先、独有提交为 0、`git cherry` 与三点 diff 为空、worktree 干净且 Secrets 配置与主工作区一致；忽略文件仅为该配置及可再生工程、构建产物，无该 worktree 中运行的程序。已通过非强制 `git worktree remove` 与 `git branch -d` 清理；未操作远端，专题人工视觉与实机性能验收仍开放。 |
 | `codex/daily-recommendation-cards` | 已删除本地分支及 worktree。 | 2026-11-15 集成提交 `5ffd0547` 经 `d059f933` 合入本地 `dev`，包含每日推荐卡片、历史、真实来源依据及 Pro 理由；199 项定向测试、17 个测试套件与双渠道构建通过。dong4j 授权清理前确认分支是 `dev` 祖先、独有提交为 0、`git cherry` 与三点 diff 为空，worktree 干净且 Secrets 配置与主工作区一致；先清理嵌套推荐后端 worktree，再以非强制方式删除 App worktree 和分支。未操作远端，界面与真实 LLM 验收及动效推广另行处理。 |

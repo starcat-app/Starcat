@@ -60,11 +60,19 @@ private struct DiscoveryScaffoldShell: View {
     @State private var displayedSupplementalHeader: AnyView?
     @State private var isContentVisible = false
 
+    private struct MetadataLoadKey: Equatable {
+        let requestID: UUID?
+        let scope: RepoDetailDatabaseScope
+    }
+
     private var contentAnimation: Animation {
         .easeOut(duration: reduceMotion ? 0.06 : 0.12)
     }
 
     var body: some View {
+        let metadataKey = MetadataLoadKey(
+            requestID: presentation.metadataRequestID, scope: RepoDetailDatabaseScope(dependencies)
+        )
         Group {
             if let displayRepo = presentation.repo, let readmeVM {
                 scaffold(for: displayRepo, readmeVM: readmeVM)
@@ -94,15 +102,17 @@ private struct DiscoveryScaffoldShell: View {
         }
         // 资料补齐是独立任务：快照、README 和入场动效均已就绪，网络等待只影响缺失字段。
         // 重试更换请求身份，SwiftUI 会取消上一任务；宿主和 WebView 始终保持原有身份。
-        .task(id: presentation.metadataRequestID) {
-            guard let requestID = presentation.metadataRequestID,
+        .task(id: metadataKey) {
+            guard metadataKey.scope.isReady, let requestID = metadataKey.requestID,
                   let repo = presentation.repo else { return }
-            let revision = dependencies.databaseScopeRevision
             await presentation.resolveMetadata(requestID: requestID, registry: dependencies.starredRegistry) {
                 try await PublicRepoMetadataResolver.resolve(
                     owner: repo.owner, name: repo.name,
                     repository: dependencies.repoRepository, apiClient: dependencies.apiClient,
-                    isCurrent: { dependencies.databaseScopeRevision == revision }
+                    isCurrent: {
+                        RepoDetailDatabaseScope(dependencies) == metadataKey.scope
+                            && presentation.metadataRequestID == requestID
+                    }
                 )
             }
         }
@@ -121,7 +131,8 @@ private struct DiscoveryScaffoldShell: View {
                 hero: RepoDetailHero(repo: repo),
                 trailingActions: trailingActions(for: repo),
                 translation: repo.id != 0 ? ReadmeTranslationContext(fullName: repo.fullName) : nil,
-                backendHint: nil
+                backendHint: nil,
+                loadsMissingSubscriberCount: !requiresCompleteMetadata
             ),
             starHelpKey: repo.isStarred ? "repo.unstar" : "repo.star",
             onStarTapped: { cleanupScope in

@@ -25,6 +25,7 @@ import SwiftUI
 struct ImagePasteTextEditor: NSViewRepresentable {
     @Binding var text: String
     let placeholder: String
+    let font: NSFont
     var isEditable: Bool = true
     let maximumHeight: CGFloat
     var shouldBecomeFirstResponder: Bool = false
@@ -49,7 +50,7 @@ struct ImagePasteTextEditor: NSViewRepresentable {
         textView.importsGraphics = false
         textView.allowsUndo = true
         textView.drawsBackground = false
-        textView.font = .systemFont(ofSize: NSFont.systemFontSize)
+        MarkdownTypography.applyEditorFont(font, to: textView)
         textView.textColor = .labelColor
         textView.insertionPointColor = .labelColor
         textView.isAutomaticQuoteSubstitutionEnabled = false
@@ -84,6 +85,7 @@ struct ImagePasteTextEditor: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
         guard let textView = scrollView.documentView as? ImagePasteTextView else { return }
+        let fontChanged = MarkdownTypography.applyEditorFont(font, to: textView)
         if let measuringScroll = scrollView as? ImagePasteMeasuringScrollView {
             measuringScroll.onMeasuredHeight = { [coordinator = context.coordinator] height in
                 coordinator.parent.onHeightChange(height)
@@ -96,6 +98,10 @@ struct ImagePasteTextEditor: NSViewRepresentable {
         textView.onPasteImageError = context.coordinator.parent.onPasteImageError
         textView.isEditable = isEditable
         textView.isSelectable = true
+        if fontChanged {
+            // 字号变化会改变换行与占位文字；异步回传测高，避免在 representable 更新栈写 State。
+            DispatchQueue.main.async { context.coordinator.reportHeight(for: textView) }
+        }
         if textView.string != text {
             textView.string = text
             textView.needsDisplay = true
@@ -258,7 +264,7 @@ final class ImagePasteTextView: NSTextView {
         placeholder.draw(
             at: NSPoint(x: textContainerInset.width, y: textContainerInset.height),
             withAttributes: [
-                .font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .font: font ?? MarkdownTypography.nativeFont(scale: .standard),
                 .foregroundColor: NSColor.placeholderTextColor
             ]
         )

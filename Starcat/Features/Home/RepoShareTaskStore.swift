@@ -110,8 +110,12 @@ final class RepoShareTaskStore {
     }
 
     /// 公共任务等待同一状态机真实完成；保留缓存回退、取消与防止迟到响应创建链接的约束。
-    func createAndWait(repo: Repo, operations: RepoShareOperations) async throws -> String {
-        start(repo: repo, operations: operations)
+    func createAndWait(
+        repo: Repo,
+        operations: RepoShareOperations,
+        forceRecreate: Bool = false
+    ) async throws -> String {
+        start(repo: repo, operations: operations, reusesCachedShare: !forceRecreate)
         let task = tasks[repo.id]
         let taskID = jobs[repo.id]?.id
         return try await withTaskCancellationHandler {
@@ -134,9 +138,13 @@ final class RepoShareTaskStore {
     }
 
     /// 运行中直接恢复；成功结果再次打开时重查持久记录，允许过期链接重新创建。
-    func start(repo: Repo, operations: RepoShareOperations) {
+    func start(
+        repo: Repo,
+        operations: RepoShareOperations,
+        reusesCachedShare: Bool = true
+    ) {
         guard jobs[repo.id] == nil || jobs[repo.id]?.state.isSuccessful == true else { return }
-        launch(repo: repo, operations: operations)
+        launch(repo: repo, operations: operations, reusesCachedShare: reusesCachedShare)
     }
 
     /// AI 摘要属于账号数据库；切号前必须取消并等待，公开分享链接记录继续保留。
@@ -153,10 +161,18 @@ final class RepoShareTaskStore {
         guard let job = jobs[repoID] else { return }
         switch job.state {
         case .cancelled, .failure:
-            launch(repo: job.repo, operations: operations)
+            launch(repo: job.repo, operations: operations, reusesCachedShare: true)
         case .checkingCache, .generatingSummary, .creatingLink, .success:
             return
         }
+    }
+
+    /// 成功态里的显式重建入口：跳过已有链接，但继续复用摘要缓存规则。
+    ///
+    /// 只允许从成功态触发，避免运行中任务被第二个点击替换；仓库快照仍来自原任务。
+    func recreate(repoID: Int64, operations: RepoShareOperations) {
+        guard let job = jobs[repoID], job.state.isSuccessful else { return }
+        launch(repo: job.repo, operations: operations, reusesCachedShare: false)
     }
 
     /// 取消指定仓库当前正在执行的分享任务。
@@ -170,18 +186,36 @@ final class RepoShareTaskStore {
         task?.cancel()
     }
 
-    private func launch(repo: Repo, operations: RepoShareOperations) {
+    private func launch(
+        repo: Repo,
+        operations: RepoShareOperations,
+        reusesCachedShare: Bool
+    ) {
         let taskID = UUID()
-        jobs[repo.id] = RepoShareJob(id: taskID, repo: repo, state: .checkingCache)
+        jobs[repo.id] = RepoShareJob(
+            id: taskID,
+            repo: repo,
+            state: reusesCachedShare ? .checkingCache : .generatingSummary
+        )
 
         // 先写入 checkingCache，再创建 Task：SwiftUI 下一帧就能展示 Sheet，不会等待任何 IO。
         tasks[repo.id] = Task { @MainActor [weak self] in
             guard let self else { return }
-            await self.execute(repo: repo, taskID: taskID, operations: operations)
+            await self.execute(
+                repo: repo,
+                taskID: taskID,
+                operations: operations,
+                reusesCachedShare: reusesCachedShare
+            )
         }
     }
 
-    private func execute(repo: Repo, taskID: UUID, operations: RepoShareOperations) async {
+    private func execute(
+        repo: Repo,
+        taskID: UUID,
+        operations: RepoShareOperations,
+        reusesCachedShare: Bool
+    ) async {
         defer {
             // 只有当前任务可以清理自己的句柄；晚到的旧任务不能清掉重试任务。
             if jobs[repo.id]?.id == taskID {
@@ -190,7 +224,8 @@ final class RepoShareTaskStore {
         }
 
         do {
-            if let existing = await operations.cachedShare(repo) {
+            if reusesCachedShare,
+               let existing = await operations.cachedShare(repo) {
                 try Task.checkCancellation()
                 finish(repo: repo, taskID: taskID, state: .success(existing.shareUrl), outcome: .success)
                 return
@@ -286,12 +321,23 @@ final class RepoShareTaskStore {
 
 extension AppDependencies {
     /// UI 和公共接口从同一处装配分享用例，避免缓存/生成选择与 API 版本逐渐分叉。
-    func makeRepoShareOperations() -> RepoShareOperations {
-        RepoShareOperations(
-            cachedShare: { await self.shareAPI.cachedRepoShare(fullName: $0.fullName) },
+    ///
+    /// `reusesCachedShare == false` 供分享窗口的显式重建按钮使用；普通打开和公共调用
+    /// 保持默认复用，不能因为入口不同而出现两套摘要或发布语义。
+    func makeRepoShareOperations(reusesCachedShare: Bool = true) -> RepoShareOperations {
+        if reusesCachedShare {
+            return RepoShareOperations(
+                cachedShare: { await self.shareAPI.cachedRepoShare(fullName: $0.fullName) },
+                cachedInsight: { try await self.repoAIInsightService.cachedInsightFast(for: $0) },
+                generateInsight: { (try await self.repoAIInsightService.generateInsight(for: $0)).insight },
+                createShare: { try await self.shareAPI.shareRepo(request: $0) }
+            )
+        }
+        return RepoShareOperations(
+            cachedShare: { _ in nil },
             cachedInsight: { try await self.repoAIInsightService.cachedInsightFast(for: $0) },
             generateInsight: { (try await self.repoAIInsightService.generateInsight(for: $0)).insight },
-            createShare: { try await self.shareAPI.shareRepo(request: $0) }
+            createShare: { try await self.shareAPI.recreateRepoShare(request: $0) }
         )
     }
 }

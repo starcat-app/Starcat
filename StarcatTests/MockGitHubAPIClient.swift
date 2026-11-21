@@ -371,7 +371,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
         return try await handler(owner, repo, perPage)
     }
 
-    func repo(owner: String, repo: String) async throws -> GitHubRepoDTO {
+    func repo(owner: String, repo: String, forceRefresh: Bool) async throws -> GitHubRepoDTO {
         guard let handler = repoHandler else {
             fatalError("MockGitHubAPIClient.repoHandler 未设置")
         }

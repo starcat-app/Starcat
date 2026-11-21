@@ -1,0 +1,4 @@
+interface:
+  display_name: "Starcat 版本迭代"
+  short_description: "启动前检查全工作区、确认版本范围并持续维护交付清单与日志素材"
+  default_prompt: "使用 $starcat-version-iteration 开始 Starcat 指定版本迭代，先检查工作区并收集功能，再经确认初始化全部参与仓库的版本分支与 Checklist。"

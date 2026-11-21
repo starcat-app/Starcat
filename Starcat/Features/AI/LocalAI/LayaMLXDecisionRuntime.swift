@@ -4,9 +4,8 @@
 //
 //  Laya Multilingual checkpoint 的进程内 MLX Swift runtime。
 //
-//  当前产品只需要 Noul（false/true）决策：同一仓库的候选 List / 标签按最多 16 个
-//  问题组成 batch，一次 forward 返回概率，不做 token-by-token decode。模型、tokenizer
-//  与 MLXArray 全部留在 actor 内，避免并发业务把非 Sendable 图状态泄漏出去。
+//  文本题型按最多 16 个问题组成 batch，一次 forward 返回各题的 marker logits。
+//  模型、tokenizer 与 MLXArray 留在 actor 内，非 Sendable 图状态不会越过并发边界。
 //
 
 
@@ -52,13 +51,98 @@ enum LayaMLXPrecision: Sendable {
     }
 }
 
-/// Noul 的公开结果。`trueProbability` 与 `confidence` 按 laya-mlx 规则保留四位小数。
-struct LayaNoulPrediction: Equatable, Sendable {
-    let decision: Bool
-    let trueProbability: Double
-    let confidence: Double
+/// 在 checkpoint 对拍中保留未校准 logits，公共调用只返回协议答案和 token 用量。
+struct LayaPrediction: Sendable {
+    let answer: DecisionAnswer
     let logits: [Float]
     let inputTokenCount: Int
+}
+
+/// 文本选项的排列同时决定 marker、logit 和响应键之间的映射。
+struct LayaTextQuestion: Sendable {
+    enum Kind: Int32, Sendable {
+        // 此顺序来自 checkpoint 的 type_embedding 权重。
+        case choice = 0, score = 1, noul = 2
+
+        var name: String {
+            switch self {
+            case .choice: "choice"
+            case .score: "score"
+            case .noul: "noul"
+            }
+        }
+    }
+
+    let kind: Kind
+    let instructions: String
+    let options: [String]
+    let keys: [String]
+    var levels: [AgentJSONValue] = []
+
+    init(_ question: DecisionQuestion, legacyNoul: Bool = false) throws {
+        let instructions = question.instructions?.decisionText ?? ""
+        switch (question.type, question.criteria) {
+        case (.noul, _):
+            let criteria = legacyNoul ? nil : question.criteria?.objectValue
+            let negative = criteria?["false"].flatMap(Self.description) ?? "no, the statement does not hold"
+            let positive = criteria?["true"].flatMap(Self.description) ?? "yes, the statement holds"
+            kind = .noul
+            self.instructions = legacyNoul ? question.legacyNoulPrompt : instructions
+            keys = ["false", "true"]
+            options = ["false: \(negative)", "true: \(positive)"]
+        case (.choice, .object(let choices)) where !choices.isEmpty:
+            let names = choices.keys.sorted()
+            kind = .choice
+            self.instructions = instructions
+            keys = names
+            options = names.map { name in
+                choices[name].flatMap(Self.description).map { "\(name): \($0)" } ?? name
+            }
+        case (.score, .array(let criteria)) where !criteria.isEmpty:
+            kind = .score
+            self.instructions = instructions
+            levels = criteria
+            keys = criteria.indices.map(String.init)
+            options = criteria.enumerated().map { "level \($0.offset): \($0.element.decisionText)" }
+        default:
+            throw DecisionInputError("Invalid or unsupported Laya question; expected noul, choice or score")
+        }
+    }
+
+    private static func description(_ value: AgentJSONValue) -> String? {
+        guard value != .null, value != .string("") else { return nil }
+        return value.decisionText
+    }
+
+    /// 对齐 Laya 的 softmax 和熵置信度。评分以未舍入的分布计算零基期望值。
+    func answer(logits: [Float], temperature: Double) throws -> DecisionAnswer {
+        guard logits.count == keys.count, logits.allSatisfy(\.isFinite),
+              let maximum = logits.max(), let winner = logits.firstIndex(of: maximum)
+        else {
+            throw LayaMLXDecisionError.invalidOutput("Unexpected \(kind.name) logits")
+        }
+        let masses = logits.map { exp((Double($0) - Double(maximum)) / temperature) }
+        let total = masses.reduce(0, +)
+        let probabilities = masses.map { $0 / total }
+        func rounded(_ value: Double) -> Double { (value * 10_000).rounded() / 10_000 }
+        let distribution = Dictionary(uniqueKeysWithValues: zip(keys, probabilities.map(rounded)))
+        let entropy = probabilities.reduce(0) { $0 - $1 * log(max($1, 1e-12)) }
+        let certainty = keys.count == 1 ? 1 : 1 - entropy / log(Double(keys.count))
+        let confidence = rounded(min(1, max(0, certainty)))
+        switch kind {
+        case .choice:
+            return DecisionAnswer(type: kind.name, choice: keys[winner], confidence: confidence, probabilities: distribution)
+        case .score:
+            let expected = probabilities.enumerated().reduce(0) { $0 + Double($1.offset) * $1.element }
+            let legend = Dictionary(uniqueKeysWithValues: zip(keys, levels))
+            return DecisionAnswer(
+                type: kind.name, score: rounded(expected), confidence: confidence,
+                probabilities: distribution, legend: .object(legend)
+            )
+        case .noul:
+            return DecisionAnswer(type: kind.name, noul: rounded(probabilities[1]))
+        }
+    }
 }
 
 /// prompt builder 只依赖这一小段 tokenizer 能力，常规单测无需加载 644 MB 权重。
@@ -86,37 +170,34 @@ private struct LayaTokenizerAdapter: LayaTokenizing {
     }
 }
 
-/// 单条 Noul 输入的 CPU 表示，marker 顺序恒为 `[false, true]`。
-struct LayaPreparedNoulInput: Equatable, Sendable {
+/// 单题的 CPU 表示，marker 次序与该题的 options 一致。
+struct LayaPreparedInput: Equatable, Sendable {
     let tokenIDs: [Int]
     let markerPositions: [Int]
 }
 
-/// 逐 token 复刻 laya-mlx 的 Noul prompt 和截断规则。
-struct LayaNoulPromptBuilder: Sendable {
+/// 保留 checkpoint 的顺序 marker 布局和截断规则。
+struct LayaPromptBuilder: Sendable {
     let maximumLength: Int
     let headMaximumLength: Int
 
-    /// 格式：`[CLS] noul question... [SEP] [MASK] false... [MASK] true... [SEP] state [SEP]`。
+    /// 格式：`[CLS] <type> question... [SEP] [MASK] opt0... [MASK] opt1... [SEP] state [SEP]`。
     func build(
         state: String,
-        instructions: String,
+        question: LayaTextQuestion,
         tokenizer: any LayaTokenizing
-    ) throws -> LayaPreparedNoulInput {
-        let options = [
-            "false: no, the statement does not hold",
-            "true: yes, the statement holds",
-        ]
-        let sanitizedInstructions = instructions.replacingOccurrences(
+    ) throws -> LayaPreparedInput {
+        let sanitizedInstructions = question.instructions.replacingOccurrences(
             of: tokenizer.maskToken,
             with: " "
         )
         var headIDs = tokenizer.encodeWithoutSpecialTokens(
-            "noul question: \(sanitizedInstructions)"
+            "\(question.kind.name) question: \(sanitizedInstructions)"
         )
-        var optionIDs = options.map { option in
-            [tokenizer.maskTokenID]
-                + tokenizer.encodeWithoutSpecialTokens(" \(option)").prefix(48)
+        var optionIDs = question.options.map { option in
+            let sanitized = option.replacingOccurrences(of: tokenizer.maskToken, with: " ")
+            return [tokenizer.maskTokenID]
+                + tokenizer.encodeWithoutSpecialTokens(" \(sanitized)").prefix(48)
         }
 
         var optionBudget = headMaximumLength - optionIDs.reduce(0) { $0 + $1.count }
@@ -135,20 +216,15 @@ struct LayaNoulPromptBuilder: Sendable {
         }
         tokenIDs.append(tokenizer.separatorTokenID)
 
-        let room = max(0, maximumLength - tokenIDs.count - 1)
+        guard tokenIDs.count < maximumLength else {
+            throw DecisionInputError("The question has too many options for the selected Laya model")
+        }
+        let room = maximumLength - tokenIDs.count - 1
         let sanitizedState = state.replacingOccurrences(of: tokenizer.maskToken, with: " ")
         let stateIDs = tokenizer.encodeWithoutSpecialTokens(sanitizedState)
         tokenIDs.append(contentsOf: stateIDs.prefix(room))
         tokenIDs.append(tokenizer.separatorTokenID)
-        tokenIDs = Array(tokenIDs.prefix(maximumLength))
-        markers = markers.filter { $0 < maximumLength }
-
-        guard markers.count == options.count else {
-            throw LayaMLXDecisionError.invalidConfiguration(
-                "head_max_len 无法容纳固定的 false/true marker"
-            )
-        }
-        return LayaPreparedNoulInput(tokenIDs: tokenIDs, markerPositions: markers)
+        return LayaPreparedInput(tokenIDs: tokenIDs, markerPositions: markers)
     }
 }
 
@@ -162,8 +238,8 @@ actor LayaMLXDecisionRuntime {
 
     private var model: LayaMLXDecisionModel?
     private var tokenizer: (any LayaTokenizing)?
-    private var promptBuilder: LayaNoulPromptBuilder?
-    private var calibrationTemperature: Double?
+    private var promptBuilder: LayaPromptBuilder?
+    private var calibration: LayaTemperatureCalibration?
 
     private init(modelDirectory: URL, precision: LayaMLXPrecision) {
         self.modelDirectory = modelDirectory
@@ -183,51 +259,38 @@ actor LayaMLXDecisionRuntime {
         return runtime
     }
 
-    /// 对一个 statement 执行 Noul 判断，不做生成式 decode。
-    func predictNoul(state: String, instructions: String) throws -> LayaNoulPrediction {
-        let key = "single"
-        let results = try predictNoulBatch(
-            state: state,
-            questions: [key: instructions]
-        )
-        guard let result = results[key] else {
-            throw LayaMLXDecisionError.invalidOutput("单条 Noul batch 缺少返回值")
-        }
-        return result
-    }
-
-    /// 对共享 state 的多条 Noul 问题分块推理。
+    /// 对共享 state 的混合题型分块推理。
     ///
     /// Dictionary 先按 question id 排序，保证 batch 编排稳定；返回仍以 id 为键，
     /// 调用方不依赖模型输出顺序。每个 chunk 独立 padding，避免 150 个标签被最长输入
     /// 拖成一个超大张量。
-    func predictNoulBatch(
+    func predictBatch(
         state: String,
-        questions: [String: String],
-        batchSize requestedBatchSize: Int = maximumBatchSize
-    ) throws -> [String: LayaNoulPrediction] {
+        questions: [String: LayaTextQuestion]
+    ) throws -> [String: LayaPrediction] {
         guard
             let model,
             let tokenizer,
             let promptBuilder,
-            let calibrationTemperature
+            let calibration
         else {
             throw LayaMLXDecisionError.runtimeNotLoaded
         }
         guard !questions.isEmpty else { return [:] }
 
-        let batchSize = min(max(1, requestedBatchSize), Self.maximumBatchSize)
+        let batchSize = Self.maximumBatchSize
         let ordered = try questions.sorted { $0.key < $1.key }.map { question in
             (
                 id: question.key,
+                question: question.value,
                 input: try promptBuilder.build(
                     state: state,
-                    instructions: question.value,
+                    question: question.value,
                     tokenizer: tokenizer
                 )
             )
         }
-        var predictions: [String: LayaNoulPrediction] = [:]
+        var predictions: [String: LayaPrediction] = [:]
         predictions.reserveCapacity(ordered.count)
 
         for start in stride(from: 0, to: ordered.count, by: batchSize) {
@@ -235,13 +298,15 @@ actor LayaMLXDecisionRuntime {
             let end = min(start + batchSize, ordered.count)
             let chunk = Array(ordered[start..<end])
             let paddedLength = chunk.map { $0.input.tokenIDs.count }.max() ?? 0
+            let paddedMarkers = chunk.map { $0.input.markerPositions.count }.max() ?? 0
 
             var flatTokenIDs: [Int32] = []
             var flatAttentionMask: [Bool] = []
             var flatMarkerPositions: [Int32] = []
+            var flatMarkerMask: [Bool] = []
             flatTokenIDs.reserveCapacity(chunk.count * paddedLength)
             flatAttentionMask.reserveCapacity(chunk.count * paddedLength)
-            flatMarkerPositions.reserveCapacity(chunk.count * 2)
+            flatMarkerPositions.reserveCapacity(chunk.count * paddedMarkers)
 
             for item in chunk {
                 let inputLength = item.input.tokenIDs.count
@@ -255,25 +320,34 @@ actor LayaMLXDecisionRuntime {
                     false,
                     count: paddedLength - inputLength
                 ))
+                let count = item.input.markerPositions.count
                 flatMarkerPositions.append(contentsOf: item.input.markerPositions.map(Int32.init))
+                // Gather 安全位置以补齐张量。解码仅取本题真实 marker，填充值不参与归一化。
+                flatMarkerPositions.append(contentsOf: repeatElement(0, count: paddedMarkers - count))
+                flatMarkerMask.append(contentsOf: repeatElement(true, count: count))
+                flatMarkerMask.append(contentsOf: repeatElement(false, count: paddedMarkers - count))
             }
 
-            let output = model.noulLogits(
+            let output = model.optionLogits(
                 tokenIDs: MLXArray(flatTokenIDs).reshaped(chunk.count, paddedLength),
                 attentionMask: MLXArray(flatAttentionMask).reshaped(chunk.count, paddedLength),
-                markerPositions: MLXArray(flatMarkerPositions).reshaped(chunk.count, 2),
-                markerMask: MLXArray(
-                    [Bool](repeating: true, count: chunk.count * 2)
-                ).reshaped(chunk.count, 2)
+                questionTypes: MLXArray(chunk.map { $0.question.kind.rawValue }),
+                markerPositions: MLXArray(flatMarkerPositions).reshaped(chunk.count, paddedMarkers),
+                markerMask: MLXArray(flatMarkerMask).reshaped(chunk.count, paddedMarkers)
             )
             eval(output)
 
             for (index, item) in chunk.enumerated() {
-                let logits = output[index].asArray(Float.self)
-                predictions[item.id] = try Self.makePrediction(
+                let count = item.input.markerPositions.count
+                let logits = Array(output[index].asArray(Float.self).prefix(count))
+                let answer = try item.question.answer(
                     logits: logits,
-                    inputTokenCount: item.input.tokenIDs.count,
-                    calibrationTemperature: calibrationTemperature
+                    temperature: calibration.temperature(kind: item.question.kind, count: count)
+                )
+                predictions[item.id] = LayaPrediction(
+                    answer: answer,
+                    logits: logits,
+                    inputTokenCount: item.input.tokenIDs.count
                 )
             }
         }
@@ -319,11 +393,11 @@ actor LayaMLXDecisionRuntime {
 
         self.model = model
         self.tokenizer = tokenizer
-        promptBuilder = LayaNoulPromptBuilder(
+        promptBuilder = LayaPromptBuilder(
             maximumLength: agentConfiguration.maximumLength,
             headMaximumLength: agentConfiguration.headMaximumLength
         )
-        calibrationTemperature = agentConfiguration.noulTemperature
+        calibration = agentConfiguration.calibration
     }
 
     private static func decode<Value: Decodable>(
@@ -333,35 +407,6 @@ actor LayaMLXDecisionRuntime {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(type, from: Data(contentsOf: url))
-    }
-
-    private static func roundedToFourPlaces(_ value: Double) -> Double {
-        (value * 10_000).rounded() / 10_000
-    }
-
-    private static func makePrediction(
-        logits: [Float],
-        inputTokenCount: Int,
-        calibrationTemperature: Double
-    ) throws -> LayaNoulPrediction {
-        guard logits.count == 2, logits.allSatisfy(\.isFinite) else {
-            throw LayaMLXDecisionError.invalidOutput(
-                "Noul 应返回两个有限 logits，实际为 \(logits)"
-            )
-        }
-        let scaledFalse = Double(logits[0]) / calibrationTemperature
-        let scaledTrue = Double(logits[1]) / calibrationTemperature
-        let maximum = max(scaledFalse, scaledTrue)
-        let falseMass = exp(scaledFalse - maximum)
-        let trueMass = exp(scaledTrue - maximum)
-        let trueProbability = trueMass / (falseMass + trueMass)
-        return LayaNoulPrediction(
-            decision: trueProbability >= 0.5,
-            trueProbability: roundedToFourPlaces(trueProbability),
-            confidence: roundedToFourPlaces(max(trueProbability, 1 - trueProbability)),
-            logits: logits,
-            inputTokenCount: inputTokenCount
-        )
     }
 }
 
@@ -535,7 +580,7 @@ private struct EncoderConfigurationFile: Decodable {
     }
 }
 
-/// rl_agent_config.json 的读取模型；当前只消费构网、长度和 Noul calibration 字段。
+/// rl_agent_config.json 的读取模型；只消费构网、长度和温度校准字段。
 private struct AgentConfigurationFile: Decodable {
     let encoder: String?
     let headLayers: Int?
@@ -574,15 +619,12 @@ private struct AgentConfigurationFile: Decodable {
                 "calibration temperature 必须包含三个有限正数"
             )
         }
-        // 与社区 runtime 一致，把过度 sharpening/softening 限制在可信区间。
-        let rawNoulTemperature = optionTemperatures["noul:2"] ?? temperatures[2]
-        let noulTemperature = min(5, max(0.5, rawNoulTemperature))
         return ValidatedAgentConfiguration(
             headLayerCount: headLayers,
             maximumLength: maximumLength,
             headMaximumLength: headMaximumLength,
             actionCostCount: actCosts?.count ?? 0,
-            noulTemperature: noulTemperature
+            calibration: LayaTemperatureCalibration(base: temperatures, byOptions: optionTemperatures)
         )
     }
 }
@@ -592,7 +634,24 @@ private struct ValidatedAgentConfiguration: Sendable {
     let maximumLength: Int
     let headMaximumLength: Int
     let actionCostCount: Int
-    let noulTemperature: Double
+    let calibration: LayaTemperatureCalibration
+}
+
+/// checkpoint 优先按题型与选项数量校准，其次使用该题型的通用温度。
+struct LayaTemperatureCalibration: Sendable {
+    let base: [Double]
+    let byOptions: [String: Double]
+
+    func temperature(kind: LayaTextQuestion.Kind, count: Int) -> Double {
+        let bucket: String = switch count {
+        case ...2: "2"
+        case 3...5: "3-5"
+        case 6...10: "6-10"
+        default: "11+"
+        }
+        let raw = byOptions["\(kind.name):\(bucket)"] ?? base[Int(kind.rawValue)]
+        return min(5, max(0.5, raw))
+    }
 }
 
 /// tokenizer_config 的特殊 token 既可能是字符串，也可能是 `{ "content": ... }`。

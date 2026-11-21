@@ -45,7 +45,7 @@ struct ReleaseWorkspaceTests {
         #expect(builds.filter(ReleaseArtifactFilter(platform: .windows, architecture: .intel).matches).isEmpty)
     }
 
-    @Test("跨页深链只消费一次，搜索和未读筛选均同步详情与可见选择")
+    @Test("跨页深链只消费一次，历史已读版本与其他版本都可搜索和定位")
     @MainActor func selectionAndPaging() async throws {
         let database = try InMemoryDatabaseManager()
         let repository = GRDBReleaseRepository(database: database)
@@ -59,6 +59,7 @@ struct ReleaseWorkspaceTests {
                                  publishedAt: date, isRead: false, fetchedAt: date)
         }
         try await repository.upsertMany(records, isReadDefault: false)
+        try await repository.markRead(releaseId: 2, isRead: true)
         let model = ReleaseTimelineViewModel(repository: repository, poll: {})
         model.locate(1)
         await model.reload()
@@ -74,12 +75,10 @@ struct ReleaseWorkspaceTests {
         #expect(model.selection == nil)
         model.locate(2)
         #expect(model.search.isEmpty && model.selectedID == 2)
-        model.unreadOnly = true
-        let entry = try #require(model.selection)
-        await model.toggleRead(entry)
-        #expect(model.unreadCount == 24 && model.selectedID != 2)
-        await model.markAllRead()
-        #expect(model.selection == nil && model.unreadCount == 0)
+        #expect(model.selection?.release.isRead == true)
+        model.search = "Build 2"
+        #expect(model.visibleEntries.contains { $0.id == 2 })
+        #expect(model.selectedID == 2)
     }
 
     @Test("下载失败可重试，完成保存真实路径，重新保存取消后不丢 Finder 位置")
@@ -98,5 +97,31 @@ struct ReleaseWorkspaceTests {
         await downloads.start(file)
         await Task.yield()
         #expect(downloads.states[file.id] == .saved(destination))
+    }
+
+    @Test("停止当前下载后可原位重试，取消不会弹错误提示")
+    @MainActor func cancelAndRetry() async {
+        let file = asset("app.zip")
+        let destination = URL(fileURLWithPath: "/tmp/app.zip")
+        let (starts, signal) = AsyncStream<Void>.makeStream()
+        var attempts = 0
+        let downloads = ReleaseWorkspaceDownloads { _, _ in
+            attempts += 1
+            guard attempts == 1 else { return .saved(destination) }
+            signal.yield(())
+            do {
+                try await Task.sleep(for: .seconds(3))
+                return .failed(message: "transfer was not cancelled")
+            } catch { return .cancelled }
+        }
+        let first = Task { await downloads.start(file) }
+        var iterator = starts.makeAsyncIterator()
+        _ = await iterator.next()
+        downloads.cancel(file.id)
+        #expect(downloads.states[file.id] == .cancelling)
+        await first.value
+        #expect(downloads.states[file.id] == nil && downloads.message == nil)
+        await downloads.start(file)
+        #expect(attempts == 2 && downloads.states[file.id] == .saved(destination))
     }
 }

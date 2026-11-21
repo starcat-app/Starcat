@@ -633,7 +633,7 @@ struct AgentWorkspaceRunSurface: View {
     }
 
     private var composerNSFont: NSFont {
-        NSFont.systemFont(ofSize: interfaceScale.scaled(StarcatTypography.body.pointSize))
+        MarkdownTypography.nativeFont(scale: interfaceScale, adjustment: dependencies.settings.readmeFontSizeAdjustment)
     }
 
     private var composerMinimumHeight: CGFloat {

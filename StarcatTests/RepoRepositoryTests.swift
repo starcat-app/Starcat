@@ -972,7 +972,7 @@ struct RepoRepositoryTests {
                 """)
         }
 
-        func routeFilters(_ action: InsightsSelection) throws -> RepoListFilters {
+        func routeFilters(_ action: InsightsActionID) throws -> RepoListFilters {
             let route = try #require(
                 InsightsDrillDownRouter.route(
                     scope: .knowledge,

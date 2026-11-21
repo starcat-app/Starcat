@@ -1,0 +1,66 @@
+# Markdown 字号与渲染规范
+
+> 生效：2026-11-19；适用于 App 内 Markdown 阅读、预览、内容撰写及 AI 流式正文。实现清单见 [Markdown 阅读统一专项](../4-工程进度/Markdown阅读统一专项/Checklist.md)。
+
+## 字号的单一来源
+
+Markdown 正文基准由 `MarkdownTypography.BodyBaseline` 定义。仓库详情 Skills、主窗口 README 及其他常规内容使用 **16 pt**，仓库笔记和仓库 AI 助手使用 **14 pt**。
+
+字号按 `（正文基准 + AppSettings.readmeFontSizeAdjustment）× InterfaceScale.multiplier` 统一计算，沿用现有偏好键及 -2…4 的阅读微调范围。
+
+| 内容 | 相对正文的字号 |
+| --- | --- |
+| 正文、列表、引用、表格 | 1.00 |
+| H1 / H2 / H3 | 1.80 / 1.45 / 1.20 |
+| H4 / H5 / H6 | 1.00 / 0.90 / 0.85 |
+| 行内代码 | 0.85，等宽 |
+| fenced 代码块 | 1.00，等宽 |
+
+规则由 `MarkdownTypography` 提供；MarkdownUI 使用 `starcatMarkdownStyle()` 或共享主题构造方法，WebView 使用同一数值生成 CSS。禁止在业务视图散写正文 12/13/14/15/16、独立标题字号或额外倍率。窗口标题、时间、工具栏、代码语言标签、运行状态等原生 UI 不属于 Markdown 正文，继续遵守 `DESIGN.md`。
+
+WebView 的 CSS px 与 MarkdownUI 的原生 point 采用相同逻辑数值；不要套用网页 CSS pt 的换算。两种引擎可能存在字形栅格化及小数取整差异，不要求物理像素逐点相同。设置档位只缩放一次，不叠加 `dynamicTypeSize` 再缩放显式字号。
+
+## 渲染器选择
+
+| 内容形态 | 默认选择 | 约束 |
+| --- | --- | --- |
+| 单篇文档、独立阅读区域 | 复用 `ReadmeWebView` | README、仓库 Skills、下载文件预览、独立 Skill 管理概览、Releases 正文 |
+| 原生卡片内的短文或多条会话 | MarkdownUI | Issues 正文与评论、回复及新增预览、AI 摘要、笔记预览 |
+| AI 流式回答及生成中的草稿 | 现有 MarkdownUI / 稳定块与纯文本尾部 | 冻结块、增长尾部、完成态采用同一阅读字号，不增加全文高频解析 |
+| RAG / Agent 正文与证据阅读 | 保留现有 MarkdownUI | 保留引用、表格及代码复制、现有流式与滚动策略 |
+
+新增入口先按内容形态选择；不能以“原生一定快”或“WebView 一定快”代替判断。变更既有入口的渲染方式必须明确范围及原有能力影响。本次只将 Releases 与独立 Skill 管理概览迁移到 WebView，其余入口不因本规范扩大迁移。
+
+## 内容输入与占位提示
+
+控件选择与光标、占位提示的基线对齐同时遵守 [输入框与占位提示规范](UI-输入框与占位提示-规范.md)；同字号不代表同一文字起点，不能用独立 padding/offset 猜测原生编辑器内边距。
+
+笔记、Issue 标题/正文/回复/评论编辑、AI 对话、RAG/Agent 命令、提示词模板和其他多行内容输入，均与对应阅读正文共用字号基准、界面倍率及阅读微调。仓库笔记的编辑、预览和 AI 草稿，以及仓库 AI 助手的摘要、对话和输入框，共用 14 pt 基准。输入文字和空输入提示必须采用同一个字体来源。
+
+- SwiftUI `TextEditor` / 多行 `TextField` 使用 `starcatMarkdownBodyFont()`；独立 overlay placeholder 也必须使用同一 modifier。提示词/XML 等原有等宽设计保留，字号相同。
+- AppKit `NSTextView` 从 `MarkdownTypography.nativeFont` 取得字体；`makeNSView` 和 `updateNSView` 均应用。字体变化时更新现有正文与 typingAttributes、重绘占位提示并重新测高，不能只在创建时设一次字体。
+- 自绘 placeholder 使用编辑器实际 `font`；不得额外使用系统默认字号或 caption。改字号不替换草稿、不重置选择范围、撤销、输入法和发送/粘贴逻辑。
+- 搜索、名称、端口、密钥、数字及其他单行配置表单不属于内容撰写，仍采用界面 typography；盘点时单列其用途与字号，不为凑统一数字强行放大工具栏。
+- 诊断报告的问题描述属于临时表单线索，采用 `StarcatTypography.body`（标准档 13pt）及界面倍率；输入与占位提示一致，不使用 Markdown 字号或 README 阅读微调。此例外不扩展到笔记、Issues、对话及其他内容编辑器。
+
+## WebView 使用约束
+
+- Markdown 在本机转换为 HTML，再交给共享阅读器；不得为展示私有笔记或本机 Skill 增加远程转换。
+- 一个独立阅读区域复用一个 WebView，不为每条评论或聊天消息创建实例；由阅读器负责正文滚动，避免完整滚动容器层层嵌套。
+- 复用右下角字号工具条与回到顶部，沿用其显示、动效、主题和设置联动。
+- 内容、文档身份及资源策略必须一致；异步准备检查取消和请求身份，旧结果不得覆盖当前文档。
+- 保留各来源已有图片及链接访问边界。独立 Skill 管理仍禁止自动读取图片与附件，不因复用通用阅读器放开网络、本机文件或任意 URL。
+- WebView 生命周期保持稳定。阅读字号调整更新 CSS；流式内容若另行授权迁移，必须专门设计增量 DOM 更新，禁止每 token 整页加载。
+
+## MarkdownUI 使用约束
+
+- 必须显式接入共享 Markdown 主题；外层 `.font(.body)` 或 `.font(.system(size:))` 不能替代 MarkdownUI 的 `FontSize`。
+- 已有专用主题可保留颜色、间距、图片 provider、表格及代码复制交互；字号仍从共享规则取得。
+- 保留聊天标题降级语义；相同 Markdown 标题级别采用共享字号比例。
+- 可变流式尾部继续遵守现有文字选择与刷新频率约束，不为统一字号重新实现生成或持久化链路。
+
+## 验证与交付
+
+每个入口核对标准档、四档设置、阅读微调及已打开窗口实时响应。共享测试覆盖倍率、偏移钳制、标题/代码比例；WebView 测试覆盖 CSS 和 Skill 资源限制，保留既有流式及文档身份回归。构建和测试使用 Makefile。
+
+人工界面验收与自动化验证分开记录；未经授权不使用 Computer Use、不打包发布、不改总览和 Changelog。纯阅读字号及渲染展示不新增业务动作，CLI / MCP 暴露评估为不适用。

@@ -184,26 +184,6 @@ struct DiagnosticPipelineTests {
         #expect(sessions.first?.lastPhase == "database")
     }
 
-    @Test("增强复现容量、自动到期及新录制代次互不干扰")
-    func reproductionLimits() async throws {
-        let recording = DiagnosticRecording(byteLimit: 10, lifecycleEvents: false)
-        recording.start(duration: 1)
-        #expect(recording.consume(10))
-        #expect(!recording.consume(1))
-        #expect(recording.expiresAt == nil)
-        recording.start(duration: 1)
-        recording.start(duration: 3)
-        try await Task.sleep(for: .milliseconds(1100))
-        #expect(recording.expiresAt != nil)
-        recording.stop()
-        #expect(recording.expiresAt == nil)
-        let expiry = DiagnosticRecording(lifecycleEvents: false)
-        expiry.start(duration: 1)
-        try await Task.sleep(for: .milliseconds(1100))
-        #expect(expiry.expiresAt == nil)
-        #expect(!expiry.consume(1))
-    }
-
     @Test("不同固定原因和错误类型不会合并为同一故障")
     func aggregationReasons() async throws {
         let directory = root()

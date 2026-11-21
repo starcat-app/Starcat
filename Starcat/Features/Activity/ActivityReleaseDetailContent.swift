@@ -21,6 +21,7 @@ struct ActivityReleaseDetailContent: View {
     let repo: Repo
     let releases: [ReleaseRecord]
     let onScrollReport: (RepoDetailScrollReport) -> Void
+    @Environment(RepoNotesWorkspace.self) private var notesWorkspace: RepoNotesWorkspace?
 
     /// 默认展开最新一条 Release，其余折叠。
     ///
@@ -39,6 +40,25 @@ struct ActivityReleaseDetailContent: View {
     @State private var downloadToastFileURL: URL?
 
     var body: some View {
+        VStack(spacing: 0) {
+            if notesWorkspace != nil {
+                RepoNotesEntry()
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 8)
+                    .background {
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: RepoDetailAIOverlayTopInsetPreference.self,
+                                value: proxy.size.height
+                            )
+                        }
+                    }
+            }
+            timeline
+        }
+    }
+
+    private var timeline: some View {
         ScrollView {
             if releases.isEmpty {
                 emptyState
@@ -199,6 +219,7 @@ struct ActivityReleaseDetailContent: View {
         if let markdown = release.bodyMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines),
            !markdown.isEmpty {
             Markdown(GitHubMarkdownPreparing.prepare(markdown))
+                .starcatMarkdownStyle()
                 .textSelection(.enabled)
                 // 与订阅发布时间线同一套：大截图按详情栏宽度等比缩小，避免被卡片裁切。
                 .fittedGitHubMarkdownImages()

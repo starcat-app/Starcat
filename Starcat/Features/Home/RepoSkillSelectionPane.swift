@@ -73,7 +73,7 @@ struct RepoSkillSelectionPane: View {
                 tint: { $0.tint }
             )
             .padding(12)
-            searchField
+            RepoWorkspaceSearchField(placeholder: "repo.skills.search", text: $search)
                 .padding(.horizontal, 14)
                 .padding(.bottom, 10)
 
@@ -142,24 +142,6 @@ struct RepoSkillSelectionPane: View {
             } catch {
                 if !Task.isCancelled { isFiltering = false }
             }
-        }
-    }
-
-    private var searchField: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .font(interfaceScale.font(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
-            TextField("repo.skills.search", text: $search)
-                .textFieldStyle(.plain)
-                .font(interfaceScale.font(.body))
-        }
-        .padding(.horizontal, 8)
-        .frame(height: 28)
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
         }
     }
 

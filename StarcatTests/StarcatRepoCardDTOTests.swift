@@ -511,7 +511,7 @@ struct StarcatRepoCardDTOTests {
         #expect(repo.openIssuesCount == 12)
     }
 
-    @Test("v8 toEphemeralRepo：DTO 缺 ownerAvatar / defaultBranch → Repo 对应字段 nil；计数字段缺失退化为 0")
+    @Test("v8 toEphemeralRepo：缺失关注者数保持未知")
     func v8EphemeralRepoMissingFieldsFallBack() {
         let dto = StarcatRepoCardDTO(
             ghRepoId: 1,
@@ -522,9 +522,20 @@ struct StarcatRepoCardDTOTests {
         let repo = dto.toEphemeralRepo()
         #expect(repo.ownerAvatar == nil)
         #expect(repo.defaultBranch == nil)
-        // 计数字段 DTO 默认 0（容错解码 ?? 0），Repo 也是 0 而不是 nil
-        #expect(repo.subscribersCount == 0)
+        #expect(repo.subscribersCount == nil)
         #expect(repo.openIssuesCount == 0)
+    }
+
+    @Test("聚合响应缺少关注者或返回占位零时，Trending 和共用详情将其视为未知")
+    func feedSubscriberCountPreservesUncertainty() throws {
+        for subscriberFields in ["", #","subscribers":0"#] {
+            let json = """
+                {"gh_repo_id":123,"full_name":"foo/bar","owner":"foo","repo":"bar","stars":111\(subscriberFields)}
+                """
+            let card = try JSONDecoder().decode(StarcatRepoCardDTO.self, from: Data(json.utf8))
+            #expect(card.toEphemeralRepo().subscribersCount == nil)
+            #expect(TrendingRepo(card: card, since: .daily).makeEphemeralRepo().subscribersCount == nil)
+        }
     }
 
     @Test("v8 TrendingRepo.init(card:since:)：4 字段从 DTO 透传到领域模型")

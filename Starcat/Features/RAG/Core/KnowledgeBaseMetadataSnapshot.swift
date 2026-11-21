@@ -396,16 +396,16 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
                     COALESCE(SUM(CASE WHEN n.status = 'using' THEN 1 ELSE 0 END), 0) AS using_count,
                     COALESCE(SUM(CASE WHEN
                         EXISTS (SELECT 1 FROM repo_tags rt WHERE rt.repo_id = r.id)
-                        OR NULLIF(TRIM(n.content), '') IS NOT NULL
+                        OR \(KnowledgeActivity.nonemptyNoteSQL)
                         OR n.status IN ('read', 'using')
                     THEN 1 ELSE 0 END), 0) AS organized_count,
                     COALESCE(SUM(CASE WHEN r.pushed_at IS NOT NULL AND datetime(r.pushed_at) < datetime(?) THEN 1 ELSE 0 END), 0) AS dormant_count,
                     COALESCE(SUM(CASE WHEN r.is_archived = 1 THEN 1 ELSE 0 END), 0) AS archived_count,
                     COALESCE(SUM(CASE WHEN r.access_state = 'unavailable' THEN 1 ELSE 0 END), 0) AS unavailable_count,
-                    COALESCE(SUM(CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL THEN 1 ELSE 0 END), 0) AS private_note_count,
-                    COALESCE(SUM(CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL AND n.is_ai_generated = 1 THEN 1 ELSE 0 END), 0) AS ai_generated_note_count,
+                    COALESCE(SUM(CASE WHEN \(KnowledgeActivity.nonemptyNoteSQL) THEN 1 ELSE 0 END), 0) AS private_note_count,
+                    COALESCE(SUM(CASE WHEN \(KnowledgeActivity.nonemptyNoteSQL) AND n.is_ai_generated = 1 THEN 1 ELSE 0 END), 0) AS ai_generated_note_count,
                     COALESCE(SUM(CASE WHEN EXISTS (SELECT 1 FROM ai_summaries s WHERE s.repo_id = r.id) THEN 1 ELSE 0 END), 0) AS ai_summary_count,
-                    COALESCE(SUM(CASE WHEN NULLIF(TRIM(n.content), '') IS NOT NULL AND datetime(n.edited_at) >= datetime(?) THEN 1 ELSE 0 END), 0) AS notes_edited_recently_count,
+                    COALESCE(SUM(CASE WHEN \(KnowledgeActivity.nonemptyNoteSQL) AND datetime(n.edited_at) >= datetime(?) THEN 1 ELSE 0 END), 0) AS notes_edited_recently_count,
                     COALESCE(SUM(CASE WHEN EXISTS (
                         SELECT 1 FROM ai_summaries s
                         WHERE s.repo_id = r.id AND datetime(s.generated_at) >= datetime(?)
@@ -483,17 +483,7 @@ struct KnowledgeBaseMetadataSnapshotProvider: Sendable {
                 GROUP BY COALESCE(NULLIF(TRIM(r.language), ''), '__unknown__')
                 ORDER BY count DESC, name ASC
                 """)
-            let topicCounts = try Self.namedCounts(db, sql: """
-                SELECT LOWER(TRIM(topic.value)) AS name, COUNT(DISTINCT r.id) AS count
-                FROM repos r
-                JOIN repo_notes n ON n.repo_id = r.id
-                JOIN json_each(CASE WHEN json_valid(r.topics) THEN r.topics ELSE '[]' END) topic
-                WHERE n.library_state = 'in_library'
-                  AND topic.type = 'text'
-                  AND NULLIF(TRIM(topic.value), '') IS NOT NULL
-                GROUP BY LOWER(TRIM(topic.value))
-                ORDER BY count DESC, name COLLATE NOCASE ASC
-                """)
+            let topicCounts = try Self.namedCounts(db, sql: KnowledgeProfileFactsProvider.topicCountsSQL(scope: .knowledge))
             let licenseCounts = try Self.namedCounts(db, sql: """
                 SELECT COALESCE(NULLIF(TRIM(r.license), ''), '__unknown__') AS name, COUNT(*) AS count
                 FROM repos r

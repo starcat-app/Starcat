@@ -13,6 +13,11 @@
 
 import Foundation
 
+/// 仓库订阅专用错误，供界面提供补授权入口。
+enum GitHubWatchSubscriptionError: Error, Equatable {
+    case missingNotificationsScope
+}
+
 extension GitHubAPIClient {
 
     /// 拉取一页 starred repos。
@@ -55,7 +60,7 @@ extension GitHubAPIClient {
 
     /// 获取 Watch 订阅状态。
     ///
-    /// **重要：404 是预期行为，不是错误**。
+    /// 未被判定为缺少通知权限的 404 表示没有显式订阅记录。
     ///
     /// GitHub Watch API 的 4 档状态返回方式：
     /// - All Activity（订阅所有事件）→ `200` + `subscribed=true, ignored=false`
@@ -66,15 +71,15 @@ extension GitHubAPIClient {
     /// 也就是说 `404` 不代表"找不到 repo"，而是"该用户对这个 repo 没有显式订阅记录、
     /// 保持 GitHub 默认的 Participating 级别"——这是 GitHub 自己的设计，被吐槽过但没改。
     ///
-    /// 调用方约定：必须显式 `catch NetworkError.notFound` 并翻译为 `.participating`
-    /// （见 `RepoDetailView.fetchSubscription()`），不能把 404 当 error 处理，更不能
-    /// 当成"repo 不存在"——否则会让所有未手动改过 Watch 的仓库都显示报错。
+    /// 调用方将 `NetworkError.notFound` 视为 `.participating`；
+    /// 旧令牌缺少通知权限时由客户端根据响应头抛出专用错误。
     ///
     /// Console.app 看到 `GET /repos/X/Y/subscription -> 404` 是正常 debug 日志，
     /// 配额信息 `rl=4983/5000` 表示当前 1 小时窗口内 API 配额还剩多少。
     func getSubscription(owner: String, repo: String) async throws -> GitHubSubscriptionDTO {
         let response: APIResponse<GitHubSubscriptionDTO> = try await get(
-            path: AppEndpoints.GitHubREST.Paths.repoSubscription(owner: owner, repo: repo)
+            path: AppEndpoints.GitHubREST.Paths.repoSubscription(owner: owner, repo: repo),
+            cachePolicy: .reloadIgnoringLocalCacheData
         )
         return response.value
     }

@@ -15,6 +15,22 @@ import WebKit
 @MainActor
 @Suite("README document ready WebKit", .serialized)
 struct ReadmeDocumentReadyWebKitTests {
+    @Test("本机 Skill 正文就绪但不启动图片附件请求")
+    func localTextOnlyDoesNotLoadImages() async throws {
+        let fixture = DocumentFixture()
+        defer { fixture.close() }
+        fixture.prepare("local")
+        fixture.coordinator.lastLoadedKey?.resourcePolicy = .localTextOnly
+        fixture.loadPrepared("local")
+        try await fixture.wait("local body ready") { fixture.readyDocuments == ["local"] }
+        try await fixture.wait("local navigation finished") { fixture.finishedDocuments == ["local"] }
+        // 复用生产 HTML/CSP 与真实 WebKit；自定义 scheme 能直接观察有没有开始读附件。
+        #expect(fixture.media.pending.isEmpty)
+        #expect(fixture.failedDocuments.isEmpty)
+        let size = try await fixture.webView.evaluateJavaScript("getComputedStyle(document.querySelector('article p')).fontSize") as? String
+        #expect(size == "16px")
+    }
+
     @Test("正文在图片仍挂起时就绪，整页完成不重复回调")
     func readyBeforeImageFinishes() async throws {
         let fixture = DocumentFixture()
@@ -154,7 +170,8 @@ private final class DocumentFixture: NSObject, WKNavigationDelegate {
             <h1>\(documentID)</h1><p>Cached README body</p>
             <img src="starcat-ready-test://fixture/\(documentID).gif" width="600" height="240">
             """,
-            isDark: false
+            isDark: false,
+            resourcePolicy: coordinator.lastLoadedKey?.resourcePolicy ?? .repository
         )
         coordinator.expectsInitialLoad = true
         coordinator.documentNavigation = webView.loadHTMLString(html, baseURL: nil)

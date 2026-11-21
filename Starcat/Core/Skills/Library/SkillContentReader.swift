@@ -158,10 +158,3 @@ struct SkillContentReader: Sendable {
         return current
     }
 }
-
-/// Markdown 链接只有用户点击后才交给浏览器；本地路径和自定义命令协议均不执行。
-enum SkillPreviewLinkPolicy {
-    static func allows(_ url: URL) -> Bool {
-        ["https", "http"].contains(url.scheme?.lowercased() ?? "") && url.host?.isEmpty == false
-    }
-}

@@ -105,7 +105,7 @@ struct RepoIssueCreatePane: View {
                 text: $viewModel.createTitle
             )
             .textFieldStyle(.roundedBorder)
-            .font(.body)
+            .starcatMarkdownBodyFont()
             .focused($isTitleFocused)
         }
         .padding(.top, 6)
@@ -174,12 +174,12 @@ struct RepoIssueCreatePane: View {
                 let trimmed = viewModel.trimmedCreateBody
                 if trimmed.isEmpty {
                     Text(String.l10n("repo.issues.sheet.emptyPreview", defaultValue: "暂无内容可预览"))
-                        .font(.body)
+                        .starcatMarkdownBodyFont()
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     Markdown(viewModel.createBody)
-                        .markdownTheme(RepoIssueMarkdownTheme.content(baseFontSize: 13 * interfaceScale.multiplier))
+                        .markdownTheme(RepoIssueMarkdownTheme.content(scale: interfaceScale, adjustment: dependencies.settings.readmeFontSizeAdjustment))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -191,6 +191,7 @@ struct RepoIssueCreatePane: View {
             ImagePasteTextEditor(
                 text: $viewModel.createBody,
                 placeholder: String.l10n("repo.issues.sheet.bodyPlaceholder", defaultValue: "描述这个 Issue，支持 Markdown，可粘贴剪切板图片…"),
+                font: MarkdownTypography.nativeFont(scale: interfaceScale, adjustment: dependencies.settings.readmeFontSizeAdjustment),
                 isEditable: !viewModel.isGeneratingIssue && !viewModel.isUploadingImage,
                 maximumHeight: 4_000,
                 onHeightChange: { _ in },
@@ -258,37 +259,29 @@ struct RepoIssueCreatePane: View {
 
 // MARK: - Issue 内容 Markdown 主题
 
-/// Issue 正文 / 评论的 Markdown 排版：GitHub 风格但按 App 内容规范收字号
-/// （正文 13pt 基准 × 界面缩放、标题 semibold 1.1–1.15em、紧凑边距、无 h2 下划线），
-/// 排版口径对齐 `GitHubNotificationIssueSummaryMarkdownView.summaryTheme`。
-/// 2026-11-01 dong4j 反馈：直接用 `Theme.gitHub` 默认字号（正文 17 / h2 28）过大。
+/// 新建 Issue 保留紧凑段落布局；阅读字号与标题层级来自统一 Markdown 规范。
 enum RepoIssueMarkdownTheme {
     @MainActor
-    static func content(baseFontSize: CGFloat) -> Theme {
-        Theme.gitHub
-            .text {
-                ForegroundColor(.primary)
-                BackgroundColor(nil)
-                FontSize(baseFontSize)
-            }
+    static func content(scale: InterfaceScale, adjustment: Int) -> Theme {
+        MarkdownTypography.theme(scale: scale, adjustment: adjustment)
             .heading1 { configuration in
                 configuration.label
-                    .markdownTextStyle { FontWeight(.semibold); FontSize(.em(1.15)) }
+                    .markdownTextStyle { FontWeight(.semibold); FontSize(.em(MarkdownTypography.Heading.h1.ratio)) }
                     .markdownMargin(top: 10, bottom: 6)
             }
             .heading2 { configuration in
                 configuration.label
-                    .markdownTextStyle { FontWeight(.semibold); FontSize(.em(1.1)) }
+                    .markdownTextStyle { FontWeight(.semibold); FontSize(.em(MarkdownTypography.Heading.h2.ratio)) }
                     .markdownMargin(top: 10, bottom: 6)
             }
             .heading3 { configuration in
                 configuration.label
-                    .markdownTextStyle { FontWeight(.semibold) }
+                    .markdownTextStyle { FontWeight(.semibold); FontSize(.em(MarkdownTypography.Heading.h3.ratio)) }
                     .markdownMargin(top: 8, bottom: 6)
             }
             .heading6 { configuration in
                 configuration.label
-                    .markdownTextStyle { FontWeight(.semibold); ForegroundColor(.secondary) }
+                    .markdownTextStyle { FontWeight(.semibold); ForegroundColor(.secondary); FontSize(.em(MarkdownTypography.Heading.h6.ratio)) }
                     .markdownMargin(top: 6, bottom: 4)
             }
             .paragraph { configuration in

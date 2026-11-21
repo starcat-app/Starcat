@@ -151,6 +151,7 @@ struct ReadmeWebView: View {
     var onDocumentFailed: (String) -> Void = { _ in }
     var registersFindShortcut: Bool = true
     var allowsSameDocumentAnchors: Bool = false
+    var resourcePolicy: ReadmeResourcePolicy = .repository
 
     @Environment(AppSettings.self) private var settings
     @Environment(AuthSession.self) private var authSession
@@ -185,7 +186,8 @@ struct ReadmeWebView: View {
             openRepositoryMarkdownInApp: settings.repositoryMarkdownOpenMode != .browser,
             markdownLinkRepositoryOwner: markdownLinkRepositoryOwner,
             markdownLinkRepositoryName: markdownLinkRepositoryName,
-            onOpenRepositoryMarkdown: onOpenRepositoryMarkdown
+            onOpenRepositoryMarkdown: onOpenRepositoryMarkdown,
+            resourcePolicy: resourcePolicy
         )
         .id(authSession.state.user?.id)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -341,13 +343,15 @@ struct ReadmeWebView: View {
         fragment: String,
         isDark: Bool,
         interfaceScale: InterfaceScale = .standard,
-        readmeFontSizeAdjustment: Int = 0
+        readmeFontSizeAdjustment: Int = 0,
+        resourcePolicy: ReadmeResourcePolicy = .repository
     ) -> String {
         ReadmeWebContentView.assembleDocument(
             fragment: fragment,
             isDark: isDark,
             interfaceScale: interfaceScale,
-            readmeFontSizeAdjustment: readmeFontSizeAdjustment
+            readmeFontSizeAdjustment: readmeFontSizeAdjustment,
+            resourcePolicy: resourcePolicy
         )
     }
 }
@@ -375,6 +379,7 @@ struct ReadmeWebContentView: NSViewRepresentable {
     var markdownLinkRepositoryOwner: String?
     var markdownLinkRepositoryName: String?
     var onOpenRepositoryMarkdown: ((RepositoryMarkdownLinkTarget) -> Void)?
+    var resourcePolicy: ReadmeResourcePolicy = .repository
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -495,7 +500,8 @@ struct ReadmeWebContentView: NSViewRepresentable {
             documentID: documentID ?? htmlFragment,
             baseURL: baseURL,
             isDark: colorScheme == .dark,
-            interfaceScale: interfaceScale
+            interfaceScale: interfaceScale,
+            resourcePolicy: resourcePolicy
         )
 
         // 内容或主题变化 → 完整重载 HTML（含初始字号）
@@ -516,7 +522,8 @@ struct ReadmeWebContentView: NSViewRepresentable {
                 fragment: htmlFragment,
                 isDark: colorScheme == .dark,
                 interfaceScale: interfaceScale,
-                readmeFontSizeAdjustment: readmeFontSizeAdjustment
+                readmeFontSizeAdjustment: readmeFontSizeAdjustment,
+                resourcePolicy: resourcePolicy
             )
             context.coordinator.expectsInitialLoad = true
             context.coordinator.documentNavigation = webView.loadHTMLString(fullHTML, baseURL: baseURL)
@@ -556,7 +563,8 @@ struct ReadmeWebContentView: NSViewRepresentable {
         fragment: String,
         isDark: Bool,
         interfaceScale: InterfaceScale = .standard,
-        readmeFontSizeAdjustment: Int = 0
+        readmeFontSizeAdjustment: Int = 0,
+        resourcePolicy: ReadmeResourcePolicy = .repository
     ) -> String {
         let css = ReadmeCSS.full + "\n" + ReadmeMermaidDOM.css + "\n" + ReadmeTranslationDOM.css + "\n" + ReadmeStarHistoryDOM.css + "\n" + ReadmeCSS.readingVariables(
             bodyFontSize: readmeBodyFontSize(
@@ -572,7 +580,7 @@ struct ReadmeWebContentView: NSViewRepresentable {
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta http-equiv="Content-Security-Policy" content="script-src 'none'; media-src https:; object-src 'none'; base-uri 'none';">
+        <meta http-equiv="Content-Security-Policy" content="\(resourcePolicy.contentSecurityPolicy)">
         <style>\(css)</style>
         </head>
         <body class="\(bodyClass)">
@@ -584,11 +592,10 @@ struct ReadmeWebContentView: NSViewRepresentable {
     }
 
     /// README 是长文阅读区，标准档比列表正文更偏阅读舒适；用户设置的界面倍率仍统一生效。
-    private static let standardReadmeBodyFontSize: CGFloat = 16
     private static let readmeLineHeight: CGFloat = 1.62
 
     private static func readmeBodyFontSize(for interfaceScale: InterfaceScale, adjustment: Int) -> CGFloat {
-        interfaceScale.scaled(standardReadmeBodyFontSize + CGFloat(AppSettings.clampedReadmeFontSizeAdjustment(adjustment)))
+        MarkdownTypography.bodyFontSize(scale: interfaceScale, adjustment: adjustment)
     }
 
     // MARK: - Coordinator
@@ -2146,6 +2153,11 @@ struct ReadmeWebContentView: NSViewRepresentable {
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            // 原本不加载附件的本机 Skill 不启用图片预览或 Mermaid 附件桥接。
+            if lastLoadedKey?.resourcePolicy == .localTextOnly,
+               [ReadmeWebViewConstants.imagePreviewMessageName, ReadmeWebViewConstants.mermaidRequestMessageName].contains(message.name) {
+                return
+            }
             if message.name == ReadmeWebViewConstants.imagePreviewMessageName {
                 guard message.frameInfo.isMainFrame,
                       let payload = message.body as? [String: Any],
@@ -2314,6 +2326,10 @@ struct ReadmeWebContentView: NSViewRepresentable {
             if navigationAction.navigationType == .linkActivated {
                 if allowsSameDocumentAnchors, ReadmeWebView.isSameDocumentAnchor(url, currentURL: webView.url) {
                     decisionHandler(.allow)
+                    return
+                }
+                guard lastLoadedKey?.resourcePolicy.allowsUserLink(url) != false else {
+                    decisionHandler(.cancel)
                     return
                 }
                 if openRepositoryMarkdownIfNeeded(
@@ -2855,6 +2871,7 @@ struct ReadmeKey: Equatable {
     let baseURL: URL?
     let isDark: Bool
     let interfaceScale: InterfaceScale
+    var resourcePolicy: ReadmeResourcePolicy = .repository
 }
 
 // MARK: - GFM CSS
@@ -2936,12 +2953,12 @@ enum ReadmeCSS {
         font-weight: 600;
         line-height: 1.25;
     }
-    .markdown-body h1 { font-size: 1.8em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
-    .markdown-body h2 { font-size: 1.45em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
-    .markdown-body h3 { font-size: 1.2em; }
-    .markdown-body h4 { font-size: 1.0em; }
-    .markdown-body h5 { font-size: 0.9em; }
-    .markdown-body h6 { font-size: 0.85em; color: var(--muted); }
+    .markdown-body h1 { font-size: \(MarkdownTypography.Heading.h1.ratio)em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+    .markdown-body h2 { font-size: \(MarkdownTypography.Heading.h2.ratio)em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+    .markdown-body h3 { font-size: \(MarkdownTypography.Heading.h3.ratio)em; }
+    .markdown-body h4 { font-size: \(MarkdownTypography.Heading.h4.ratio)em; }
+    .markdown-body h5 { font-size: \(MarkdownTypography.Heading.h5.ratio)em; }
+    .markdown-body h6 { font-size: \(MarkdownTypography.Heading.h6.ratio)em; color: var(--muted); }
     /* 段落 / 列表 */
     .markdown-body p,
     .markdown-body ul,
@@ -2962,7 +2979,7 @@ enum ReadmeCSS {
     .markdown-body code, .markdown-body tt {
         padding: 0.2em 0.4em;
         margin: 0;
-        font-size: 85%;
+        font-size: \(MarkdownTypography.inlineCodeRatio * 100)%;
         background: var(--code-bg);
         border-radius: 6px;
         font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -2988,7 +3005,7 @@ enum ReadmeCSS {
         padding: 0;
         background: transparent;
         border-radius: 0;
-        font-size: 100%;
+        font-size: \(MarkdownTypography.codeBlockRatio * 100)%;
     }
     /* 引用 */
     .markdown-body blockquote {

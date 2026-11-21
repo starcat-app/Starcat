@@ -304,7 +304,7 @@ private final class LayaDecisionHead: Module {
     }
 }
 
-/// checkpoint 的完整参数容器；当前产品只公开 marker scorer 的 Noul logits。
+/// checkpoint 的完整参数容器；文本题型共享 marker scorer。
 final class LayaMLXDecisionModel: Module {
     @ModuleInfo private var encoder: LayaModernBERT
     @ModuleInfo private var head: LayaDecisionHead
@@ -340,18 +340,15 @@ final class LayaMLXDecisionModel: Module {
         _temperature.wrappedValue = MLXArray.ones([3])
     }
 
-    /// 返回 `[batch, markerCount]` Float32 logits；Noul 固定以 false、true 排序。
-    func noulLogits(
+    /// 为 batch 中每行广播对应题型的 embedding，返回补齐后各 marker 的 logits。
+    func optionLogits(
         tokenIDs: MLXArray,
         attentionMask: MLXArray,
+        questionTypes: MLXArray,
         markerPositions: MLXArray,
         markerMask: MLXArray
     ) -> MLXArray {
         var hidden = encoder(tokenIDs, attentionMask: attentionMask)
-        // qtype=2 代表 Noul；类型向量按 batch 广播到所有 token。
-        let questionTypes = MLXArray(
-            [Int32](repeating: 2, count: tokenIDs.dim(0))
-        )
         hidden += typeEmbedding(questionTypes)[0..., .newAxis, 0...]
         hidden = head(
             hidden,
