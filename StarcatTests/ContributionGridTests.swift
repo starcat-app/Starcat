@@ -159,46 +159,64 @@ struct ContributionGridTests {
         ) == nil)
     }
 
-    @Test("提示位于光标右下方，并正确换算窗口向上为正的坐标", arguments: [true, false])
-    func tooltipFollowsPointer(isFlipped: Bool) {
+    @Test("提示居中锚定在方格上方")
+    func tooltipAnchorsAboveCell() throws {
         let bounds = CGRect(x: 40, y: 30, width: 1_000, height: 700)
-        let point = CGPoint(x: 300, y: 350)
-        let size = CGSize(width: 256, height: 84)
-        let frame = ContributionTooltipGeometry.frame(
-            at: point, size: size, within: bounds, isFlipped: isFlipped
-        )
-        #expect(frame.minX == point.x + 16)
-        #expect(isFlipped ? frame.minY == point.y + 20 : frame.maxY == point.y - 20)
-        #expect(frame.size == size)
-        #expect(!frame.contains(point))
-
-        let nextPoint = CGPoint(x: point.x + 3, y: point.y + 2)
-        let nextFrame = ContributionTooltipGeometry.frame(
-            at: nextPoint, size: size, within: bounds, isFlipped: isFlipped
-        )
-        #expect(nextFrame.minX - frame.minX == 3)
-        #expect(nextFrame.minY - frame.minY == 2)
+        let cell = CGRect(x: 298, y: 350, width: 8, height: 8)
+        let size = CGSize(width: 276, height: 220)
+        let placement = try #require(ContributionTooltipGeometry(cell: cell, size: size, within: bounds))
+        #expect(placement.isAbove)
+        #expect(placement.frame.midX == cell.midX)
+        #expect(placement.frame.minY == cell.maxY + 4)
+        #expect(placement.arrowX == size.width / 2)
+        #expect(placement.frame.size == size)
     }
 
-    @Test("提示在窗口边缘避让，字号放大后仍不覆盖光标", arguments: [true, false])
-    func tooltipAvoidsWindowEdges(isFlipped: Bool) {
-        let bounds = CGRect(x: 40, y: 30, width: 640, height: 480)
-        for width: CGFloat in [256, 316] {
-            for pointerX: CGFloat in [50, 360, 670] {
-                for pointerY: CGFloat in [40, 270, 500] {
-                    let point = CGPoint(x: pointerX, y: pointerY)
-                    let frame = ContributionTooltipGeometry.frame(
-                        at: point, size: CGSize(width: width, height: 100),
-                        within: bounds, isFlipped: isFlipped
-                    )
-                    #expect(bounds.insetBy(dx: 8, dy: 8).contains(frame))
-                    #expect(!frame.contains(point))
-                    if pointerX == 670 {
-                        #expect(frame.maxX == point.x - 16)
-                    }
-                }
-            }
+    @Test("屏幕边缘平移卡身或翻转箭头，目标格不被覆盖",
+          arguments: [50 as CGFloat, 360, 660], [40 as CGFloat, 505])
+    func tooltipAvoidsScreenEdges(cellX: CGFloat, cellY: CGFloat) throws {
+        let bounds = CGRect(x: 40, y: 30, width: 640, height: 510)
+        let size = CGSize(width: 320, height: 258)
+        let cell = CGRect(x: cellX, y: cellY, width: 8, height: 8)
+        let placement = try #require(ContributionTooltipGeometry(cell: cell, size: size, within: bounds))
+        #expect(bounds.insetBy(dx: 8, dy: 8).contains(placement.frame))
+        #expect(!placement.frame.intersects(cell))
+        #expect(placement.frame.minX + placement.arrowX == cell.midX)
+        #expect(placement.isAbove == (cellY == 40))
+        if !placement.isAbove {
+            #expect(placement.frame.maxY == cell.minY - 4)
         }
+    }
+
+    @Test("日均使用当前范围，包含零贡献日并排除空位")
+    func tooltipComparisonUsesDisplayedDays() throws {
+        let weeks = fixtureWeeks()
+        let locale = Locale(identifier: "en-US")
+        let recent = ContributionGrid(weeks: weeks, range: .recent30)
+        let day = try #require(weeks.last?.contributionDays.last)
+        let recentMetrics = ContributionTooltipMetrics(day: day, weeks: weeks, grid: recent, locale: locale)
+        #expect(recentMetrics.comparison?.dayCount == "30")
+        #expect(recentMetrics.comparison?.average == "24.5")
+        #expect(recentMetrics.comparison?.ratio == "1.6")
+
+        let shortWeeks = fixtureWeeks(count: 3)
+        let sparse = ContributionGrid(weeks: shortWeeks, range: .recent90)
+        let zeroDay = try #require(shortWeeks.first?.contributionDays.first)
+        let sparseMetrics = ContributionTooltipMetrics(day: zeroDay, weeks: shortWeeks, grid: sparse, locale: locale)
+        #expect(sparseMetrics.comparison?.dayCount == "3")
+        #expect(sparseMetrics.comparison?.average == "1.0")
+        #expect(sparseMetrics.comparison?.ratio == "0.0")
+    }
+
+    @Test("分类占比以可分类的四类之和为分母，其他贡献单独计数")
+    func tooltipClassificationAccountsForUnclassifiedActivity() {
+        let activity = ContributionDayActivity(
+            calendarCount: 60, commits: 55, pullRequests: 0, reviews: 0, issues: 2
+        )
+        #expect(activity.unclassifiedCount == 3)
+        #expect(activity.share(of: activity.commits) == 55.0 / 57.0)
+        #expect(activity.share(of: activity.issues) == 2.0 / 57.0)
+        #expect(ContributionDayActivity.empty.share(of: 0) == 0)
     }
 
     @Test("数字占位按全年最高值变化，超过三位时包含千位分隔符", arguments: [
@@ -256,7 +274,6 @@ struct ContributionGridTests {
         #expect(metrics.dateText == "2026年01月09日")
         #expect(metrics.weekdayText == "周五")
         #expect(metrics.countText == "9")
-        #expect(metrics.weekdayPlaceholders.contains(metrics.weekdayText))
     }
 
     @Test("各语言与字号下，跨日期、星期和数字位数的卡片尺寸保持不变",
@@ -272,12 +289,21 @@ struct ContributionGridTests {
             ContributionDay(date: date, contributionCount: count, contributionLevel: .firstQuartile, weekday: 0)
         }
         let weeks = [ContributionWeek(contributionDays: samples)]
+        let grid = ContributionGrid(weeks: weeks, range: .recent90)
         let locale = Locale(identifier: language)
         for scale in [InterfaceScale.standard, .large] {
             var referenceSize: CGSize?
-            for day in samples {
-                let metrics = ContributionTooltipMetrics(day: day, weeks: weeks, locale: locale)
-                let host = NSHostingView(rootView: ContributionTooltipCard(metrics: metrics, color: .green)
+            for (index, day) in samples.enumerated() {
+                let metrics = ContributionTooltipMetrics(day: day, weeks: weeks, grid: grid, locale: locale)
+                let detail: ContributionTooltipDetail = switch index {
+                case 0: .loaded(.empty)
+                case 1: .unavailable
+                case 2: .loading
+                default: .loaded(ContributionDayActivity(
+                    calendarCount: 1_250, commits: 1_200, pullRequests: 25, reviews: 15, issues: 9
+                ))
+                }
+                let host = NSHostingView(rootView: ContributionTooltipCard(metrics: metrics, color: .green, detail: detail)
                     .environment(\.locale, locale)
                     .environment(\.starcatInterfaceScale, scale))
                 // 只测离屏布局，不创建窗口或操作桌面；直接验证真正参与窗口定位的 fittingSize。
@@ -312,7 +338,8 @@ struct ContributionGridTests {
             let renderer = ImageRenderer(content: ContributionTooltipCard(metrics: metrics, color: .green)
                 .environment(\.locale, locale)
                 .environment(\.colorScheme, .light)
-                .environment(\.starcatInterfaceScale, scale))
+                .environment(\.starcatInterfaceScale, scale)
+                .background(StarcatSurface.panel(colorScheme: .light)))
             renderer.scale = 2
             let bitmap = NSBitmapImageRep(cgImage: try #require(renderer.cgImage))
             let inset = Int(scale.scaled(12) * renderer.scale)

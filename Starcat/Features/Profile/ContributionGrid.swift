@@ -204,18 +204,37 @@ struct ContributionGraphGeometry {
 
 /// 提示卡的文字与占位共用同一套格式，不能随当前悬停日期或显示范围改变尺寸。
 struct ContributionTooltipMetrics {
+    struct DailyComparison {
+        let dayCount: String
+        let average: String
+        let ratio: String?
+    }
+
     let dateText: String
     let weekdayText: String
     let countText: String
-    let datePlaceholder: String
-    let weekdayPlaceholders: [String]
     let countPlaceholder: String
+    let comparison: DailyComparison?
 
     /// 始终接收完整年度数据；最大值格式化后的分隔符也必须计入数字区宽度。
-    init(day: ContributionDay, weeks: [ContributionWeek]?, locale: Locale) {
+    init(day: ContributionDay, weeks: [ContributionWeek]?, grid: ContributionGrid? = nil, locale: Locale) {
         let maximumCount = weeks?.lazy.flatMap(\.contributionDays).map(\.contributionCount).max() ?? 0
         countText = day.contributionCount.formatted(.number.locale(locale))
         countPlaceholder = maximumCount.formatted(.number.locale(locale))
+
+        // 从当前显示范围取真实日历日期。零贡献日计入分母，布局补位不计入。
+        let dayCount = grid?.days.joined().reduce(0) { $0 + ($1 == nil ? 0 : 1) } ?? 0
+        if let grid, dayCount > 0 {
+            let average = Double(grid.totalContributions) / Double(dayCount)
+            let decimal = FloatingPointFormatStyle<Double>.number.precision(.fractionLength(1)).locale(locale)
+            comparison = DailyComparison(
+                dayCount: dayCount.formatted(.number.locale(locale)),
+                average: average.formatted(decimal),
+                ratio: average > 0 ? (Double(day.contributionCount) / average).formatted(decimal) : nil
+            )
+        } else {
+            comparison = nil
+        }
 
         let formatter = DateFormatter()
         formatter.locale = locale
@@ -228,40 +247,34 @@ struct ContributionTooltipMetrics {
         }
         let date = ContributionGrid.date(day.date)
         dateText = date.map(formatter.string(from:)) ?? day.date
-        // 四位年与两位月日配合等宽数字，跨月、跨年时仍使用同一宽度。
-        datePlaceholder = formatter.string(from: ContributionGrid.date("2000-12-24")!)
-        weekdayPlaceholders = formatter.shortWeekdaySymbols
         formatter.dateFormat = "EEE"
         weekdayText = date.map(formatter.string(from:)) ?? ""
     }
 }
 
-/// 提示默认位于光标右下方；只在窗口边缘翻转方向，保证当前光标仍在卡片之外。
+/// 在 AppKit 屏幕坐标中优先放到方格上方，屏幕边缘只平移卡身，箭头仍瞄准方格。
 struct ContributionTooltipGeometry {
-    /// AppKit 的窗口父层通常向上为正，不能直接套用 SwiftUI 向下为正的偏移。
-    static func frame(
-        at point: CGPoint,
-        size: CGSize,
-        within bounds: CGRect,
-        isFlipped: Bool
-    ) -> CGRect {
+    static let arrowHeight: CGFloat = 7
+    let frame: CGRect
+    let arrowX: CGFloat
+    let isAbove: Bool
+
+    init?(cell: CGRect, size: CGSize, within bounds: CGRect) {
         let available = bounds.insetBy(dx: 8, dy: 8)
-        let width = min(size.width, available.width)
-        let height = min(size.height, available.height)
-        var originX = point.x + 16
-        if originX + width > available.maxX {
-            originX = point.x - 16 - width
+        guard size.width <= available.width else { return nil }
+
+        let originX = min(max(cell.midX - size.width / 2, available.minX), available.maxX - size.width)
+        let above = CGRect(origin: CGPoint(x: originX, y: cell.maxY + 4), size: size)
+        let below = CGRect(origin: CGPoint(x: originX, y: cell.minY - 4 - size.height), size: size)
+        if available.contains(above) {
+            frame = above
+            isAbove = true
+        } else if available.contains(below) {
+            frame = below
+            isAbove = false
+        } else {
+            return nil
         }
-        var originY = isFlipped ? point.y + 20 : point.y - 20 - height
-        if isFlipped, originY + height > available.maxY {
-            originY = point.y - 20 - height
-        } else if !isFlipped, originY < available.minY {
-            originY = point.y + 20
-        }
-        return CGRect(
-            x: min(max(originX, available.minX), available.maxX - width),
-            y: min(max(originY, available.minY), available.maxY - height),
-            width: width, height: height
-        )
+        arrowX = min(max(cell.midX - frame.minX, 0), frame.width)
     }
 }

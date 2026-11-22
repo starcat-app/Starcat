@@ -86,6 +86,9 @@ final class ContributionService {
     /// 当前进行中的 Task；同 login 重复 load 时直接 await 已在飞的请求。
     private var inflightTask: Task<Void, Never>?
 
+    /// 单日明细只存内存，跟随草坪快照刷新或登出失效。
+    private var dayActivities: [ContributionDayKey: ContributionDayActivity] = [:]
+
     // MARK: - 初始化
 
     init(apiClient: GitHubAPIClient) {
@@ -133,6 +136,7 @@ final class ContributionService {
             do {
                 let fetched = try await self.apiClient.contributionCalendar(login: login)
                 self.payload = fetched
+                self.dayActivities.removeAll()
                 self.lastFetchedAt = Date()
                 self.lastError = nil
                 self.persistToDisk(login: login, payload: fetched, fetchedAt: Date())
@@ -149,11 +153,27 @@ final class ContributionService {
         }
     }
 
+    func cachedDayActivity(for key: ContributionDayKey) -> ContributionDayActivity? {
+        dayActivities[key]
+    }
+
+    /// 悬停任务由视图取消，快照刷新期间返回的旧明细也不能写入新快照的缓存。
+    func loadDayActivity(for key: ContributionDayKey) async throws {
+        try Task.checkCancellation()
+        guard dayActivities[key] == nil else { return }
+        let snapshot = lastFetchedAt
+        let activity = try await apiClient.contributionDayActivity(for: key)
+        try Task.checkCancellation()
+        guard snapshot == lastFetchedAt else { return }
+        dayActivities[key] = activity
+    }
+
     /// 清空内存数据（一般用于登出）。磁盘缓存按 login 分桶，登出时也清。
     func reset(login: String?) {
         inflightTask?.cancel()
         inflightTask = nil
         payload = nil
+        dayActivities.removeAll()
         isLoading = false
         lastError = nil
         lastFetchedAt = nil
