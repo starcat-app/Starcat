@@ -131,17 +131,19 @@ struct ReadmeImageLoadingWebKitTests {
             const overlay = document.querySelector('.readme-image-preview');
             const stage = overlay.querySelector('.readme-image-preview-stage').getBoundingClientRect();
             const controls = overlay.querySelector('.readme-image-preview-controls').getBoundingClientRect();
+            const close = overlay.querySelector('[data-action="close"]');
             return [
                 overlay.getAttribute('role') === 'dialog' && overlay.getAttribute('aria-modal') === 'true',
                 overlay.querySelector('.readme-image-preview-counter').textContent === '2 / 3',
                 overlay.querySelector('img').src === window.starcatImagePreviewRequest.images[1].src,
                 overlay.querySelector('img').alt === 'Diagram',
                 controls.top >= stage.bottom && controls.bottom <= innerHeight,
-                document.activeElement.dataset.action === 'close'
+                document.activeElement === overlay,
+                getComputedStyle(overlay).outlineStyle === 'none' && getComputedStyle(close).outlineStyle === 'none'
             ];
         })()
         """) as? [Bool]
-        #expect(state == Array(repeating: true, count: 6))
+        #expect(state == Array(repeating: true, count: 7))
         _ = try await gallery.evaluateJavaScript("""
         document.querySelector('[data-action="previous"]').click();
         """)
@@ -164,13 +166,16 @@ struct ReadmeImageLoadingWebKitTests {
         #expect(last == true)
         _ = try await gallery.evaluateJavaScript("""
         window.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowLeft'}));
-        document.querySelector('[data-action="close"]').focus();
-        window.dispatchEvent(new KeyboardEvent('keydown', {key: 'Tab', shiftKey: true, cancelable: true}));
         """)
         try await fixture.waitGallery("document.querySelector('.readme-image-preview-counter')?.textContent === '2 / 3'")
         let trapped = try await gallery.evaluateJavaScript("""
-        document.querySelector('.readme-image-preview').contains(document.activeElement)
-            && document.activeElement.dataset.action !== 'close'
+        (() => {
+            const buttons = document.querySelectorAll('.readme-image-preview button:not(:disabled)');
+            window.dispatchEvent(new KeyboardEvent('keydown', {key: 'Tab', cancelable: true}));
+            const focusedClose = document.activeElement.dataset.action === 'close';
+            window.dispatchEvent(new KeyboardEvent('keydown', {key: 'Tab', shiftKey: true, cancelable: true}));
+            return focusedClose && document.activeElement === buttons[buttons.length - 1];
+        })()
         """) as? Bool
         #expect(trapped == true)
     }

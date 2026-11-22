@@ -1449,6 +1449,7 @@ struct ReadmeWebContentView: NSViewRepresentable {
                 document.querySelectorAll('.readme-image-preview').forEach(function(old) { old.remove(); });
                 var overlay = document.createElement('div');
                 overlay.className = 'readme-image-preview';
+                overlay.tabIndex = -1;
                 overlay.setAttribute('role', 'dialog');
                 overlay.setAttribute('aria-modal', 'true');
                 overlay.setAttribute('aria-label', previewLabels.title);
@@ -1567,7 +1568,8 @@ struct ReadmeWebContentView: NSViewRepresentable {
                 stage.addEventListener('pointercancel', endDrag);
                 stage.addEventListener('lostpointercapture', endDrag);
                 showPreviewImage(index);
-                close.focus({ preventScroll: true });
+                // 先聚焦对话框以接收快捷键，把按钮的焦点描边留给实际键盘导航。
+                overlay.focus({ preventScroll: true });
                 reportImagePreview(true);
                 window.requestAnimationFrame(function() {
                     if (previewState === state) { overlay.classList.add('readme-image-preview-open'); }
@@ -2283,12 +2285,10 @@ struct ReadmeWebContentView: NSViewRepresentable {
                     var buttons = Array.from(previewOverlay.querySelectorAll('button:not(:disabled)'));
                     var first = buttons[0];
                     var last = buttons[buttons.length - 1];
-                    if (event.shiftKey && document.activeElement === first) {
+                    var active = document.activeElement;
+                    if (active === previewOverlay || active === (event.shiftKey ? first : last)) {
                         event.preventDefault();
-                        last.focus();
-                    } else if (!event.shiftKey && document.activeElement === last) {
-                        event.preventDefault();
-                        first.focus();
+                        (event.shiftKey ? last : first).focus();
                     }
                 }
             }, true);
@@ -3280,6 +3280,9 @@ enum ReadmeCSS {
     .readme-image-preview-open {
         opacity: 1;
     }
+    .readme-image-preview:focus {
+        outline: none;
+    }
     /* 整窗背景模糊与淡入淡出由原生宿主负责，避免 WebKit 内重复动画。 */
     body.readme-image-viewer .readme-image-preview {
         opacity: 1;
@@ -3362,13 +3365,17 @@ enum ReadmeCSS {
         top: 10px;
         right: 12px;
         border-radius: 50%;
-        background: var(--code-bg);
+        background: color-mix(in srgb, var(--muted) 12%, transparent);
         color: var(--muted);
-        font-size: 23px;
+        font-size: 20px;
+        font-weight: 600;
         line-height: 1;
         padding: 0;
         min-width: 26px;
         min-height: 26px;
+    }
+    .readme-image-preview .readme-image-preview-close:hover:not(:active) {
+        background: color-mix(in srgb, var(--muted) 22%, transparent);
     }
     .readme-image-preview-counter,
     .readme-image-preview-zoom {
