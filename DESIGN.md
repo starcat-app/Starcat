@@ -247,6 +247,8 @@ Starcat 的布局是工具工作台，不是 landing page。
 - Repo List：搜索、筛选、排序、仓库行、批量操作。
 - Detail：README、元数据、笔记、状态、AI 摘要、Release、Health 等当前仓库上下文。
 
+星标、探索、活动下的仓库分类按三栏职责接入，共用列表、分页和详情加载约定。见[主窗口仓库分类接入规范](docs/5-规范/UI-主窗口仓库分类接入规范.md)。
+
 Agent 工作台遵循覆盖式 run layout：
 
 - Agent rail：约 312pt，列出 Agent 分类、当前选择和历史任务。
