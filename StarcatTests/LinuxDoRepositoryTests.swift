@@ -5,6 +5,7 @@
 //  离线验证来源缓存与分页契约；所有文件都在临时目录，不连接 Linux.do 或真实后端。
 //
 
+import CryptoKit
 import Foundation
 import Testing
 @testable import Starcat
@@ -15,25 +16,34 @@ struct LinuxDoRepositoryTests {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let api = LinuxDoAPIFake()
-        await api.setResponse(LinuxDoResponse(
-            payload: LinuxDoPayload(revision: 7, generatedAt: "", complete: true, repositories: [], promotionDates: [:]),
-            etag: "catalog-v7"
-        ))
-        let original = LinuxDoRepository(api: api, directory: directory)
-        _ = try await original.refresh(.catalog, providerID: "one")
+        let payload = try makeLinuxDoCatalog(languages: Array(repeating: "Swift", count: 45), revision: 7)
+        let original = LinuxDoCachedSnapshot(providerID: "one", payload: payload, etag: "catalog-v7", checkedAt: Date())
+        let key = SHA256.hash(data: Data("one/\(LinuxDoResource.catalog.path)".utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        let legacyFile = directory.appendingPathComponent(key + ".json")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try JSONEncoder().encode(original).write(to: legacyFile)
         await api.setFailure(true)
         let store = LinuxDoStore(repository: LinuxDoRepository(api: api, directory: directory))
         await store.restoreCatalog()
-        #expect(store.catalog?.payload.revision == 7)
+        #expect(store.catalog?.metadata == LinuxDoCacheMetadata(revision: 7, etag: "catalog-v7", checkedAt: original.checkedAt))
+        #expect(store.total == 45)
+        let catalogKey = try #require(store.catalogKey)
+        let page = try #require(try await store.page(key: catalogKey, query: .init(), memberships: [], limit: 20))
+        #expect(page.rows.count == 20)
+        #expect(!FileManager.default.fileExists(atPath: legacyFile.path))
+        #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("cache.sqlite").path))
         #expect(!store.isRefreshingCatalog)
-        #expect(store.failed.isEmpty)
-        #expect(await api.calls == 1)
+        #expect(!store.catalogFailed)
+        #expect(await api.calls == 0)
 
         await api.switchProvider("two")
         await store.restoreCatalog()
         #expect(store.providerID == "two")
         #expect(store.catalog == nil)
-        #expect(await api.calls == 1)
+        #expect(await api.calls == 0)
+        let reopened = LinuxDoRepository(api: api, directory: directory)
+        #expect(try await reopened.catalogSummary(providerID: "one")?.total == 45)
     }
 
     @Test func conditionalRefreshPersistsValidEmptySnapshot() async throws {
@@ -42,13 +52,14 @@ struct LinuxDoRepositoryTests {
         let api = LinuxDoAPIFake()
         let repository = LinuxDoRepository(api: api, directory: directory)
         let first = try await repository.refresh(.provenance, providerID: "one")
-        #expect(first.payload.origins == [])
+        #expect(first.revision == 1)
         await api.setResponse(LinuxDoResponse(payload: nil, etag: "v1"))
         let second = try await repository.refresh(.provenance, providerID: "one", force: true)
-        #expect(second.payload.revision == 1)
+        #expect(second.revision == 1)
         #expect(await api.lastETag == "v1")
         let restored = LinuxDoRepository(api: api, directory: directory)
-        #expect(await restored.cached(.provenance, providerID: "one")?.payload.origins == [])
+        #expect(try await restored.cached(.provenance, providerID: "one")?.revision == 1)
+        #expect(try await restored.verifiedIDs([42], providerID: "one").isEmpty)
     }
 
     @Test func concurrentRefreshCoalescesAndTTLDoesNotRequestAgain() async throws {
@@ -74,8 +85,8 @@ struct LinuxDoRepositoryTests {
         await api.setFailure(false)
         await api.setResponse(LinuxDoResponse(payload: LinuxDoPayload(revision: 0, generatedAt: "", complete: true, origins: []), etag: "old"))
         do { _ = try await repository.refresh(.provenance, providerID: "one", force: true); Issue.record("Accepted older revision") } catch {}
-        #expect(await repository.cached(.provenance, providerID: "one")?.etag == "v1")
-        #expect(await repository.cached(.provenance, providerID: "two") == nil)
+        #expect(try await repository.cached(.provenance, providerID: "one")?.etag == "v1")
+        #expect(try await repository.cached(.provenance, providerID: "two") == nil)
     }
 
     @Test func missingAndPartialBodiesCannotEraseSnapshot() throws {
@@ -95,11 +106,13 @@ struct LinuxDoRepositoryTests {
         await api.setResponse(LinuxDoResponse(payload: LinuxDoPayload(revision: 1, generatedAt: "", complete: true, origins: [LinuxDoOrigin(repoID: 42, topicCount: 2, verifiedAt: verified)]), etag: "v1"))
         let store = LinuxDoStore(repository: LinuxDoRepository(api: api, directory: directory))
         await store.refreshProvenance()
-        #expect(store.origin(for: 42)?.topicCount == 2)
+        let originalKey = try #require(store.provenanceKey)
+        #expect(await store.verifiedIDs([42, 43], key: originalKey) == [42])
         await api.switchProvider("two")
         await api.setFailure(true)
         await store.providerDidChange()
-        #expect(store.origin(for: 42) == nil)
+        #expect(store.provenanceKey == nil)
+        #expect(await store.verifiedIDs([42], key: originalKey).isEmpty)
         #expect(store.providerID == "two")
     }
 
@@ -134,8 +147,11 @@ struct LinuxDoRepositoryTests {
         defer { try? FileManager.default.removeItem(at: fixture.directory) }
         await fixture.api.setFailure(networkFailure)
         #expect(await fixture.store.discussionURL(for: 42) == nil)
-        #expect(fixture.store.origin(for: 42) != nil)
-        #expect(fixture.store.failed.contains(.topics(42)) == networkFailure)
+        if let key = fixture.store.provenanceKey {
+            #expect(await fixture.store.verifiedIDs([42], key: key) == [42])
+        } else {
+            Issue.record("Expected verified source after discussion lookup")
+        }
     }
 
     /// 来源存在也不能绕过远端回链白名单；坏快照不应把浏览器带到任意站点。
@@ -144,7 +160,7 @@ struct LinuxDoRepositoryTests {
         let fixture = await discussionStore(topics: [unsafe])
         defer { try? FileManager.default.removeItem(at: fixture.directory) }
         #expect(await fixture.store.discussionURL(for: 42) == nil)
-        #expect(fixture.store.failed.contains(.topics(42)))
+        #expect(await fixture.api.calls == 2)
     }
 
     /// 服务切换后不能用旧服务的帖子缓存打开链接，也不能为未核验来源偷偷联网。
@@ -156,8 +172,61 @@ struct LinuxDoRepositoryTests {
         #expect(await fixture.store.discussionURL(for: 42) != nil)
         await fixture.api.switchProvider("two")
         #expect(await fixture.store.discussionURL(for: 42) == nil)
-        #expect(fixture.store.origin(for: 42) == nil)
         #expect(await fixture.api.calls == 2)
+    }
+
+    /// 模拟来源接口不可用。目录、真实分页闸门和徽章展示策略仍只依赖目录快照。
+    @Test @MainActor func catalogLoadsTwentyBadgesWithoutProvenanceAndAppendsOnce() async throws {
+        let fixture = try await makeLinuxDoFixture(languages: Array(repeating: "Swift", count: 95))
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        await fixture.api.failProvenance()
+        let model = LinuxDoListModel()
+        let key = try #require(fixture.store.catalogKey)
+        let request = LinuxDoListRequest(key: key, query: LinuxDoListQuery(base: .init()))
+        await model.update(request, store: fixture.store)
+        #expect(model.rows.count == 20)
+        #expect(model.total == 95)
+        func verifyMembership() -> Bool {
+            Issue.record("Catalog badge requested cross-category membership")
+            return false
+        }
+        #expect(model.rows.filter { _ in LinuxDoListModel.badgeSource.isVisible(verified: verifyMembership()) }.count == 20)
+        let gate = RepoCardPaginationGate()
+        let page = RepoCardPaginationPage(identity: "linuxdo", visibleItemCount: 20, loadedItemCount: 20, hasMore: true)
+        gate.update(page, isLoading: false)
+        #expect(!gate.claim(page, appearingIndex: 8))
+        for index in 9..<20 where gate.claim(page, appearingIndex: index) {
+            await model.loadMore(requested: request, store: fixture.store)
+        }
+        #expect(model.rows.count == 40)
+        #expect(Set(model.rows.map(\.repoID)).count == 40)
+        #expect(await fixture.api.resources == [.catalog])
+        #expect(fixture.store.provenanceKey == nil)
+    }
+
+    /// 相同发布版本不改正文。升级版本对同一 ID 更新，并仅从本服务删除权威撤回的仓库。
+    @Test func revalidationKeepsExistingBodyAndNewRevisionReplacesMembership() async throws {
+        let fixture = try await makeLinuxDoFixture(languages: ["Go", "Rust", "Swift"])
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let repository = fixture.repository
+        let oldKey = LinuxDoCatalogKey(providerID: "one", revision: 1)
+        let initial = try #require(try await repository.page(key: oldKey, query: .init()))
+        await fixture.api.setResponse(LinuxDoResponse(payload: nil, etag: nil))
+        let validation = try await repository.refresh(.catalog, providerID: "one", force: true)
+        #expect(validation.etag == "catalog-v1")
+        #expect(await fixture.api.lastETag == "catalog-v1")
+        let same = try makeLinuxDoCatalog(languages: ["Python"], revision: 1)
+        await fixture.api.setResponse(LinuxDoResponse(payload: same, etag: "same-version"))
+        _ = try await repository.refresh(.catalog, providerID: "one", force: true)
+        #expect(try await repository.page(key: oldKey, query: .init())?.rows == initial.rows)
+
+        let replacement = try makeLinuxDoCatalog(languages: ["Python", "Go"], revision: 2)
+        await fixture.api.setResponse(LinuxDoResponse(payload: replacement, etag: "catalog-v2"))
+        _ = try await repository.refresh(.catalog, providerID: "one", force: true)
+        #expect(try await repository.page(key: oldKey, query: .init()) == nil)
+        let newKey = LinuxDoCatalogKey(providerID: "one", revision: 2)
+        #expect(try await repository.page(key: newKey, query: .init())?.rows.map(\.language) == ["Go", "Python"])
+        #expect(try await repository.catalogSummary(providerID: "two") == nil)
     }
 
     /// View 生命周期取消点击后，不能再请求帖子或返回可用于迟到跳转的链接。
@@ -190,21 +259,57 @@ struct LinuxDoRepositoryTests {
 }
 
 /// 可控异步替身，用短暂挂起制造真实 actor 重入窗口，不依赖外部网络时序。
-private actor LinuxDoAPIFake: LinuxDoAPIProtocol {
+actor LinuxDoAPIFake: LinuxDoAPIProtocol {
     var calls = 0
+    var resources: [LinuxDoResource] = []
     var lastETag: String?
     private var provider = "one"
     private var fails = false
+    private var provenanceFails = false
     private var response = LinuxDoResponse(payload: LinuxDoPayload(revision: 1, generatedAt: "", complete: true, origins: []), etag: "v1")
     func linuxDoProviderIdentity() -> String { provider }
     func setResponse(_ response: LinuxDoResponse) { self.response = response }
     func setFailure(_ value: Bool) { fails = value }
+    func failProvenance() { provenanceFails = true }
     func switchProvider(_ value: String) { provider = value }
     func fetchLinuxDo(_ resource: LinuxDoResource, providerID: String, ifNoneMatch: String?) async throws -> LinuxDoResponse {
         calls += 1
+        resources.append(resource)
         lastETag = ifNoneMatch
         try await Task.sleep(nanoseconds: 30_000_000)
-        if fails { throw URLError(.notConnectedToInternet) }
+        if fails || (provenanceFails && resource == .provenance) { throw URLError(.notConnectedToInternet) }
         return response
     }
+}
+
+/// 测试目录从 DTO 解码，使用和生产一致的字段与发行版本。
+func makeLinuxDoCatalog(languages: [String?], revision: Int64 = 1, promotions: [String: String] = [:]) throws -> LinuxDoPayload {
+    let repos = try languages.enumerated().map { index, language in
+        var fields: [String: Any] = [
+            "repo_id": index + 1, "owner": "test", "name": "repo-\(index)", "full_name": "test/repo-\(index)",
+            "stars": index, "forks": 0, "watchers": 0, "subscribers": 0, "open_issues": 0,
+            "is_archived": false, "is_fork": false, "release_download_count": 0,
+        ]
+        if let language { fields["language"] = language }
+        return try JSONDecoder().decode(DiscoveryRepoDTO.self, from: JSONSerialization.data(withJSONObject: fields))
+    }
+    let dates = Dictionary(uniqueKeysWithValues: repos.map {
+        let id = String($0.repoID)
+        return (id, promotions[id] ?? "2026-11-15T00:00:00Z")
+    })
+    return LinuxDoPayload(revision: revision, generatedAt: "", complete: true, repositories: repos, promotionDates: dates)
+}
+
+/// 测试之间隔离服务、磁盘目录和观察状态。
+@MainActor
+func makeLinuxDoFixture(languages: [String?], promotions: [String: String] = [:]) async throws
+    -> (store: LinuxDoStore, repository: LinuxDoRepository, api: LinuxDoAPIFake, directory: URL) {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let api = LinuxDoAPIFake()
+    let payload = try makeLinuxDoCatalog(languages: languages, promotions: promotions)
+    await api.setResponse(LinuxDoResponse(payload: payload, etag: "catalog-v1"))
+    let repository = LinuxDoRepository(api: api, directory: directory)
+    let store = LinuxDoStore(repository: repository)
+    await store.refreshCatalog()
+    return (store, repository, api, directory)
 }

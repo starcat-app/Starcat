@@ -80,6 +80,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.linuxDoDetailBadgeSource) private var linuxDoBadgeSource
     @State private var showOpenSSFScoreSheet = false
     @State private var showRepoHealthSheet = false
     @State private var paywallContext: ProPaywallContext?
@@ -244,7 +245,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
     /// 来源、Issues 与技能入口共用一行紧凑胶囊，窄面板时一起移到许可证下方。
     private var sourceAndFeatureBadges: some View {
         HStack(spacing: 10) {
-            LinuxDoSourceBadge(repoID: repo.id, interactive: true)
+            LinuxDoSourceBadge(repoID: repo.id, interactive: true, source: linuxDoBadgeSource)
             if let onIssuesTapped {
                 RepoIssuesEntryButton(openIssuesCount: openIssuesCount, action: onIssuesTapped)
                     // 切仓库或账号时从 0 重新入场；同仓库计数更新保持当前动画状态。

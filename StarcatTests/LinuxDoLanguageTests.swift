@@ -13,72 +13,44 @@ import Testing
 @MainActor
 struct LinuxDoLanguageTests {
     /// 同名语言大小写差异不拆行，nil / 空串 / 空白统一归入未分类。
-    @Test func aggregatesNormalizedLanguagesWithoutLosingRepositories() throws {
-        let repos = try repositories(["Swift", " swift ", "Python", nil, "", "  "])
-        let languages = LinuxDoStore.languageAggregates(in: repos)
+    @Test func aggregatesNormalizedLanguagesWithoutLosingRepositories() async throws {
+        let fixture = try await makeLinuxDoFixture(languages: ["Swift", " swift ", "Python", nil, "", "  "])
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let key = try #require(fixture.store.catalogKey)
+        let languages = fixture.store.languages
         #expect(languages.count == 3)
         #expect(languages.first { $0.key == "Swift" }?.count == 2)
         #expect(languages.first { $0.key == "Python" }?.count == 1)
         #expect(languages.first { $0.key == TrendingLanguage.uncategorizedKey }?.count == 3)
-        #expect(languages.reduce(0) { $0 + $1.count } == repos.count)
+        #expect(languages.reduce(0) { $0 + $1.count } == 6)
         for language in languages {
-            let matching = repos.filter {
-                LinuxDoStore.matchesLanguage($0.language, selection: language.key, interestedLanguages: [])
-            }
-            #expect(matching.count == language.count)
+            let matching = try await fixture.repository.page(key: key, query: LinuxDoCatalogQuery(language: language.key))
+            #expect(matching?.total == language.count)
         }
     }
 
     /// 空缓存与全部有语言的快照都保留未分类零计数入口，不把空缓存解释为另一来源。
-    @Test func emptyAndFullyClassifiedCatalogsKeepZeroUncategorizedRow() throws {
-        let empty = LinuxDoStore.languageAggregates(in: [])
-        #expect(empty.map(\.key) == [TrendingLanguage.uncategorizedKey])
-        #expect(empty.first?.count == 0)
-        let languages = LinuxDoStore.languageAggregates(in: try repositories(["Rust", "Go"]))
+    @Test(arguments: [[], ["Rust", "Go"]] as [[String?]])
+    func emptyAndFullyClassifiedCatalogsKeepZeroUncategorizedRow(repos: [String?]) async throws {
+        let fixture = try await makeLinuxDoFixture(languages: repos)
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let languages = fixture.store.languages
         #expect(languages.first { $0.key == TrendingLanguage.uncategorizedKey }?.count == 0)
-        #expect(languages.reduce(0) { $0 + $1.count } == 2)
+        #expect(languages.reduce(0) { $0 + $1.count } == repos.count)
     }
 
-    @Test(arguments: [nil, "", "Rust", " Swift "] as [String?])
-    func allLanguagesDoesNotExcludeUnknownLanguages(language: String?) {
-        #expect(LinuxDoStore.matchesLanguage(language, selection: nil, interestedLanguages: ["Swift"]))
-        #expect(LinuxDoStore.matchesLanguage(language, selection: "", interestedLanguages: []))
-    }
-
-    @Test(arguments: [nil, "", "  ", "Swift"] as [String?])
-    func uncategorizedMatchesOnlyEmptyMainLanguage(language: String?) {
-        let expected = (language ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        #expect(LinuxDoStore.matchesLanguage(language, selection: TrendingLanguage.uncategorizedKey, interestedLanguages: []) == expected)
-    }
-
-    /// “其他”不能吞掉未分类，也不能把大小写不同的感兴趣语言当成新语言。
-    @Test(arguments: [nil, "", "  ", "Swift", "sWiFt", " Python ", "Rust"] as [String?])
-    func otherUsesInterestedLanguagesRatherThanGlobalSelection(language: String?) {
-        let expected = language == "Rust"
-        #expect(LinuxDoStore.matchesLanguage(language, selection: TrendingLanguage.otherRawValue, interestedLanguages: ["Swift", " python "]) == expected)
-    }
-
-    @Test func namedLanguageAndInterestChangesAreAppliedLocally() {
-        #expect(LinuxDoStore.matchesLanguage(" Swift ", selection: "sWiFt", interestedLanguages: []))
-        #expect(!LinuxDoStore.matchesLanguage(nil, selection: "Swift", interestedLanguages: []))
-        #expect(!LinuxDoStore.matchesLanguage("Python", selection: "Swift", interestedLanguages: []))
-        #expect(LinuxDoStore.matchesLanguage("Rust", selection: TrendingLanguage.otherRawValue, interestedLanguages: []))
-        #expect(!LinuxDoStore.matchesLanguage("Rust", selection: TrendingLanguage.otherRawValue, interestedLanguages: ["rust"]))
-    }
-
-    /// 来源内单选与 toolbar 全局多选取交集；选择侧栏语言不能清空全局筛选。
-    @Test func localLanguageSelectionIntersectsWithGlobalLanguages() throws {
-        let repos = try repositories(["Swift", "Python", "Rust", nil])
-        let local = repos.filter {
-            LinuxDoStore.matchesLanguage($0.language, selection: "Swift", interestedLanguages: ["Swift"])
-        }
-        let globalLanguages = ["Python"]
-        let intersection = local.filter { repo in
-            globalLanguages.contains { $0.caseInsensitiveCompare(repo.language ?? "") == .orderedSame }
-        }
-        #expect(local.map(\.language) == ["Swift"])
-        #expect(intersection.isEmpty)
-        #expect(globalLanguages == ["Python"])
+    /// “其他”排除未分类和感兴趣语言，来源内单选与全局多选取交集。
+    @Test func appliesOtherAndIntersectsGlobalLanguageFilters() async throws {
+        let fixture = try await makeLinuxDoFixture(languages: [nil, "", " ", "Swift", "sWiFt", " Python ", "Rust"])
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let key = try #require(fixture.store.catalogKey)
+        let other = LinuxDoCatalogQuery(language: TrendingLanguage.otherRawValue, interestedLanguages: ["Swift", " python "])
+        #expect(try await fixture.repository.page(key: key, query: other)?.rows.map(\.repoID) == [7])
+        var named = LinuxDoCatalogQuery(language: " swift ")
+        #expect(try await fixture.repository.page(key: key, query: named)?.rows.map(\.repoID) == [5, 4])
+        named.globalLanguages = ["Python"]
+        #expect(try await fixture.repository.page(key: key, query: named)?.total == 0)
+        #expect(try await fixture.repository.page(key: key, query: .init())?.total == 7)
     }
 
     /// 不让普通发现保留的 topic / platform / language 污染 Linux.do 面包屑。
@@ -119,19 +91,19 @@ struct LinuxDoLanguageTests {
     }
 
     /// 语言变化重新从首批 20 项开始；即使两次结果都为空，也保留不同的分页身份。
-    @Test func changingLanguageResetsLoadedPagesAndEmptyCategoryIdentity() throws {
-        let repos = try repositories(Array(repeating: "Swift", count: 70) + Array(repeating: "Rust", count: 25))
+    @Test func changingLanguageResetsLoadedPagesAndEmptyCategoryIdentity() async throws {
+        let fixture = try await makeLinuxDoFixture(languages: Array(repeating: "Swift", count: 70) + Array(repeating: "Rust", count: 25))
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let key = try #require(fixture.store.catalogKey)
         let model = LinuxDoListModel()
-        for language in ["Swift", "Rust", "Python", "Go"] {
-            let matching = repos.filter {
-                LinuxDoStore.matchesLanguage($0.language, selection: language, interestedLanguages: [])
-            }
-            model.reset(repositories: matching, promotionDates: [:], search: "", recentPromotionFirst: false, identity: "linuxdo:\(language)")
-            #expect(model.total == matching.count)
-            #expect(model.rows.count == min(20, matching.count))
-            #expect(model.identity == "linuxdo:\(language)")
+        for (language, count) in [("Swift", 70), ("Rust", 25), ("Python", 0), ("Go", 0)] {
+            let request = LinuxDoListRequest(key: key, query: LinuxDoListQuery(base: .init(language: language)))
+            await model.update(request, store: fixture.store)
+            #expect(model.total == count)
+            #expect(model.rows.count == min(20, count))
+            #expect(model.request == request)
             if language == "Swift" {
-                model.loadMore()
+                await model.loadMore(requested: request, store: fixture.store)
                 #expect(model.rows.count == 40)
             }
         }
@@ -139,56 +111,56 @@ struct LinuxDoLanguageTests {
         #expect(!model.hasMore)
     }
 
-    /// 分类回切保持窗口内已加载页；使用带计数的输入确认命中时连全量筛选也不会执行。
-    @Test func sameQueryReusesPreparedRowsAndLoadedPages() throws {
-        let repos = try repositories(Array(repeating: "Swift", count: 95))
+    /// 回切复用已加载页。服务发布新版本时更新原已读范围，并保留动画与滚动身份。
+    @Test func sameQueryReusesPreparedRowsAndLoadedPages() async throws {
+        let fixture = try await makeLinuxDoFixture(languages: Array(repeating: "Swift", count: 95))
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let key = try #require(fixture.store.catalogKey)
+        let query = LinuxDoListQuery(base: .init(language: "Swift"))
+        let request = LinuxDoListRequest(key: key, query: query)
         let model = LinuxDoListModel()
         var preparations = 0
-        func prepare() -> [DiscoveryRepoDTO] {
+        func prepare() -> [LinuxDoRepoMembership] {
             preparations += 1
-            return repos
+            return []
         }
-        model.reset(repositories: prepare(), promotionDates: [:], search: "", recentPromotionFirst: false, identity: "provider:7:Swift")
-        model.loadMore()
+        await model.update(request, store: fixture.store, prepareMemberships: prepare)
+        await model.loadMore(requested: request, store: fixture.store)
+        model.scrollAnchor = model.rows[24].repoID
         let loadedIDs = model.rows.map(\.repoID)
-        model.reset(repositories: prepare(), promotionDates: [:], search: "", recentPromotionFirst: false, identity: "provider:7:Swift")
+        await model.update(request, store: fixture.store, prepareMemberships: prepare)
         #expect(preparations == 1)
         #expect(model.rows.map(\.repoID) == loadedIDs)
         #expect(model.rows.count == 40)
         #expect(model.hasMore)
 
-        model.reset(repositories: prepare(), promotionDates: [:], search: "", recentPromotionFirst: false, identity: "provider:8:Swift")
+        let updated = try makeLinuxDoCatalog(languages: Array(repeating: "Swift", count: 94), revision: 2)
+        await fixture.api.setResponse(LinuxDoResponse(payload: updated, etag: "catalog-v2"))
+        await fixture.store.refreshCatalog(force: true)
+        let nextKey = try #require(fixture.store.catalogKey)
+        let nextRequest = LinuxDoListRequest(key: nextKey, query: query)
+        await model.update(nextRequest, store: fixture.store, prepareMemberships: prepare)
         #expect(preparations == 2)
-        #expect(model.rows.count == 20)
-        #expect(model.total == 95)
+        #expect(model.rows.count == 40)
+        #expect(model.total == 94)
+        #expect(model.scrollAnchor == loadedIDs[24])
+        #expect(model.request?.presentationID == request.presentationID)
+        await model.loadMore(requested: request, store: fixture.store)
+        #expect(model.rows.count == 40)
     }
 
     /// 搜索与排序变化必须失效旧结果，推广时间排序不能被星标排序缓存覆盖。
-    @Test func changedQueryRebuildsSearchAndPromotionOrder() throws {
-        let repos = try repositories(["Swift", "Rust", "Go"])
-        let model = LinuxDoListModel()
-        let dates = ["1": "2026-11-17T00:00:00Z"]
-        model.reset(repositories: repos, promotionDates: dates, search: "", recentPromotionFirst: false, identity: "stars")
-        #expect(model.rows.map(\.repoID) == [3, 2, 1])
-        model.reset(repositories: repos, promotionDates: dates, search: "", recentPromotionFirst: true, identity: "promoted")
-        #expect(model.rows.map(\.repoID) == [1, 3, 2])
-        model.reset(repositories: repos, promotionDates: dates, search: "repo-1", recentPromotionFirst: true, identity: "promoted:repo-1")
-        #expect(model.rows.map(\.repoID) == [2])
-        #expect(model.total == 1)
-        #expect(!model.hasMore)
-    }
-
-    /// 通过现有 API 解码契约生成最小公开仓库样本，不依赖生产目录的数量或语言分布。
-    private func repositories(_ languages: [String?]) throws -> [DiscoveryRepoDTO] {
-        try languages.enumerated().map { index, language in
-            var object: [String: Any] = [
-                "repo_id": index + 1, "owner": "test", "name": "repo-\(index)",
-                "full_name": "test/repo-\(index)", "stars": index, "forks": 0,
-                "watchers": 0, "subscribers": 0, "open_issues": 0,
-                "is_archived": false, "is_fork": false, "release_download_count": 0,
-            ]
-            if let language { object["language"] = language }
-            return try JSONDecoder().decode(DiscoveryRepoDTO.self, from: JSONSerialization.data(withJSONObject: object))
-        }
+    @Test func searchSortAndExternalMembershipRunBeforePagination() async throws {
+        let fixture = try await makeLinuxDoFixture(languages: Array(repeating: "Swift", count: 95),
+                                                  promotions: ["1": "2026-11-17T00:00:00Z"])
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let key = try #require(fixture.store.catalogKey)
+        #expect(try await fixture.repository.page(key: key, query: .init())?.rows.first?.repoID == 1)
+        #expect(try await fixture.repository.page(key: key, query: .init(recentPromotionFirst: false))?.rows.first?.repoID == 95)
+        let membership = LinuxDoRepoMembership(ids: [2], includes: true)
+        let search = LinuxDoCatalogQuery(search: "REPO-1", recentPromotionFirst: false)
+        let page = try #require(try await fixture.repository.page(key: key, query: search, memberships: [membership]))
+        #expect(page.rows.map(\.repoID) == [2])
+        #expect(page.total == 1)
     }
 }

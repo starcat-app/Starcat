@@ -326,6 +326,7 @@ struct ActivityView: View {
         }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
+        .linuxDoSourceBadges(for: visibleItems.compactMap { $0.repo?.id })
         .automaticListPagination(
             visibleItemCount: visibleItems.count,
             loadedItemCount: items.count,

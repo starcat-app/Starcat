@@ -139,6 +139,7 @@ struct RecommendationHistoryListView: View {
         .alternatingRowBackgrounds()
         .scrollContentBackground(.hidden)
         .id(model.paginationIdentity)
+        .linuxDoSourceBadges(for: rows.compactMap { $0.item?.repoID })
         .automaticListPagination(
             visibleItemCount: rows.count, loadedItemCount: rows.count,
             hasMore: model.hasMore, isLoading: false, identity: model.paginationIdentity.uuidString

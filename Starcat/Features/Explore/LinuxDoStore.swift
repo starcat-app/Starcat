@@ -2,238 +2,278 @@
 //  LinuxDoStore.swift
 //  Starcat
 //
-//  主窗口共享公共来源索引。列表行只做 O(1) ID 查询，绝不逐行联网或上传 Stars 清单。
+//  将当前服务的目录摘要、分页结果和跨分类来源证明分别发布给界面。
 //
 
 import Foundation
 import Observation
 
-/// UI 只发布当前服务身份的数据；取消、断网、坏快照保留上次有效缓存。
+struct LinuxDoProvenanceKey: Hashable {
+    let providerID: String
+    let revision: Int64
+    let checkedAt: Date
+}
+
+/// 目录恢复与刷新不依赖来源名单。来源名单只服务其他分类，帖子在点击详情徽章时按需读取。
 @MainActor @Observable
 final class LinuxDoStore {
     var selectedSource: DiscoverySource = .catalog
-    /// 来源内的单选语言独立于普通 Discovery 和 toolbar 全局多语言筛选，不写用户数据。
     var selectedLanguage: String?
     private(set) var providerID = ""
-    private(set) var catalog: LinuxDoCachedSnapshot?
-    private(set) var provenance: LinuxDoCachedSnapshot?
-    private(set) var topicSnapshots: [Int64: LinuxDoCachedSnapshot] = [:]
-    private(set) var loading: Set<LinuxDoResource> = []
-    private(set) var failed: Set<LinuxDoResource> = []
-    private var origins: [Int64: LinuxDoOrigin] = [:]
-    private var verifiedDates: [Int64: Date] = [:]
+    private(set) var catalog: LinuxDoCatalogSummary?
+    private(set) var provenanceKey: LinuxDoProvenanceKey?
+    private(set) var isRefreshingCatalog = false
+    private(set) var catalogFailed = false
     private let repository: LinuxDoRepository
 
     init(repository: LinuxDoRepository) { self.repository = repository }
 
-    var repositories: [DiscoveryRepoDTO] { catalog?.payload.repositories ?? [] }
-    var isRefreshingCatalog: Bool { loading.contains(.catalog) }
-    var languages: [DiscoveryLanguageDTO] { Self.languageAggregates(in: repositories) }
-
-    /// 只聚合本来源快照；大小写与空白归一后计数，避免同一语言出现重复行。
-    /// 保留未分类的零计数入口，与现有语言侧栏及离线空快照的展示规则一致。
-    static func languageAggregates(in repositories: [DiscoveryRepoDTO]) -> [DiscoveryLanguageDTO] {
-        let groups = Dictionary(grouping: repositories) { normalizedLanguage($0.language).lowercased() }
-        var result = groups.map { key, repos in
-            let language = normalizedLanguage(repos.first?.language)
-            return DiscoveryLanguageDTO(
-                key: key.isEmpty ? TrendingLanguage.uncategorizedKey : language,
-                label: key.isEmpty ? TrendingLanguage.uncategorized.localizedDisplayName : language,
-                count: repos.count
-            )
-        }
-        if groups[""] == nil {
-            result.append(DiscoveryLanguageDTO(key: TrendingLanguage.uncategorizedKey, label: TrendingLanguage.uncategorized.localizedDisplayName, count: 0))
-        }
-        return result.sorted { $0.key < $1.key }
+    var total: Int { catalog?.total ?? 0 }
+    var languages: [DiscoveryLanguageDTO] { catalog?.languages ?? [] }
+    var catalogKey: LinuxDoCatalogKey? {
+        catalog.map { LinuxDoCatalogKey(providerID: providerID, revision: $0.metadata.revision) }
     }
 
-    /// 与聚合使用同一主语言口径；“其他”排除感兴趣语言，而不是排除当前全局筛选。
-    static func matchesLanguage(_ language: String?, selection: String?, interestedLanguages: [String]) -> Bool {
-        let language = normalizedLanguage(language)
-        let selection = normalizedLanguage(selection)
-        switch selection {
-        case "": return true
-        case TrendingLanguage.uncategorizedKey: return language.isEmpty
-        case TrendingLanguage.otherRawValue:
-            return !language.isEmpty && !interestedLanguages.contains {
-                language.caseInsensitiveCompare(normalizedLanguage($0)) == .orderedSame
-            }
-        default: return language.caseInsensitiveCompare(selection) == .orderedSame
-        }
-    }
-
-    private static func normalizedLanguage(_ language: String?) -> String {
-        (language ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    /// 超过七天未验证索引，或三十天未验证关系时，不把历史事实冒充当前来源。
-    func origin(for repoID: Int64, now: Date = Date()) -> LinuxDoOrigin? {
-        guard let provenance, now.timeIntervalSince(provenance.checkedAt) <= 7 * 86400,
-              let verified = verifiedDates[repoID], now.timeIntervalSince(verified) <= 30 * 86400 else { return nil }
-        return origins[repoID]
-    }
-
-    func refreshProvenance(force: Bool = false) async {
-        await load(.provenance, force: force)
-        if selectedSource == .linuxDo, let catalog, let provenance,
-           catalog.payload.revision < provenance.payload.revision {
-            await load(.catalog, force: true)
-        }
-    }
-
-    /// 启动时只恢复目录缓存，不预先联网；进入分类可直接准备首屏，过期校验仍走原刷新入口。
+    /// 启动与回切优先恢复摘要。已读摘要由窗口复用，不再次读取目录行。
     func restoreCatalog() async {
-        let identity = await repository.providerIdentity()
+        let provider = await repository.providerIdentity()
         guard !Task.isCancelled else { return }
-        adoptProvider(identity)
-        if let cached = await repository.cached(.catalog, providerID: identity), providerID == identity {
-            apply(cached, resource: .catalog)
-        }
+        adoptProvider(provider)
+        guard catalog == nil else { return }
+        await readCatalogSummary(provider: provider)
     }
 
     func refreshCatalog(force: Bool = false) async {
-        async let index: Void = load(.provenance, force: force)
-        await load(.catalog, force: force)
-        await index
-        // 两个端点独立缓存，但不能把已知较旧的目录/来源索引继续当作最新结果。
-        if let catalog, let provenance {
-            if catalog.payload.revision < provenance.payload.revision { await load(.catalog, force: true) }
-            if provenance.payload.revision < catalog.payload.revision { await load(.provenance, force: true) }
-        }
-    }
-    func refreshTopics(repoID: Int64, force: Bool = false) async { await load(.topics(repoID), force: force) }
-
-    /// 详情点击优先使用缓存回链；无缓存才加载帖子，不让直接跳转变成每次强制联网。
-    /// await 期间可能切换服务或撤回来源，因此加载后必须重新核对身份与有效来源。
-    func discussionURL(for repoID: Int64) async -> URL? {
-        let identity = await repository.providerIdentity()
-        guard !Task.isCancelled else { return nil }
-        adoptProvider(identity)
-        guard origin(for: repoID) != nil else { return nil }
-        if let url = latestDiscussionURL(for: repoID) { return url }
-        await refreshTopics(repoID: repoID)
-        guard !Task.isCancelled, providerID == identity, origin(for: repoID) != nil else { return nil }
-        return latestDiscussionURL(for: repoID)
-    }
-
-    /// 不依赖接口数组顺序或日期字符串排序；同一发布时间用帖子 ID 稳定决胜。
-    private func latestDiscussionURL(for repoID: Int64) -> URL? {
-        topicSnapshots[repoID]?.payload.topics?
-            .filter { $0.safeURL != nil }
-            .max { lhs, rhs in
-                let left = LinuxDoPayload.date(lhs.publishedAt) ?? .distantPast
-                let right = LinuxDoPayload.date(rhs.publishedAt) ?? .distantPast
-                return left == right ? lhs.id < rhs.id : left < right
-            }?.safeURL
-    }
-
-    /// 设置页热切换立即清除 UI 旧身份，再加载新服务的磁盘缓存。旧请求仍由仓储合并收口。
-    func providerDidChange() async {
-        let identity = await repository.providerIdentity()
-        adoptProvider(identity)
-        await refreshProvenance()
-    }
-
-    private func adoptProvider(_ identity: String) {
-        guard providerID != identity else { return }
-        providerID = identity
-        catalog = nil
-        provenance = nil
-        topicSnapshots = [:]
-        origins = [:]
-        verifiedDates = [:]
-        loading = []
-        failed = []
-    }
-
-    private func load(_ resource: LinuxDoResource, force: Bool) async {
-        let identity = await repository.providerIdentity()
-        guard !Task.isCancelled else { return }
-        adoptProvider(identity)
-        guard !loading.contains(resource) else { return }
-        loading.insert(resource)
-        defer { if providerID == identity { loading.remove(resource) } }
-        var requiresRevalidation = force
-        if let cached = await repository.cached(resource, providerID: identity), providerID == identity {
-            if case .topics = resource, cached.payload.revision < (provenance?.payload.revision ?? -1) { requiresRevalidation = true }
-            apply(cached, resource: resource)
-        }
+        await restoreCatalog()
+        guard !Task.isCancelled, !isRefreshingCatalog else { return }
+        let provider = providerID
+        isRefreshingCatalog = true
+        defer { if providerID == provider { isRefreshingCatalog = false } }
         do {
-            let fresh = try await repository.refresh(resource, providerID: identity, force: requiresRevalidation)
-            try Task.checkCancellation()
-            guard providerID == identity else { return }
-            if case .topics = resource, fresh.payload.revision < (provenance?.payload.revision ?? -1) { throw LinuxDoCacheError.obsoleteRevision }
-            apply(fresh, resource: resource)
-            failed.remove(resource)
+            let updated = try await repository.refresh(.catalog, providerID: provider, force: force)
+            guard providerID == provider else { return }
+            if catalog?.metadata.revision == updated.revision {
+                if catalog?.metadata != updated { catalog?.metadata = updated }
+            } else {
+                await readCatalogSummary(provider: provider)
+            }
+            if providerID == provider { catalogFailed = false }
         } catch {
-            guard !Task.isCancelled, providerID == identity, !(error is CancellationError) else { return }
-            failed.insert(resource)
+            guard providerID == provider, !(error is CancellationError) else { return }
+            catalogFailed = true
         }
     }
 
-    private func apply(_ snapshot: LinuxDoCachedSnapshot, resource: LinuxDoResource) {
-        switch resource {
-        case .catalog:
-            guard snapshot.payload.revision >= (catalog?.payload.revision ?? -1) else { return }
-            catalog = snapshot
-        case .provenance:
-            guard snapshot.payload.revision >= (provenance?.payload.revision ?? -1) else { return }
-            provenance = snapshot
-            origins = Dictionary(uniqueKeysWithValues: (snapshot.payload.origins ?? []).map { ($0.repoID, $0) })
-            verifiedDates = origins.compactMapValues { LinuxDoPayload.date($0.verifiedAt) }
-            // 已明确撤回的来源立即退出详情缓存，不等下一次点击刷新。
-            topicSnapshots = topicSnapshots.filter { origins[$0.key] != nil && $0.value.payload.revision >= snapshot.payload.revision }
-        case .topics(let id):
-            guard snapshot.payload.revision >= max(topicSnapshots[id]?.payload.revision ?? -1, provenance?.payload.revision ?? -1) else { return }
-            topicSnapshots[id] = snapshot
-            if topicSnapshots.count > 64, let oldest = topicSnapshots.min(by: { $0.value.checkedAt < $1.value.checkedAt })?.key { topicSnapshots[oldest] = nil }
+    func page(
+        key: LinuxDoCatalogKey, query: LinuxDoCatalogQuery, memberships: [LinuxDoRepoMembership],
+        limit: Int, offset: Int = 0, knownTotal: Int? = nil
+    ) async throws -> LinuxDoCatalogPage? {
+        guard catalogKey == key else { return nil }
+        let result = try await repository.page(key: key, query: query, memberships: memberships, limit: limit, offset: offset, knownTotal: knownTotal)
+        return catalogKey == key ? result : nil
+    }
+
+    func signalCandidates(key: LinuxDoCatalogKey, query: LinuxDoCatalogQuery) async throws -> [WikiAvailabilityRequest] {
+        try await repository.signalCandidates(key: key, query: query)
+    }
+
+    /// 侧栏统一触发低频条件刷新。只发布版本和校验时间，列表任务用它失效自己的批次。
+    func refreshProvenance() async {
+        let provider = await repository.providerIdentity()
+        guard !Task.isCancelled else { return }
+        adoptProvider(provider)
+        if let cached = try? await repository.cached(.provenance, providerID: provider), providerID == provider, !Task.isCancelled {
+            applyProvenance(cached, provider: provider)
         }
+        guard providerID == provider, !Task.isCancelled else { return }
+        if let fresh = try? await repository.refresh(.provenance, providerID: provider), providerID == provider, !Task.isCancelled {
+            applyProvenance(fresh, provider: provider)
+        }
+    }
+
+    func verifiedIDs(_ ids: [Int64], key: LinuxDoProvenanceKey) async -> Set<Int64> {
+        guard provenanceKey == key, !Task.isCancelled else { return [] }
+        let verified = (try? await repository.verifiedIDs(ids, providerID: key.providerID)) ?? []
+        return provenanceKey == key && !Task.isCancelled ? verified : []
+    }
+
+    /// 详情点击优先使用可用的本地回链。目录内用目录成员关系，其他分类使用已核验来源。
+    func discussionURL(for repoID: Int64, fromCatalog: Bool = false) async -> URL? {
+        let provider = await repository.providerIdentity()
+        guard !Task.isCancelled, provider == providerID else { return nil }
+        let requiredRevision: Int64
+        if fromCatalog {
+            guard let key = catalogKey, (try? await repository.contains(repoID: repoID, providerID: provider)) == true,
+                  catalogKey == key else { return nil }
+            requiredRevision = key.revision
+        } else {
+            guard let key = provenanceKey, await verifiedIDs([repoID], key: key).contains(repoID) else { return nil }
+            requiredRevision = key.revision
+        }
+
+        var url = try? await repository.discussionURL(repoID: repoID, providerID: provider, minimumRevision: requiredRevision)
+        guard providerID == provider, !Task.isCancelled else { return nil }
+        if url == nil {
+            let resource = LinuxDoResource.topics(repoID)
+            let cached = try? await repository.cached(resource, providerID: provider)
+            guard providerID == provider, !Task.isCancelled else { return nil }
+            let fresh = try? await repository.refresh(resource, providerID: provider, force: (cached?.revision ?? requiredRevision) < requiredRevision)
+            if let fresh, fresh.revision >= requiredRevision {
+                url = try? await repository.discussionURL(repoID: repoID, providerID: provider, minimumRevision: requiredRevision)
+            }
+        }
+        guard let url, !Task.isCancelled, providerID == provider,
+              await repository.providerIdentity() == provider else { return nil }
+        if fromCatalog {
+            guard catalogKey?.revision == requiredRevision else { return nil }
+        } else {
+            guard provenanceKey?.revision == requiredRevision else { return nil }
+        }
+        return url
+    }
+
+    /// 设置热切换时立即抛弃旧服务的展示摘要，等新服务恢复自己的离线缓存。
+    func providerDidChange() async { await restoreCatalog() }
+
+    private func adoptProvider(_ provider: String) {
+        guard providerID != provider else { return }
+        providerID = provider
+        catalog = nil
+        provenanceKey = nil
+        isRefreshingCatalog = false
+        catalogFailed = false
+    }
+
+    private func readCatalogSummary(provider: String) async {
+        let summary = try? await repository.catalogSummary(providerID: provider)
+        guard providerID == provider, let summary else { return }
+        if let catalog, summary.metadata.revision < catalog.metadata.revision ||
+            (summary.metadata.revision == catalog.metadata.revision && summary.metadata.checkedAt <= catalog.metadata.checkedAt) { return }
+        catalog = summary
+    }
+
+    private func applyProvenance(_ meta: LinuxDoCacheMetadata, provider: String) {
+        if Date().timeIntervalSince(meta.checkedAt) > 7 * 86400 {
+            if let current = provenanceKey, meta.revision >= current.revision,
+               meta.checkedAt >= current.checkedAt { provenanceKey = nil }
+            return
+        }
+        let key = LinuxDoProvenanceKey(providerID: provider, revision: meta.revision, checkedAt: meta.checkedAt)
+        if let previous = provenanceKey, previous.revision > key.revision ||
+            (previous.revision == key.revision && previous.checkedAt >= key.checkedAt) { return }
+        provenanceKey = key
     }
 }
 
-/// 窗口会话持有派生列表与筛选快照，分类回切不重复筛选排序；分页不与其他窗口共享。
+struct LinuxDoListQuery: Hashable {
+    let base: LinuxDoCatalogQuery
+    var star: RepoStarFilter = .all
+    var library: RepoLibraryFilter = .all
+    var wiki: RepoSignalAvailabilityFilter = .unknown
+    var health: RepoSignalAvailabilityFilter = .unknown
+    var openSSF: RepoSignalAvailabilityFilter = .unknown
+    var databaseScope: UInt64 = 0
+
+    var needsSignalCandidates: Bool {
+        library != .all || wiki != .unknown || health != .unknown || openSSF != .unknown
+    }
+}
+
+struct LinuxDoListRequest: Hashable {
+    let key: LinuxDoCatalogKey
+    let query: LinuxDoListQuery
+    var filterRevision = 0
+
+    /// 条件决定动画和滚动身份。服务器版本和信号变化仅重新查询已加载范围。
+    var presentationID: Int { [key.providerID.hashValue, query.hashValue].hashValue }
+}
+
+/// 窗口持有当前查询和已读页。新条件从第一页开始，刷新保留已读范围，旧查询不可追加到新查询。
 @MainActor @Observable
 final class LinuxDoListModel {
+    static let badgeSource = LinuxDoBadgeSource.catalog
+
     private(set) var rows: [DiscoveryRepoDTO] = []
     private(set) var total = 0
-    private(set) var identity = ""
-    private(set) var presentationQuery: String?
-    var libraryStates: [Int64: LibraryState] = [:]
-    var wikiAvailability: [Int64: Bool] = [:]
-    private var matching: [DiscoveryRepoDTO] = []
-    var hasMore: Bool { rows.count < matching.count }
+    private(set) var request: LinuxDoListRequest?
+    private(set) var failedRequest: LinuxDoListRequest?
+    private(set) var isLoading = false
+    private(set) var isAppending = false
+    private(set) var libraryRevision = 0
+    private(set) var libraryStates: [Int64: LibraryState] = [:]
+    var recentPromotionFirst = true
+    @ObservationIgnored private var memberships: [LinuxDoRepoMembership] = []
+    @ObservationIgnored private var pendingRequest: LinuxDoListRequest?
+    @ObservationIgnored private var loadedSignalIDs: Set<Int64> = []
+    @ObservationIgnored var scrollAnchor: Int64?
 
-    /// 延迟求值跳过相同快照。查询不变时保留已加载范围，目录版本变化只更新当前结果。
-    func reset(
-        repositories: @autoclosure () -> [DiscoveryRepoDTO],
-        promotionDates: [String: String],
-        search: String,
-        recentPromotionFirst: Bool,
-        identity: String,
-        presentationQuery: String? = nil
-    ) {
-        guard self.identity != identity else { return }
-        let pageSize = ListPaginationPolicy.repoCardPageSize
-        let limit = presentationQuery != nil && self.presentationQuery == presentationQuery
-            ? max(pageSize, rows.count) : pageSize
-        self.identity = identity
-        self.presentationQuery = presentationQuery
-        let term = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        matching = repositories().filter { term.isEmpty || $0.fullName.localizedCaseInsensitiveContains(term) || ($0.description?.localizedCaseInsensitiveContains(term) ?? false) }
-        matching.sort { a, b in
-            if recentPromotionFirst, promotionDates[String(a.repoID)] != promotionDates[String(b.repoID)] {
-                return (promotionDates[String(a.repoID)] ?? "") > (promotionDates[String(b.repoID)] ?? "")
+    var hasMore: Bool { rows.count < total }
+
+    /// 同一条件回切直接使用已有结果。翻页缓存筛选交集，避免每次滚动重新遍历外部信号。
+    func update(
+        _ requested: LinuxDoListRequest, store: LinuxDoStore,
+        prepareMemberships: () async throws -> [LinuxDoRepoMembership] = { [] }
+    ) async {
+        guard request != requested || failedRequest == requested else { return }
+        guard pendingRequest != requested else { return }
+        pendingRequest = requested
+        isLoading = true
+        failedRequest = nil
+        defer {
+            if pendingRequest == requested {
+                pendingRequest = nil
+                isLoading = false
             }
-            if a.stars != b.stars { return a.stars > b.stars }
-            return a.repoID > b.repoID
         }
-        total = matching.count
-        rows = Array(matching.prefix(limit))
+        do {
+            let filters = try await prepareMemberships()
+            try Task.checkCancellation()
+            let samePresentation = request?.presentationID == requested.presentationID
+            let limit = max(ListPaginationPolicy.repoCardPageSize, samePresentation ? rows.count : 0)
+            let page = try await store.page(key: requested.key, query: requested.query.base, memberships: filters, limit: limit)
+            guard !Task.isCancelled, pendingRequest == requested, let page else { return }
+            if !samePresentation { scrollAnchor = nil }
+            if request?.query.databaseScope != requested.query.databaseScope {
+                libraryStates = [:]
+                loadedSignalIDs.removeAll()
+            }
+            rows = page.rows
+            total = page.total
+            memberships = filters
+            request = requested
+        } catch {
+            if !Task.isCancelled, pendingRequest == requested { failedRequest = requested }
+        }
     }
 
-    func loadMore() {
-        guard hasMore else { return }
-        rows.append(contentsOf: matching.dropFirst(rows.count).prefix(ListPaginationPolicy.repoCardPageSize))
+    func loadMore(requested: LinuxDoListRequest, store: LinuxDoStore) async {
+        guard request == requested, !isLoading, !isAppending, hasMore else { return }
+        isAppending = true
+        defer { isAppending = false }
+        do {
+            let offset = rows.count
+            let page = try await store.page(key: requested.key, query: requested.query.base, memberships: memberships,
+                                            limit: ListPaginationPolicy.repoCardPageSize, offset: offset, knownTotal: total)
+            guard !Task.isCancelled, request == requested, !isLoading, rows.count == offset, let page else { return }
+            rows.append(contentsOf: page.rows)
+        } catch {
+            if request == requested, !isLoading, !Task.isCancelled { failedRequest = requested }
+        }
+    }
+
+    func invalidateLibrary() {
+        loadedSignalIDs.removeAll()
+        libraryRevision &+= 1
+    }
+
+    func pendingSignalIDs() -> [Int64] {
+        rows.lazy.map(\.repoID).filter { !self.loadedSignalIDs.contains($0) }
+    }
+
+    func setLibraryStates(_ states: [Int64: LibraryState], for ids: [Int64]) {
+        var updated = libraryStates
+        for id in ids { updated[id] = states[id] }
+        if updated != libraryStates { libraryStates = updated }
+        loadedSignalIDs.formUnion(ids)
     }
 }

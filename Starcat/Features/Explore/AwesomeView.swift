@@ -255,6 +255,10 @@ struct AwesomeView: View {
         .listStyle(.inset)
         .alternatingRowBackgrounds()
         .scrollContentBackground(.hidden)
+        .linuxDoSourceBadges(for: groups.flatMap(\.items).compactMap { item in
+            if case .repository(let repo) = item { return repo.id }
+            return nil
+        })
         .automaticListPagination(
             visibleItemCount: listModel.rows.count,
             loadedItemCount: store.repositories.count,

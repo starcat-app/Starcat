@@ -152,6 +152,7 @@ struct UnifiedRepoRow: View {
     let trailingReservedWidth: CGFloat
     /// 持续单选列表共享背景滑动；未提供 namespace 时保留各行独立选中。
     let selectionNamespace: Namespace.ID?
+    let linuxDoBadgeSource: LinuxDoBadgeSource
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatReduceMotion) private var reduceMotion
@@ -178,7 +179,8 @@ struct UnifiedRepoRow: View {
         hasAISummary: Bool = false,
         hasNote: Bool = false,
         trailingReservedWidth: CGFloat = 0,
-        selectionNamespace: Namespace.ID? = nil
+        selectionNamespace: Namespace.ID? = nil,
+        linuxDoBadgeSource: LinuxDoBadgeSource = .verifiedMembership
     ) {
         self.card = card
         self.isSelected = isSelected
@@ -191,6 +193,7 @@ struct UnifiedRepoRow: View {
         self.hasNote = hasNote
         self.trailingReservedWidth = trailingReservedWidth
         self.selectionNamespace = selectionNamespace
+        self.linuxDoBadgeSource = linuxDoBadgeSource
     }
 
     var body: some View {
@@ -408,7 +411,7 @@ struct UnifiedRepoRow: View {
                 ArchivedBadge(iconOnly: true)
             }
             sceneBadgeChip
-            LinuxDoSourceBadge(repoID: card.ghRepoId)
+            LinuxDoSourceBadge(repoID: card.ghRepoId, source: linuxDoBadgeSource)
             if showReadStatusBadge,
                card.isStarred,
                let readStatus = card.readStatus,

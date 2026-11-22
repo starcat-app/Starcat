@@ -768,6 +768,7 @@ struct WeeklyContentView: View {
         }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
+        .linuxDoSourceBadges(for: visibleItems.map(\.ghRepoId))
         .automaticListPagination(
             visibleItemCount: visibleItems.count,
             loadedItemCount: viewModel.items.count,

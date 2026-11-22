@@ -653,6 +653,7 @@ struct TrendingView: View {
         }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
+        .linuxDoSourceBadges(for: visibleRepos.map { $0.element.ghRepoId })
         .automaticListPagination(
             visibleItemCount: visibleRepos.count,
             loadedItemCount: viewModel.visibleLimit,

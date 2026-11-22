@@ -240,7 +240,7 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
             // Linux.do 是独立目录，不能沿用普通 Discover 的 total，否则标题会显示
             // 与当前列表无关的全站发现数量。
             if linuxDoStore.selectedSource == .linuxDo {
-                return (metrics.linuxDoRepoCount, linuxDoStore.repositories.count)
+                return (metrics.linuxDoRepoCount, linuxDoStore.total)
             }
             let total = exploreCatalogStore.total(for: .discover)
             let current: Int
@@ -620,6 +620,12 @@ struct RepoListView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
+        .task {
+            for await _ in NotificationCenter.default.notifications(named: .repoLibraryStateDidChange) {
+                guard !Task.isCancelled else { return }
+                linuxDoListModel.invalidateLibrary()
+            }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if selectedPage != .insights,
                !(selectedPage == .trending && selectedExploreMode == .recommendations),
@@ -2078,6 +2084,7 @@ struct RepoListView: View {
                 }
             }
             .id(viewModel.listSnapshotIdentity)
+            .linuxDoSourceBadges(for: indexedItems.map { $0.repo.id } + [viewModel.temporaryPinnedRepo?.id].compactMap { $0 })
             .automaticListPagination(
                 visibleItemCount: indexedItems.count,
                 loadedItemCount: indexedItems.count,

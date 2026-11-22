@@ -66,15 +66,29 @@ struct LinuxDoPayload: Codable, Sendable {
         case promotionDates = "promotion_dates"
     }
 
-    func validate(for resource: LinuxDoResource) throws {
+    /// 网络层先拒绝不完整的发布。只有需要入库的新版本才逐条验证和解析。
+    func validateStructure(for resource: LinuxDoResource) throws {
         guard complete, revision >= 0 else { throw LinuxDoCacheError.invalidSnapshot }
         switch resource {
         case .catalog:
+            guard repositories != nil, promotionDates != nil else { throw LinuxDoCacheError.invalidSnapshot }
+        case .provenance:
+            guard origins != nil else { throw LinuxDoCacheError.invalidSnapshot }
+        case .topics(let id):
+            guard repoID == id, topics != nil else { throw LinuxDoCacheError.invalidSnapshot }
+        }
+    }
+
+    func validate(for resource: LinuxDoResource) throws {
+        try validateStructure(for: resource)
+        let timestamp = LinuxDoTimestampParser()
+        switch resource {
+        case .catalog:
             guard let repositories, let promotionDates,
-                  repositories.allSatisfy({ $0.repoID > 0 && !$0.fullName.isEmpty && Self.date(promotionDates[String($0.repoID)] ?? "") != nil }),
+                  repositories.allSatisfy({ $0.repoID > 0 && !$0.fullName.isEmpty && timestamp.parse(promotionDates[String($0.repoID)]) != nil }),
                   Set(repositories.map(\.repoID)).count == repositories.count else { throw LinuxDoCacheError.invalidSnapshot }
         case .provenance:
-            guard let origins, origins.allSatisfy({ $0.repoID > 0 && $0.topicCount > 0 && Self.date($0.verifiedAt) != nil }),
+            guard let origins, origins.allSatisfy({ $0.repoID > 0 && $0.topicCount > 0 && timestamp.parse($0.verifiedAt) != nil }),
                   Set(origins.map(\.repoID)).count == origins.count else { throw LinuxDoCacheError.invalidSnapshot }
         case .topics(let id):
             guard repoID == id, let topics, topics.allSatisfy({ $0.safeURL != nil && !$0.title.isEmpty }),
@@ -88,6 +102,17 @@ struct LinuxDoPayload: Codable, Sendable {
     }
 }
 
+/// 仅在同一批次内复用 formatter。生产时间戳有两种精度，逐条创建 formatter 会放大导入成本。
+struct LinuxDoTimestampParser {
+    private let fractional = ISO8601DateFormatter.shared
+    private let wholeSeconds = ISO8601DateFormatter()
+
+    func parse(_ value: String?) -> Date? {
+        guard let value, !value.isEmpty else { return nil }
+        return fractional.date(from: value) ?? wholeSeconds.date(from: value)
+    }
+}
+
 enum LinuxDoCacheError: Error { case invalidSnapshot, missingCachedBody, obsoleteRevision }
 
 struct LinuxDoResponse: Sendable {
@@ -96,7 +121,7 @@ struct LinuxDoResponse: Sendable {
     let etag: String?
 }
 
-/// 磁盘与内存共享同一个缓存记录；checkedAt 是 HTTP 成功验证时间，不冒充帖子的验证时间。
+/// 旧版 JSON 的迁移契约；checkedAt 是 HTTP 校验时间，不是帖子的核验日期。
 struct LinuxDoCachedSnapshot: Codable, Sendable {
     let providerID: String
     let payload: LinuxDoPayload

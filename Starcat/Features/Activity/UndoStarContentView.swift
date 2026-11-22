@@ -405,6 +405,7 @@ struct UndoStarContentView: View {
         .listStyle(.inset)
         .alternatingRowBackgrounds()
         .scrollContentBackground(.hidden)
+        .linuxDoSourceBadges(for: rows.map(\.ghRepoId))
         .automaticListPagination(
             visibleItemCount: rows.count,
             loadedItemCount: rows.count,

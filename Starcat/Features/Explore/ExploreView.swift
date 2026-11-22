@@ -498,6 +498,7 @@ private struct ExploreDiscoveryListView: View {
         }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
+        .linuxDoSourceBadges(for: indexedRepos.map { $0.repo.repoID })
         .automaticListPagination(
             visibleItemCount: indexedRepos.count,
             loadedItemCount: viewModel.repos.count,
