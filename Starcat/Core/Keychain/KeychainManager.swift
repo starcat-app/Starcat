@@ -110,6 +110,27 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
 
     private let lock = NSLock()
 
+    // MARK: - GitHub token 进程内缓存（全仓性能专项 P2-3）
+    //
+    // 为什么：GitHubAPIClient 的 KeychainTokenProvider 每个请求都调 loadGithubToken()，
+    // README 图片代理等路径同样高频。此前每次调用都会 loadAllLocked()（读文件 +
+    // AES-GCM 解密 + JSON 解码），高流量网络期间是纯重复开销。
+    // 用 `String??` 表达三态：
+    // - nil                 → 尚未从文件加载（冷启动）
+    // - .some(nil)          → 已确认当前没有 token（缺失也缓存，避免反复读文件）
+    // - .some(.some(token)) → 命中
+    // 失效路径（关键约束：换号 / 登出必须立刻生效，所以不用 TTL）：
+    // - storeGithubToken / deleteGithubToken 走 setValue 写穿缓存
+    // - deleteAllCredentials 恢复出厂时清空缓存
+    // 只缓存 github token 这一个热点账号；AI Key / 服务 Key 等低频路径维持逐次读文件。
+    private var cachedGithubToken: String?? = nil
+
+    #if DEBUG
+    /// DEBUG 专用：统计 github token 读路径真正落到加密文件的次数（缓存 miss 数）。
+    /// 仅供单测断言"读走缓存、写穿失效"用；Release 不参与编译，零开销。
+    private(set) var debugGithubTokenFileReadCount = 0
+    #endif
+
     private init() {}
 
     private static func credentialsFileURL() throws -> URL {
@@ -204,6 +225,12 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
             dict.removeValue(forKey: account)
         }
         try saveAllLocked(dict)
+        // 写穿 github token 缓存：换号（store 新值）与登出（delete）都经此路径，
+        // 立刻刷新缓存，下一次 loadGithubToken 直接命中新值，绝不会读回旧 token。
+        // 注意 saveAllLocked 失败会提前 throw，不会走到这里，缓存与文件保持一致。
+        if account == Account.githubToken {
+            cachedGithubToken = .some(dict[Account.githubToken])
+        }
     }
 
     private func value(forAccount account: String) -> String? {
@@ -219,9 +246,23 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
     }
 
     func loadGithubToken() throws -> String? {
-        let token = value(forAccount: Account.githubToken)
-        AppLog.keychain.info("loadGithubToken: \(token == nil ? "miss" : "hit", privacy: .public)")
-        return token
+        // P2-3：先查进程内缓存，miss 才读加密文件。必须直接加锁并调 loadAllLocked()，
+        // 不能复用 value(forAccount:) —— NSLock 不可重入，嵌套加锁会死锁。
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = cachedGithubToken {
+            AppLog.keychain.info("loadGithubToken: \(cached == nil ? "miss" : "hit", privacy: .public) (cached)")
+            return cached
+        }
+        #if DEBUG
+        debugGithubTokenFileReadCount += 1
+        #endif
+        let token = loadAllLocked()[Account.githubToken]
+        // 空串与缺失等价（与 value(forAccount:) 的归一化语义一致），缓存"确认缺失"态。
+        let normalized = (token?.isEmpty == false) ? token : nil
+        cachedGithubToken = .some(normalized)
+        AppLog.keychain.info("loadGithubToken: \(normalized == nil ? "miss" : "hit", privacy: .public)")
+        return normalized
     }
 
     func deleteGithubToken() throws {
@@ -304,6 +345,9 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
             if FileManager.default.fileExists(atPath: url.path) {
                 try FileManager.default.removeItem(at: url)
             }
+            // 恢复出厂已抹掉整个凭据文件，github token 缓存同步置为"确认缺失"，
+            // 避免后续 load 返回已被删除的旧 token。
+            cachedGithubToken = .some(nil)
             AppLog.keychain.info("All local credentials removed")
         } catch {
             DiagnosticLogStore.record(
