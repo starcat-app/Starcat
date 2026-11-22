@@ -236,6 +236,47 @@ struct SwitchUserDatabaseTests {
         #expect(session.state == .authenticated(user: user))
     }
 
+    @Test("P2-4: 切库已生效（同账号）时验证成功路径跳过第二次回调")
+    @MainActor
+    func verificationSkipsSecondSwitchForSameAccount() async {
+        let session = Self.makeAuthSession()
+        let user = Self.makeMockUser(id: 12345)
+        var captured: [Int64?] = []
+        session.onUserSessionChanged = { captured.append($0) }
+
+        // 模拟缓存激活后 DB 已在该账号上（AppDependencies 注入 currentUserId）
+        session.activeDatabaseUserID = { user.id }
+        await session.syncDatabaseAfterVerification(for: user.id)
+
+        #expect(captured.isEmpty)
+        #expect(session.activeDatabaseUserID?() == user.id)
+    }
+
+    @Test("P2-4: 未注入 / 切库失败 / 换号时验证成功路径照常触发回调")
+    @MainActor
+    func verificationStillSwitchesWhenDatabaseNotOnAccount() async {
+        let session = Self.makeAuthSession()
+        let user = Self.makeMockUser(id: 12345)
+        var captured: [Int64?] = []
+        session.onUserSessionChanged = { captured.append($0) }
+
+        // 未注入（测试夹具/旧装配方）→ 保持原有无条件切换
+        await session.syncDatabaseAfterVerification(for: user.id)
+        #expect(captured == [user.id])
+
+        // 首次切库失败：currentUserId 仍停留在匿名(nil) → 照常重试完整回调
+        session.activeDatabaseUserID = { nil }
+        captured.removeAll()
+        await session.syncDatabaseAfterVerification(for: user.id)
+        #expect(captured == [user.id])
+
+        // 验证返回不同账号（换号边界）→ 必须切换
+        session.activeDatabaseUserID = { 999 }
+        captured.removeAll()
+        await session.syncDatabaseAfterVerification(for: user.id)
+        #expect(captured == [user.id])
+    }
+
     @Test("AuthSession.signOut → onUserSessionChanged(nil) 被触发")
     @MainActor
     func signOutFiresUserSessionChangedWithNil() async throws {

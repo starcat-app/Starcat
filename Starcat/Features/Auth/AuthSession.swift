@@ -157,7 +157,7 @@ final class AuthSession {
     /// **触发时机**（参数语义：非 nil = 切到该 user 的 DB，nil = 切到 `_anonymous`）：
     /// - `runDeviceFlow` 拿到 user 后、emit `.authenticated` 之前 → 传 `user.id`
     /// - `restoreSessionIfAvailable` 命中用户资料缓存后、emit `.authenticated` 之前 → 传 `user.id`
-    /// - `restoreSessionIfAvailable` `/user` 验证成功后、emit `.authenticated` 之前 → 传 `user.id`
+    /// - 启动校验 `/user` 成功后，若尚未为已恢复账号完成切库，则在 emit `.authenticated` 前传 `user.id`
     /// - `signOut` 末尾、调 `onSignOut?()` 之前 → 传 `nil`
     /// - `invalidateSession` 末尾、调 `onSignOut?()` 之前 → 传 `nil`
     ///
@@ -168,6 +168,16 @@ final class AuthSession {
     /// **场景**：dong4j 拍板"先退出再登录"，不存在登录态硬切，
     /// 因此 DB reopen 时所有后台任务都该已停（由 onSignOut 链路保证）。
     var onUserSessionChanged: (@MainActor (Int64?) async -> Void)?
+
+    /// 当前实际打开的账号数据库 ID（由装配方注入，如 `{ [db] in db.currentUserId }`）。
+    ///
+    /// P2-4 启动恢复去重：缓存激活路径已为账号完成切库后，`/user` 验证成功
+    /// 无需再走一次完整的 `onUserSessionChanged` 重型屏障（服务重置 + Spotlight +
+    /// RAG 回填等）。以「实际打开的数据库」为准：
+    /// - 查询结果等于 `user.id` → 切库已生效，验证路径跳过重复回调；
+    /// - 返回 `nil` 或不同 ID（未注入 / 首次切库失败仍停留旧库）→ 照常重试完整回调；
+    /// - 属性本身 `nil`（测试夹具未装配）→ 行为退回原有的无条件切换。
+    var activeDatabaseUserID: (@MainActor () -> Int64?)?
 
     /// 当前进行中的 Device Flow 轮询 Task，便于取消。
     private var pollingTask: Task<Void, Never>?
@@ -245,7 +255,8 @@ final class AuthSession {
             // 多账号 DB 隔离：先把 SQLite 切到该 user 的目录，再 emit state。
             // 注入方 AppDependencies 拿到 user.id 调 database.reopen，
             // 让后续 SyncManager 等所有 Repository query 都打到正确的 DB 文件。
-            await onUserSessionChanged?(user.id)
+            // P2-4：缓存激活已为同账号完成切库时，这里省掉第二次完整回调。
+            await syncDatabaseAfterVerification(for: user.id)
             self.state = .authenticated(user: user)
             // ② 用真实数据覆盖 prime 出来的快照，并让 service 写盘
             userProfileService?.acceptFromAuth(user)
@@ -286,6 +297,22 @@ final class AuthSession {
         // 语言统计也必须在首屏挂载前恢复；这里只读磁盘，离线或 `/user` 缓慢时仍可显示。
         developerLanguageService?.primeFromCache(login: user.login)
         state = .authenticated(user: user)
+    }
+
+    /// `/user` 启动校验成功后的切库决策（P2-4）。
+    ///
+    /// 缓存激活路径（`activateCachedSession`）已为同一账号完成切库时，第二次完整
+    /// 回调（服务重置 + Spotlight + RAG 回填的重型屏障）可以省掉；以「实际打开
+    /// 的数据库」为准：注入缺失或首次切库失败（currentUserId 未变）时照常触发，
+    /// 保留冷启动无缓存、换号、切库失败重试等既有语义。
+    /// 收口成独立方法便于单测——restoreSessionIfAvailable 整体被测试 host 的
+    /// Keychain 门控挡住，端到端跑不到这里。
+    func syncDatabaseAfterVerification(for userID: Int64) async {
+        // `?()` 结果是 Int64??，Optional 提升后与 userID 比较：
+        // 属性 nil / currentUserId nil / 不同账号都判不等 → 走完整回调。
+        if activeDatabaseUserID?() != userID {
+            await onUserSessionChanged?(userID)
+        }
     }
 
     // MARK: - 登录

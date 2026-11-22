@@ -1990,6 +1990,9 @@ final class AppDependencies {
         // 错误处理：reopen 失败仅记日志不向上抛——AuthSession 不关心 DB 细节,
         // 而且失败状态下 currentPool 仍指向旧 pool（reopen 实现保证），用户至少
         // 还能看到自己的数据，不会进入"无 DB 可用"的死状态。
+        // 只捕获 DatabaseManager 实例而非 self：闭包挂在 session 上，
+        // session 又被 self 强持，捕获 self 会成环。换号走 reopen 复用同一实例，捕获安全。
+        session.activeDatabaseUserID = { [db] in db.currentUserId }
         session.onUserSessionChanged = { [weak self] userId in
             guard let self else { return }
             // 先等公共任务真实退出，再让任何领域服务切换数据库，避免旧账号句柄串库。
