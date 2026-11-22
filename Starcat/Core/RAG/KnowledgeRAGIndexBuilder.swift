@@ -198,6 +198,8 @@ final class KnowledgeRAGIndexBuilder {
     private let keychain: any KeychainManaging
     private let builder: RAGChunkBuilder
     private let embeddingBatchSize: Int
+    /// 注入传输层以验证真实 Meilisearch 写请求及 task 轮询，生产仍使用 URLSession。
+    private let meilisearchHTTPClient: any RAGHTTPClientProtocol
     /// 测试可替换网络客户端；生产仍统一经过 AIClientFactory，不能绕过模型与凭据校验。
     private let embeddingClientFactory: @MainActor (AIClientConfiguration) throws -> any AIClientProtocol
 
@@ -237,6 +239,8 @@ final class KnowledgeRAGIndexBuilder {
     /// 关键词 / 向量指纹分开：Meilisearch 先同步不能把 Qdrant 也标成已初始化。
     private var lastKeywordSyncFingerprint: RAGExternalIndexSyncFingerprint?
     private var lastVectorSyncFingerprint: RAGExternalIndexSyncFingerprint?
+    /// 配置指纹只说明后端已初始化，不能证明远端仍是这份文档。仅保留本账号最近成功的全量快照。
+    @ObservationIgnored private var lastKeywordFullSyncFingerprint: SHA256.Digest?
     /// 切库屏障。不驱动 UI，禁止 Observation 跟踪；见 `exclusiveRunning`。
     @ObservationIgnored private var isSuspendedForDatabaseChange = false
     private var activeOperationCount = 0
@@ -259,6 +263,7 @@ final class KnowledgeRAGIndexBuilder {
         keychain: any KeychainManaging = KeychainManager.shared,
         builder: RAGChunkBuilder = RAGChunkBuilder(),
         embeddingBatchSize: Int = 32,
+        meilisearchHTTPClient: any RAGHTTPClientProtocol = URLSessionRAGHTTPClient(),
         embeddingClientFactory: @escaping @MainActor (AIClientConfiguration) throws -> any AIClientProtocol = {
             try AIClientFactory.make(configuration: $0)
         }
@@ -280,6 +285,7 @@ final class KnowledgeRAGIndexBuilder {
         self.builder = builder
         // 配置异常时仍保证队列每轮能前进，避免 limit=0 导致空轮询。
         self.embeddingBatchSize = max(1, embeddingBatchSize)
+        self.meilisearchHTTPClient = meilisearchHTTPClient
         self.embeddingClientFactory = embeddingClientFactory
         restorePersistedRefreshSummary()
     }
@@ -337,6 +343,7 @@ final class KnowledgeRAGIndexBuilder {
         repositoryRemovalIDs.removeAll()
         externalIndexChanges.reset()
         lastKeywordSyncFingerprint = nil
+        lastKeywordFullSyncFingerprint = nil
         lastVectorSyncFingerprint = nil
         await waitUntilIdle()
         status = .idle
@@ -1100,6 +1107,7 @@ final class KnowledgeRAGIndexBuilder {
     /// embedding 前全量初始化，Qdrant 仍等当前模型 ready 向量。
     private func syncExternalBackends(model: String) async throws {
         let configuration = settings.ragBackendConfiguration
+        if configuration.keywordBackend != .meilisearch { lastKeywordFullSyncFingerprint = nil }
         guard configuration.keywordBackend == .meilisearch || configuration.vectorBackend == .qdrant else {
             externalIndexChanges.reset()
             lastKeywordSyncFingerprint = nil
@@ -1172,11 +1180,14 @@ final class KnowledgeRAGIndexBuilder {
 
     /// 没有 Embedding 时只同步外部关键词索引，绝不以空模型清空 Qdrant。
     ///
-    /// 关键词分片不依赖向量状态；这里使用全量替换保证 Meilisearch 与 SQLite FTS 口径一致。
-    /// 变更追踪仍保留，用户之后配置 Embedding 时可继续完成向量后端同步。
+    /// source 刷新也会登记未变的分片，不能用变更集判断本轮文档是否与远端一致。
+    /// 实际文档有差异时仍全量替换；变更追踪保留给后续向量同步。
     private func syncKeywordBackendWithoutEmbedding() async throws {
         let configuration = settings.ragBackendConfiguration
-        guard configuration.keywordBackend == .meilisearch else { return }
+        guard configuration.keywordBackend == .meilisearch else {
+            lastKeywordFullSyncFingerprint = nil
+            return
+        }
 
         do {
             let repos = try await repoRepository.fetchKnowledgeRepos()
@@ -1202,12 +1213,26 @@ final class KnowledgeRAGIndexBuilder {
         publicRepoIDs: [Int64]
     ) async throws {
         let chunks = try await chunkRepository.fetchKeywordSearchableChunks(repoIDs: publicRepoIDs)
-        let provider = MeilisearchRAGProvider(
-            configuration: configuration.meilisearch,
-            apiKey: try keychain.loadAIKey(forProvider: RAGBackendConfiguration.meilisearchKeychainID),
-            repository: chunkRepository
-        )
+        let provider = try makeMeilisearchProvider(configuration: configuration.meilisearch)
+        let fingerprint = try await provider.fullSyncFingerprint(chunks: chunks)
+        try Task.checkCancellation()
+        guard lastKeywordFullSyncFingerprint != fingerprint else { return }
+
+        // DELETE 之后任一上传或设置 task 都可能失败，此时即使本地恢复成旧内容也必须重传。
+        lastKeywordFullSyncFingerprint = nil
+        lastKeywordSyncFingerprint = nil
         try await provider.replaceAll(chunks: chunks)
+        try Task.checkCancellation()
+        lastKeywordFullSyncFingerprint = fingerprint
+    }
+
+    private func makeMeilisearchProvider(configuration: RAGMeilisearchConfiguration) throws -> MeilisearchRAGProvider {
+        MeilisearchRAGProvider(
+            configuration: configuration,
+            apiKey: try keychain.loadAIKey(forProvider: RAGBackendConfiguration.meilisearchKeychainID),
+            repository: chunkRepository,
+            httpClient: meilisearchHTTPClient
+        )
     }
 
     private func replaceVectorIndex(
@@ -1233,11 +1258,9 @@ final class KnowledgeRAGIndexBuilder {
         if applyKeyword,
            configuration.keywordBackend == .meilisearch,
            !plan.keywordUpserts.isEmpty || !plan.keywordDeleteIDs.isEmpty {
-            let provider = MeilisearchRAGProvider(
-                configuration: configuration.meilisearch,
-                apiKey: try keychain.loadAIKey(forProvider: RAGBackendConfiguration.meilisearchKeychainID),
-                repository: chunkRepository
-            )
+            let provider = try makeMeilisearchProvider(configuration: configuration.meilisearch)
+            // 增量写入也可能只成功一部分，旧全量摘要无法再证明远端内容。
+            lastKeywordFullSyncFingerprint = nil
             try await provider.applyChanges(
                 upserts: plan.keywordUpserts,
                 deleteIDs: plan.keywordDeleteIDs

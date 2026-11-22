@@ -8,6 +8,7 @@
 //  citation 内容、知识库边界和历史元数据仍以 Starcat 本地真值为准。
 //
 
+import CryptoKit
 import Foundation
 
 /// 多个 source diff 在一轮 embedding 前合并成最小变更集。同一 ID 后来又被写入时，
@@ -269,25 +270,40 @@ struct MeilisearchRAGProvider: RAGKeywordSearchProvider {
         }
     }
 
+    /// 比较实际上传的文档与有效请求目标。按 ID 和 JSON key 固定顺序，避免查询分批或字典顺序造成误判。
+    /// 凭据只参与摘要，分批编码避免为整库再保留一份 JSON；本地时间戳和向量不进入上传投影。
+    func fullSyncFingerprint(chunks: [RAGChunk]) async throws -> SHA256.Digest {
+        var hash = SHA256()
+        hash.update(data: try JSONSerialization.data(withJSONObject: [baseEndpoint, configuration.indexName, apiKey ?? ""]))
+        for batch in chunks.sorted(by: { ($0.id ?? 0) < ($1.id ?? 0) }).chunked(into: 500) {
+            try Task.checkCancellation()
+            hash.update(data: try JSONSerialization.data(withJSONObject: Self.documents(from: batch), options: .sortedKeys))
+        }
+        return hash.finalize()
+    }
+
+    private static func documents(from chunks: [RAGChunk]) -> [[String: Any]] {
+        chunks.compactMap { chunk in
+            guard let id = chunk.id else { return nil }
+            return [
+                "id": id,
+                "repo_id": chunk.repoId,
+                "title": chunk.title,
+                "section_path": chunk.sectionPath,
+                "content": chunk.content,
+                "source": chunk.source.rawValue,
+                "embedding_model": chunk.embeddingModel ?? "",
+                "embedding_status": chunk.embeddingStatus.rawValue
+            ]
+        }
+    }
+
     private func upsertDocuments(_ chunks: [RAGChunk]) async throws {
         for batch in chunks.chunked(into: 500) {
-            let documents: [[String: Any]] = batch.compactMap { chunk in
-                guard let id = chunk.id else { return nil }
-                return [
-                    "id": id,
-                    "repo_id": chunk.repoId,
-                    "title": chunk.title,
-                    "section_path": chunk.sectionPath,
-                    "content": chunk.content,
-                    "source": chunk.source.rawValue,
-                    "embedding_model": chunk.embeddingModel ?? "",
-                    "embedding_status": chunk.embeddingStatus.rawValue
-                ]
-            }
             try await enqueueAndWait(
                 path: "indexes/\(configuration.indexName)/documents?primaryKey=id",
                 method: "POST",
-                json: documents
+                json: Self.documents(from: batch)
             )
         }
     }
@@ -301,9 +317,12 @@ struct MeilisearchRAGProvider: RAGKeywordSearchProvider {
         if let message = configuration.validationMessage { throw RAGExternalBackendError.invalidConfiguration(message) }
     }
 
+    private var baseEndpoint: String {
+        configuration.endpoint.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
     private func request(path: String, method: String, json: Any?) async throws -> Data {
-        let base = configuration.endpoint.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let url = URL(string: "\(base)/\(path)") else {
+        guard let url = URL(string: "\(baseEndpoint)/\(path)") else {
             throw RAGExternalBackendError.invalidConfiguration(
                 String.l10n("rag.core.backend.error.meilisearchURL")
             )

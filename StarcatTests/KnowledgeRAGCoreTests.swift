@@ -6309,6 +6309,88 @@ struct KnowledgeRAGCoreTests {
         #expect(requests[4].httpMethod == "PUT")
     }
 
+    enum MeilisearchTargetChange: CaseIterable, Sendable {
+        case endpoint, index, credential
+    }
+
+    @Test("无 Embedding 的 README 刷新只在文档或同步目标变化时写入 Meilisearch",
+          arguments: MeilisearchTargetChange.allCases)
+    @MainActor
+    func keywordOnlyRefreshSkipsUnchangedDocuments(change: MeilisearchTargetChange) async throws {
+        let successful = meilisearchFullSyncResponses()
+        let fixture = try await KeywordOnlyIndexFixture(responses: successful + successful)
+        defer { fixture.cleanup() }
+
+        try await fixture.refreshReadme("Original installation instructions.")
+        let first = await fixture.httpClient.recordedRequests
+        try expectMeilisearchFullUpload(first, content: "Original installation instructions.")
+
+        // README source 重建复用原分片，仍会登记 upsert。文档投影没变时连 task 轮询也不需要。
+        try await fixture.refreshReadme("Original installation instructions.")
+        #expect(await fixture.httpClient.requestCount == first.count)
+
+        switch change {
+        case .endpoint:
+            fixture.settings.ragBackendConfiguration.meilisearch.endpoint = "https://other-meili.invalid"
+        case .index:
+            fixture.settings.ragBackendConfiguration.meilisearch.indexName = "other_chunks"
+        case .credential:
+            try fixture.keychain.storeAIKey("replacement-test-key", forProvider: RAGBackendConfiguration.meilisearchKeychainID)
+        }
+        try await fixture.refreshReadme("Original installation instructions.")
+        let requests = await fixture.httpClient.recordedRequests
+        try expectMeilisearchFullUpload(Array(requests.dropFirst(first.count)), content: "Original installation instructions.")
+    }
+
+    @Test("Meilisearch 设置 task 部分失败后，重试与恢复旧内容都必须重新上传", arguments: [false, true])
+    @MainActor
+    func keywordOnlyRefreshRetriesAfterPartialFailure(revertContent: Bool) async throws {
+        let original = "Original installation instructions."
+        let changed = "Updated installation instructions."
+        let retryContent = revertContent ? original : changed
+        let successful = meilisearchFullSyncResponses()
+        let fixture = try await KeywordOnlyIndexFixture(
+            responses: successful + meilisearchFullSyncResponses(settingsFail: true) + successful
+        )
+        defer { fixture.cleanup() }
+
+        try await fixture.refreshReadme(original)
+        try await fixture.refreshReadme(changed)
+        guard case .failed = fixture.builder.status else {
+            Issue.record("设置 task 失败应使本轮索引失败")
+            return
+        }
+
+        try await fixture.refreshReadme(retryContent)
+        try await fixture.refreshReadme(retryContent)
+        let requests = await fixture.httpClient.recordedRequests
+        #expect(requests.count == 18, "只允许首次写入、部分失败和一次成功重试")
+        try expectMeilisearchFullUpload(Array(requests.prefix(6)), content: original)
+        try expectMeilisearchFullUpload(Array(requests.dropFirst(6).prefix(6)), content: changed)
+        try expectMeilisearchFullUpload(Array(requests.dropFirst(12)), content: retryContent)
+    }
+
+    @Test("Meilisearch 增量删除后不能沿用旧的全量指纹")
+    @MainActor
+    func keywordOnlyRefreshReplacesAfterIncrementalWrite() async throws {
+        let original = "Original installation instructions."
+        let successful = meilisearchFullSyncResponses()
+        let fixture = try await KeywordOnlyIndexFixture(responses: successful + Array(successful.prefix(2)) + successful)
+        defer { fixture.cleanup() }
+
+        try await fixture.refreshReadme(original)
+        // 管理操作先写远端，模拟本地未完成删除，所以下次读取的文档仍与第一次相同。
+        let identities = try await fixture.chunks.fetchChunkIdentities(repoId: fixture.repo.id)
+        try await fixture.builder.removeManagedChunksFromExternalIndexes(identities)
+        try await fixture.refreshReadme(original)
+
+        let requests = await fixture.httpClient.recordedRequests
+        let deletion = try #require(requests.dropFirst(6).first)
+        #expect(deletion.httpMethod == "POST")
+        #expect(deletion.url?.path.hasSuffix("/documents/delete-batch") == true)
+        try expectMeilisearchFullUpload(Array(requests.dropFirst(8)), content: original)
+    }
+
     @Test("Meilisearch 增量删除遇 index_not_found 时仍 upsert")
     func meilisearchApplyChangesContinuesWhenDeleteTaskReportsMissingIndex() async throws {
         let database = try InMemoryDatabaseManager()
@@ -7343,6 +7425,91 @@ private actor RecordingRAGHTTPClient: RAGHTTPClientProtocol {
     }
 }
 
+/// 走真实 source 刷新和 Meilisearch provider；隔离本地设置、数据库及网络，确保命中纯关键词分支。
+@MainActor
+private struct KeywordOnlyIndexFixture {
+    let builder: KnowledgeRAGIndexBuilder
+    let repo: Repo
+    let chunks: GRDBRAGChunkRepository
+    let settings: AppSettings
+    let keychain = InMemoryKeychain()
+    let httpClient: SequencedRAGHTTPClient
+    private let readmes: ReadmeRepository
+    private let suiteName = "KeywordOnlyIndexFixture.\(UUID().uuidString)"
+    private let defaults: UserDefaults
+
+    init(responses: [(Data, Int)]) async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 1)
+        let repos = GRDBRepoRepository(database: database)
+        let notes = GRDBRepoNoteRepository(database: database)
+        try await notes.updateLibraryState(repoId: 1, state: .inLibrary)
+        repo = try #require(try await repos.findById(1))
+        chunks = GRDBRAGChunkRepository(database: database)
+        readmes = ReadmeRepository(database: database, notificationCenter: NotificationCenter())
+        httpClient = SequencedRAGHTTPClient(responses: responses)
+        defaults = try #require(UserDefaults(suiteName: suiteName))
+        settings = AppSettings(defaults: defaults, keychain: keychain)
+        settings.ragBackendConfiguration = RAGBackendConfiguration(keywordBackend: .meilisearch, fallbackToSQLite: false)
+        builder = KnowledgeRAGIndexBuilder(
+            chunkRepository: chunks,
+            repoRepository: repos,
+            readmeRepository: readmes,
+            readmeAPI: ReadmeAPI(
+                client: MockGitHubAPIClient(),
+                repository: readmes,
+                trendingRepository: TrendingReadmeRepository(database: database),
+                inflightTracker: ReadmeInflightTracker(),
+                metrics: ReadmeMetrics()
+            ),
+            noteRepository: notes,
+            summaryRepository: GRDBAISummaryRepository(database: database),
+            repoTagRepository: GRDBRepoTagRepository(database: database),
+            settings: settings,
+            entitlementGate: EntitlementGate(entitlementProvider: TestEntitlement(), userIDProvider: { 1 }),
+            keychain: keychain,
+            meilisearchHTTPClient: httpClient,
+            embeddingClientFactory: { _ in throw AIEmbeddingError.missingAPIKey }
+        )
+    }
+
+    func refreshReadme(_ content: String) async throws {
+        try await readmes.upsertContent(repoId: repo.id, content: "# Installation\n\n\(content)", at: Date())
+        await builder.refresh(repo: repo, sources: [.readme])
+    }
+
+    func cleanup() {
+        builder.cancel()
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    private final class TestEntitlement: ProEntitlementProviding {
+        let entitlement = ProEntitlement.testEnvironment
+    }
+}
+
+/// 全量写请求依次是 DELETE、文档 POST、设置 PUT，每个都要轮询自己的 task。
+private func meilisearchFullSyncResponses(settingsFail: Bool = false) -> [(Data, Int)] {
+    [
+        (Data(#"{"taskUid":1}"#.utf8), 202),
+        (Data(#"{"status":"succeeded"}"#.utf8), 200),
+        (Data(#"{"taskUid":2}"#.utf8), 202),
+        (Data(#"{"status":"succeeded"}"#.utf8), 200),
+        (Data(#"{"taskUid":3}"#.utf8), 202),
+        (Data((settingsFail ? #"{"status":"failed"}"# : #"{"status":"succeeded"}"#).utf8), 200)
+    ]
+}
+
+private func expectMeilisearchFullUpload(_ requests: [URLRequest], content: String) throws {
+    #expect(requests.map(\.httpMethod) == ["DELETE", "GET", "POST", "GET", "PUT", "GET"])
+    let post = try #require(requests.first { $0.httpMethod == "POST" })
+    #expect(post.url?.path.hasSuffix("/documents") == true)
+    let body = try #require(post.httpBody)
+    let documents = try #require(try JSONSerialization.jsonObject(with: body) as? [[String: Any]])
+    #expect(documents.count == 1)
+    #expect((documents.first?["content"] as? String)?.contains(content) == true)
+}
+
 private actor SequencedRAGHTTPClient: RAGHTTPClientProtocol {
     private var responses: [(Data, Int)]
     private(set) var requestCount = 0
@@ -7353,9 +7520,10 @@ private actor SequencedRAGHTTPClient: RAGHTTPClientProtocol {
     }
 
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        guard !responses.isEmpty else { throw URLError(.badServerResponse) }
+        // 即便脚本响应已用完，多发的请求也要进入计数，否则无法验证跳过路径。
         requestCount += 1
         recordedRequests.append(request)
+        guard !responses.isEmpty else { throw URLError(.badServerResponse) }
         let (data, statusCode) = responses.removeFirst()
         let response = HTTPURLResponse(
             url: request.url ?? URL(string: "http://127.0.0.1")!,
