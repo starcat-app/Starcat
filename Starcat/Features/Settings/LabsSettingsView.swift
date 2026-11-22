@@ -2,14 +2,14 @@
 //  LabsSettingsView.swift
 //  Starcat
 //
-//  实验功能设置：引擎选择与对应配置同卡，业务使用范围独立展示。
+//  决策引擎设置：配置引擎、开放 HTTP 接口，按需选择 App 内的使用范围。
 //  Jev 草稿由页面持有，切换 Laya 不丢失输入；测试与凭据规则由
 //  JevConnectionSettingsModel 管理，不改变业务调用的引擎选择与写入边界。
 //
 
 import SwiftUI
 
-/// 使用原生 grouped Form 落实实验功能原型，保留现有设置绑定和模型生命周期。
+/// 决策引擎的原生设置页，HTTP 开放状态与模型生命周期分别由各自设置控制。
 struct LabsSettingsTab: View {
     @Environment(AppSettings.self) private var settings
     @State private var jevConnection: JevConnectionSettingsModel?
@@ -35,10 +35,10 @@ struct LabsSettingsTab: View {
     var body: some View {
         Form {
             SettingsPageIntroduction(
-                title: "settings.navigation.item.labs",
-                iconSource: .business(.labs),
-                description: "settings.labs.layout.introduction",
-                context: "settings.labs.intro"
+                title: "settings.labs.decision.section",
+                iconSource: .business(.inference),
+                description: "settings.decision.introduction",
+                context: "settings.decision.usage"
             )
             decisionEngineSection
             scopeSection
@@ -71,6 +71,11 @@ struct LabsSettingsTab: View {
                 explanation("settings.labs.decision.enable", hint: "settings.labs.layout.enableHelp")
             }
             .toggleStyle(.switch)
+            Toggle(isOn: $settings.decisionHTTPServiceEnabled) {
+                explanation("settings.decision.http.title", hint: "settings.decision.http.hint")
+            }
+            .toggleStyle(.switch)
+            .disabled(!settings.decisionEngineEnabled)
             if settings.decisionEngineEnabled {
                 Picker("settings.labs.layout.currentEngine", selection: $settings.decisionEngineID) {
                     ForEach(DecisionEngineID.allCases) { engine in

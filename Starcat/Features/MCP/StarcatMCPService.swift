@@ -444,8 +444,7 @@ final class StarcatMCPService {
 
     /// `POST /v1/systemone` 兼容 Jev SDK 的决策入口。
     ///
-    /// 安全边界刻意沿用 MCP listener：服务开关、Pro、Bearer、Host/Origin 和
-    /// `write` 权限完全一致。这里是传输层，不重新实现引擎选择或兜底。
+    /// 沿用 MCP listener 和权限，每次接收 REST 请求时读取其开放状态。
     private func handlePublicRoute(
         _ request: StarcatHTTPServerRequest,
         originValidator: OriginValidator
@@ -469,6 +468,9 @@ final class StarcatMCPService {
                 )
             }
             try StarcatMCPAccess.requireWrite(settings)
+            guard settings.decisionHTTPServiceEnabled else {
+                return Self.decisionResponse(statusCode: 403, message: String.l10n("settings.decision.http.disabled"))
+            }
             if let encoding = request.header("Content-Encoding"), encoding.lowercased() != "identity" {
                 return Self.decisionResponse(statusCode: 415, message: "Send an uncompressed System One request.")
             }

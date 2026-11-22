@@ -1280,9 +1280,9 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.externalSearchProviderSettings, value: externalSearchProviderSettings) }
     }
 
-    // MARK: - 实验性功能 Labs：决策引擎
+    // MARK: - 决策引擎
 
-    /// 实验性决策引擎总开关（默认 false）。
+    /// 决策引擎总开关（默认 false）。
     ///
     /// 关闭、所选引擎未注册或当前不可用时，两个业务路由都回退既有 LLM；一旦引擎
     /// 已经开始执行，错误不会触发第二次引擎/LLM 调用。
@@ -1291,6 +1291,11 @@ final class AppSettings {
             persistBool(key: Keys.decisionEngineEnabled, value: decisionEngineEnabled)
             decisionEngineConfigurationDidChange()
         }
+    }
+
+    /// 单独授权决策 REST 路由。关停引擎时保留偏好，恢复引擎后按原选择开放。
+    var decisionHTTPServiceEnabled: Bool {
+        didSet { persistBool(key: Keys.decisionHTTPServiceEnabled, value: decisionHTTPServiceEnabled) }
     }
 
     /// 用户显式选择的决策引擎。默认 Jev，切换只影响后续请求。
@@ -2208,6 +2213,7 @@ final class AppSettings {
             )
             defaults.set(false, forKey: Keys.decisionSearchRoutingEnabled)
         }
+        self.decisionHTTPServiceEnabled = defaults.bool(forKey: Keys.decisionHTTPServiceEnabled)
         self.typesafeNativeKeyTestFailed = defaults.object(forKey: Keys.typesafeNativeKeyTestFailed) as? Bool ?? false
         self.typesafeModelID = defaults.string(forKey: Keys.typesafeModelID) ?? JevDecisionEngine.defaultModelID
         self.externalSearchAllowPrivateRepos = defaults.object(forKey: Keys.externalSearchAllowPrivateRepos) as? Bool ?? false
@@ -2529,6 +2535,7 @@ final class AppSettings {
         externalSearchIncludeInAll = false
         externalContextEnabled = false
         decisionEngineEnabled = false
+        decisionHTTPServiceEnabled = false
         decisionEngineID = .jev
         decisionGroupingSuggestionsEnabled = false
         decisionTagSuggestionsEnabled = false
@@ -3162,6 +3169,7 @@ final class AppSettings {
         static let externalSearchIncludeInAll = "settings.externalSearch.includeInAll.v1"
         static let externalContextEnabled = "settings.externalSearch.context.enabled.v1"
         static let decisionEngineEnabled = "settings.labs.decision.enabled.v1"
+        static let decisionHTTPServiceEnabled = "settings.decision.http.enabled.v1"
         static let decisionEngineID = "settings.labs.decision.engine.v1"
         static let decisionGroupingSuggestionsEnabled = "settings.labs.decision.grouping.v1"
         static let decisionTagSuggestionsEnabled = "settings.labs.decision.tags.v1"

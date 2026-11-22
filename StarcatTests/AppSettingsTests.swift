@@ -125,10 +125,27 @@ struct AppSettingsTests {
     func decisionEngineDefaults() {
         let settings = AppSettings(defaults: makeIsolatedDefaults())
         #expect(!settings.decisionEngineEnabled)
+        #expect(!settings.decisionHTTPServiceEnabled)
         #expect(settings.decisionEngineID == .jev)
         #expect(!settings.decisionGroupingSuggestionsEnabled)
         #expect(!settings.decisionTagSuggestionsEnabled)
         #expect(!settings.decisionSearchRoutingEnabled)
+    }
+
+    @Test("决策引擎：HTTP 开关独立持久化并重置为关闭")
+    func decisionHTTPServicePersistsAndResetsIndependently() throws {
+        let defaults = makeIsolatedDefaults()
+        let keychain = InMemoryKeychain()
+        let settings = AppSettings(defaults: defaults, keychain: keychain)
+
+        settings.decisionHTTPServiceEnabled = true
+        let restored = AppSettings(defaults: defaults, keychain: keychain)
+        #expect(restored.decisionHTTPServiceEnabled)
+        #expect(!restored.decisionEngineEnabled)
+
+        try settings.resetToDefaults()
+        #expect(!settings.decisionHTTPServiceEnabled)
+        #expect(!AppSettings(defaults: defaults, keychain: keychain).decisionHTTPServiceEnabled)
     }
 
     @Test("决策引擎:搜索分流独立持久化且重置回默认关闭")

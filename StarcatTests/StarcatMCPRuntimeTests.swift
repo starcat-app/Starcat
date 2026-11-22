@@ -894,6 +894,7 @@ struct StarcatMCPRuntimeTests {
         let engine = DecisionHTTPStubEngine()
         let (service, settings, port) = try await Self.startDecisionServer(engine)
         defer { service.stop() }
+        settings.decisionHTTPServiceEnabled = true
         let endpoint = "http://127.0.0.1:\(port)/mcp"
         let token = service.bearerToken
         let decision = Data(#"{"state":"http fixture","questions":{"useful":{"type":"noul","instructions":"Is this useful?"}}}"#.utf8)
@@ -932,7 +933,7 @@ struct StarcatMCPRuntimeTests {
         }
     }
 
-    @Test("决策 HTTP 路由沿用 MCP 门禁并返回兼容响应")
+    @Test("决策 HTTP 按开关实时启停，沿用 MCP 门禁与兼容响应")
     func decisionHTTPRouteReusesMCPGates() async throws {
         let engine = DecisionHTTPStubEngine()
         let entitlementProvider = MCPRuntimeTestEntitlementProvider(isPro: true)
@@ -948,6 +949,13 @@ struct StarcatMCPRuntimeTests {
                 "severity": ["type": "score", "criteria": ["Low", "High"]]
             ]
         ])
+        let initiallyDisabled = try await Self.sendDecisionRequest(port: port, body: request, bearerToken: token)
+        #expect(initiallyDisabled.statusCode == 403)
+        let disabledError = try #require(JSONSerialization.jsonObject(with: initiallyDisabled.body) as? [String: String])
+        #expect(disabledError["error"] == String.l10n("settings.decision.http.disabled"))
+        #expect(engine.received.isEmpty)
+
+        settings.decisionHTTPServiceEnabled = true
         let success = try await Self.sendDecisionRequest(port: port, body: request, bearerToken: token)
         #expect(success.statusCode == 200)
         let successJSON = try #require(JSONSerialization.jsonObject(with: success.body) as? [String: Any])
@@ -991,6 +999,14 @@ struct StarcatMCPRuntimeTests {
         #expect(noPro.statusCode == 403)
         entitlementProvider.entitlement = .testEnvironment
 
+        settings.decisionHTTPServiceEnabled = false
+        let httpDisabled = try await Self.sendDecisionRequest(port: port, body: request, bearerToken: token)
+        #expect(httpDisabled.statusCode == 403)
+        let initialize = try Self.jsonData(id: 1, method: "initialize", params: Self.initializeParams())
+        let mcp = try await Self.sendHTTPRequest(port: port, body: initialize, bearerToken: token)
+        #expect(mcp.statusCode == 200)
+
+        settings.decisionHTTPServiceEnabled = true
         settings.mcpServiceEnabled = false
         let serviceDisabled = try await Self.sendDecisionRequest(port: port, body: request, bearerToken: token)
         #expect(serviceDisabled.statusCode == 403)
@@ -1000,8 +1016,9 @@ struct StarcatMCPRuntimeTests {
     @Test("决策 HTTP 路由归一化 multipart 图片请求")
     func decisionHTTPRouteNormalizesMultipart() async throws {
         let engine = DecisionHTTPStubEngine()
-        let (service, _, port) = try await Self.startDecisionServer(engine)
+        let (service, settings, port) = try await Self.startDecisionServer(engine)
         defer { service.stop() }
+        settings.decisionHTTPServiceEnabled = true
 
         let requestJSON = """
         {"state":"photo","questions":{"q":{"type":"box","instructions":"Locate the button."}},"assets":{"photo":{"type":"image","part":"photo"}}}

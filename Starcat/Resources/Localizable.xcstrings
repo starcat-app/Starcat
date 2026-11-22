@@ -578844,6 +578844,541 @@
         }
       }
     },
+    "settings.decision.http.disabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aktiviere „HTTP-Dienst starten“ unter „Einstellungen → Entscheidungs-Engine“."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on Start HTTP Service in Settings → Decision Engine."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Activa «Iniciar servicio HTTP» en Ajustes → Motor de decisiones."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Activez « Démarrer le service HTTP » dans Réglages → Moteur de décision."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aktifkan “Jalankan layanan HTTP” di Pengaturan → Mesin Keputusan."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Attiva «Avvia servizio HTTP» in Impostazioni → Motore decisionale."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "「設定 → 決定エンジン」で「HTTP サービスを開始」をオンにしてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "‘설정 → 결정 엔진’에서 ‘HTTP 서비스 시작’을 켜세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Schakel ‘HTTP-service starten’ in via Instellingen → Beslissingsengine."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Włącz „Uruchom usługę HTTP” w menu Ustawienia → Silnik decyzyjny."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ative “Iniciar serviço HTTP” em Ajustes → Mecanismo de Decisão."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Включите «Запустить службу HTTP» в разделе «Настройки → Движок решений»."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ayarlar → Karar Motoru bölümünde “HTTP hizmetini başlat” seçeneğini açın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Увімкніть «Запустити службу HTTP» в розділі «Параметри → Механізм рішень»."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bật “Khởi động dịch vụ HTTP” trong Cài đặt → Công cụ quyết định."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "请在「设置 → 决策引擎」打开「启动 HTTP 服务」。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "請在「設定 → 決策引擎」開啟「啟動 HTTP 服務」。"
+          }
+        }
+      }
+    },
+    "settings.decision.http.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Erfordert den MCP-Dienst mit aktivierten Schreibzugriffen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requires the MCP service with writes enabled."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Requiere el servicio MCP con la escritura habilitada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nécessite le service MCP avec les écritures activées."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Memerlukan layanan MCP dengan izin tulis aktif."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Richiede il servizio MCP con le operazioni di scrittura abilitate."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "MCP サービスを有効にし、書き込みを許可してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "MCP 서비스를 활성화하고 쓰기를 허용해야 합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vereist een actieve MCP-service met schrijftoegang."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wymaga włączonej usługi MCP z zezwoleniem na zapis."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Requer o serviço MCP com permissão de gravação."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Требуется включённая служба MCP с разрешением на запись."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "MCP hizmetinin açık olması ve yazmaya izin verilmesi gerekir."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Потрібна ввімкнена служба MCP з дозволом на запис."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cần bật dịch vụ MCP và cho phép ghi."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "需启用 MCP 服务并允许写入。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "需啟用 MCP 服務並允許寫入。"
+          }
+        }
+      }
+    },
+    "settings.decision.http.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "HTTP-Dienst starten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start HTTP Service"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Iniciar servicio HTTP"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Démarrer le service HTTP"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Jalankan layanan HTTP"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Avvia servizio HTTP"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "HTTP サービスを開始"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "HTTP 서비스 시작"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "HTTP-service starten"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uruchom usługę HTTP"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Iniciar serviço HTTP"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Запустить службу HTTP"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "HTTP hizmetini başlat"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Запустити службу HTTP"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Khởi động dịch vụ HTTP"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "启动 HTTP 服务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "啟動 HTTP 服務"
+          }
+        }
+      }
+    },
+    "settings.decision.introduction" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wähle Jev oder Laya für strukturierte Entscheidungen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Jev or Laya for structured decisions."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Elige Jev o Laya para tomar decisiones estructuradas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Choisissez Jev ou Laya pour les décisions structurées."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pilih Jev atau Laya untuk keputusan terstruktur."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Scegli Jev o Laya per le decisioni strutturate."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "構造化された判定に使う Jev または Laya を選びます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "구조화된 판단에 사용할 Jev 또는 Laya를 선택하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kies Jev of Laya voor gestructureerde beslissingen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wybierz Jev lub Laya do podejmowania ustrukturyzowanych decyzji."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Escolha Jev ou Laya para tomar decisões estruturadas."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Выберите Jev или Laya для принятия структурированных решений."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yapılandırılmış kararlar için Jev veya Laya’yı seçin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Виберіть Jev або Laya для ухвалення структурованих рішень."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Chọn Jev hoặc Laya để đưa ra quyết định có cấu trúc."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "选择 Jev 或 Laya 进行结构化决策。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "選擇 Jev 或 Laya 進行結構化決策。"
+          }
+        }
+      }
+    },
+    "settings.decision.usage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lege fest, wo Starcat die Engine nutzt und ob andere Apps ihre HTTP-API aufrufen dürfen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set where Starcat uses the engine and whether other apps can call its HTTP API."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Elige dónde usa Starcat el motor y si otras apps pueden usar su API HTTP."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Choisissez où Starcat utilise le moteur et si d’autres apps peuvent appeler son API HTTP."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tentukan di mana Starcat memakai mesin ini dan apakah aplikasi lain boleh mengakses API HTTP-nya."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Scegli dove Starcat usa il motore e se altre app possono chiamarne l’API HTTP."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Starcat 内での利用範囲と、他のアプリからの HTTP API の利用可否を設定できます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Starcat에서 엔진을 사용할 범위와 다른 앱의 HTTP API 접근 여부를 설정하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stel in waar Starcat de engine gebruikt en of andere apps de HTTP-API mogen gebruiken."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Określ, gdzie Starcat używa silnika i czy inne aplikacje mogą korzystać z jego API HTTP."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Defina onde o Starcat usa o mecanismo e se outros apps podem acessar sua API HTTP."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Укажите, где Starcat использует движок и могут ли другие приложения обращаться к его API HTTP."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Starcat’ın motoru nerede kullanacağını ve diğer uygulamaların HTTP API’sine erişip erişemeyeceğini belirleyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Укажіть, де Starcat використовує механізм і чи можуть інші програми звертатися до його API HTTP."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Chọn nơi Starcat sử dụng công cụ và có cho phép ứng dụng khác gọi API HTTP hay không."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "设置引擎在 Starcat 中的使用范围，以及是否向其他应用提供 HTTP 接口。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "設定引擎在 Starcat 中的使用範圍，以及是否向其他 App 提供 HTTP 介面。"
+          }
+        }
+      }
+    },
     "settings.diagnostics.bundleContents.section" : {
       "extractionState" : "manual",
       "localizations" : {
