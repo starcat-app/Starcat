@@ -28,6 +28,7 @@ struct MyInsightsView: View {
         let refresh: Int
     }
 
+    @State private var presentedTopic: InsightsTopic
     @State private var profileLoader = InsightsProfileLoader()
     @State private var profileRefresh = 0
     @State private var profileDay = Date()
@@ -37,6 +38,19 @@ struct MyInsightsView: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AppSettings.self) private var settings
+
+    init(
+        topic: InsightsTopic,
+        scope: Binding<InsightsScope>,
+        viewModel: MyInsightsViewModel,
+        openProfileRepository: @escaping (RepositoryDeepLink) -> Void
+    ) {
+        self.topic = topic
+        _scope = scope
+        self.viewModel = viewModel
+        self.openProfileRepository = openProfileRepository
+        _presentedTopic = State(initialValue: topic)
+    }
 
     private var request: MyInsightsViewModel.Request {
         .init(
@@ -61,7 +75,7 @@ struct MyInsightsView: View {
     }
 
     /// 与洞察内容的指标卡、图表和行动行保持相同节奏；刷新快照仍沿用已显示的内容。
-    private var insightsSkeleton: some View {
+    private func insightsSkeleton(for topic: InsightsTopic) -> some View {
         SkeletonAnimatedPhase { phase in
             let palette = SkeletonPalette.forColorScheme(colorScheme)
             VStack(alignment: .leading, spacing: 16) {
@@ -119,30 +133,23 @@ struct MyInsightsView: View {
         let statisticsRequest = topic == .knowledgeProfile ? nil : request
         let profileLoad = self.profileLoad
 
-        VStack(spacing: 0) {
-            header
-            Divider()
-
-            ScrollView {
-                Group {
-                    if topic == .knowledgeProfile {
-                        knowledgeProfile
-                    } else {
-                        statisticsPage
-                            .id(request)
-                    }
-                }
-                .frame(maxWidth: 1120, alignment: .topLeading)
-                .padding(.horizontal, 24)
-                .padding(.top, InsightsColumnChrome.contentTopPadding)
-                .padding(.bottom, 24)
-                .frame(maxWidth: .infinity, alignment: .top)
-            }
+        ZStack(alignment: .topLeading) {
+            // 在内容构造处绑定主题身份，避免离场页通过 ViewModifier 的 content 读到新主题。
+            topicPage(presentedTopic)
+                .id(presentedTopic)
+                .detailContentTransition()
+                .zIndex(1)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        // 页头与正文同步交接，外层背景遮住下方的分栏内容。
-        .nativeDetailTransition(value: topic)
+        .animation(
+            settings.disableAnimations ? nil : .easeOut(duration: reduceMotion ? 0.12 : 0.24),
+            value: presentedTopic
+        )
+        .clipped()
         .background(Color(nsColor: .windowBackgroundColor))
+        .onChange(of: topic) { _, newTopic in
+            // 侧栏通过独立 NSHostingView 更新根视图；在右栏内部提交展示状态才会保留离场页。
+            presentedTopic = newTopic
+        }
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in profileDay = Date() }
         .onAppear { profileDay = Date() }
         // 只替换展示子树，加载任务挂在稳定宿主。四个统计页切换时沿用当前查询。
@@ -156,7 +163,31 @@ struct MyInsightsView: View {
         }
     }
 
-    private var statisticsPage: some View {
+    private func topicPage(_ topic: InsightsTopic) -> some View {
+        VStack(spacing: 0) {
+            header(for: topic)
+            Divider()
+
+            ScrollView {
+                Group {
+                    if topic == .knowledgeProfile {
+                        knowledgeProfile
+                    } else {
+                        statisticsPage(for: topic)
+                            .id(request)
+                    }
+                }
+                .frame(maxWidth: 1120, alignment: .topLeading)
+                .padding(.horizontal, 24)
+                .padding(.top, InsightsColumnChrome.contentTopPadding)
+                .padding(.bottom, 24)
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private func statisticsPage(for topic: InsightsTopic) -> some View {
         Group {
             if let snapshot {
                 LazyVStack(spacing: 16) {
@@ -177,18 +208,18 @@ struct MyInsightsView: View {
                 ContentUnavailableView {
                     Label("error.loadFailed", systemImage: "exclamationmark.triangle")
                 } actions: {
-                    Button("action.retry", action: refresh)
+                    Button("action.retry") { refresh(for: topic) }
                 }
                 .frame(maxWidth: .infinity, minHeight: 320)
             } else {
-                insightsSkeleton.transition(.opacity)
+                insightsSkeleton(for: topic).transition(.opacity)
             }
         }
         .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: snapshot != nil)
     }
 
     /// 首次进入与范围切换/手动刷新共用右上角 SyncIconButton 转圈反馈。
-    private var isLoadingFeedbackVisible: Bool {
+    private func isLoadingFeedbackVisible(for topic: InsightsTopic) -> Bool {
         if topic == .knowledgeProfile {
             guard let profileRequest else { return false }
             return profileLoader.loading == profileRequest
@@ -219,7 +250,7 @@ struct MyInsightsView: View {
                     ContentUnavailableView {
                         Label("error.loadFailed", systemImage: "exclamationmark.triangle")
                     } actions: {
-                        Button("action.retry", action: refresh)
+                        Button("action.retry") { refresh(for: .knowledgeProfile) }
                     }
                 } else {
                     InsightsKnowledgeProfileSkeleton()
@@ -232,13 +263,13 @@ struct MyInsightsView: View {
         }
     }
 
-    private var header: some View {
+    private func header(for topic: InsightsTopic) -> some View {
         InsightsColumnHeader {
             Text(topic.titleKey)
                 .font(interfaceScale.font(.panelTitle))
                 .accessibilityAddTraits(.isHeader)
         } controls: {
-            headerControls
+            headerControls(for: topic)
         }
         // 页头覆盖中右栏的系统工具栏，空白处沿用每日热点的原生窗口拖动。
         .background {
@@ -249,8 +280,9 @@ struct MyInsightsView: View {
         }
     }
 
-    private var headerControls: some View {
-        HStack(spacing: 12) {
+    private func headerControls(for topic: InsightsTopic) -> some View {
+        let isLoading = isLoadingFeedbackVisible(for: topic)
+        return HStack(spacing: 12) {
             // 与 README / 洞察模式切换同款胶囊控件，避免系统 segmented 灰底蓝块。
             PillSegmentedControl(
                 items: Array(InsightsScope.allCases),
@@ -261,11 +293,11 @@ struct MyInsightsView: View {
             .accessibilityLabel(Text("insights.scope.label"))
 
             SyncIconButton(
-                isRefreshing: isLoadingFeedbackVisible,
-                disabled: isLoadingFeedbackVisible || (topic == .knowledgeProfile && profileRequest == nil),
+                isRefreshing: isLoading,
+                disabled: isLoading || (topic == .knowledgeProfile && profileRequest == nil),
                 tooltip: String.l10n("insights.refresh")
             ) {
-                refresh()
+                refresh(for: topic)
             }
 
             if topic == .technology, let snapshot {
@@ -282,7 +314,7 @@ struct MyInsightsView: View {
         .padding(.top, 1)
     }
 
-    private func refresh() {
+    private func refresh(for topic: InsightsTopic) {
         if topic == .knowledgeProfile {
             profileDay = Date()
             profileRefresh += 1
