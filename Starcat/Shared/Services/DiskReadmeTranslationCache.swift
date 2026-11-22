@@ -74,8 +74,9 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
 
     // MARK: - Observable 派生量（设置页存储 Tab 渲染用）
     //
-    // 通过 `reload()` 同步扫盘更新；`upsert` / `delete*` 写入后自动调 `reload()`，
-    // 让 UI 立即看到最新数字。
+    // P1-2 改为 summary-first 维护：`reload()` 仍是权威口径（init / delete* / sweep /
+    // 设置页显式刷新时全量扫盘重建），而 `upsert` 等高频写路径只按单条增量更新聚合值，
+    // 不再写一次就解码整库译文（写 5 条 = 解码 1+2+3+4+5 条，最坏 O(n²)）。
 
     /// 全部分段翻译 JSON 总字节数。
     private(set) var totalBytes: Int64 = 0
@@ -90,6 +91,20 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
 
     private let fileManager: FileManager
     private let rootOverride: URL?
+
+    /// 单条缓存的统计快照：字节数 + 解析后的 createdAt。
+    ///
+    /// `entryStats` 是「当前派生量已计入哪些条目」的内存镜像（key 为 `.json` 文件
+    /// 绝对路径）。增量更新以它为准做加减，保证 `itemCount` / `totalBytes` /
+    /// `latestCreatedAt` 在两次权威 `reload()` 之间始终与全量扫盘口径一致；
+    /// 用户在 Finder 手动改缓存目录这类外部漂移，由下一次 reload 自愈
+    /// （与 `RepoContextStorage` summary 的兜底姿态相同）。
+    private struct EntryStat {
+        let size: Int64
+        let createdAt: Date?
+    }
+
+    private var entryStats: [String: EntryStat] = [:]
 
     /// upsert 计数（每 5 次触发一次 LRU sweep）。详见 `maybeTriggerLRUSweep()`。
     private var upsertCountSinceLastSweep: Int = 0
@@ -155,6 +170,7 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
             try? fileManager.removeItem(at: metadataURL)
             let legacyHTML = metadataURL.deletingPathExtension().appendingPathExtension("html")
             try? fileManager.removeItem(at: legacyHTML)
+            applyRemovalToStats(url: metadataURL)
             return nil
         }
         guard stored.formatVersion == ReadmeTranslation.currentFormatVersion else {
@@ -162,6 +178,7 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
             try? fileManager.removeItem(
                 at: metadataURL.deletingPathExtension().appendingPathExtension("html")
             )
+            applyRemovalToStats(url: metadataURL)
             return nil
         }
 
@@ -189,7 +206,13 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
         )
 
         upsertCountSinceLastSweep += 1
-        reload()
+        // P1-2：写路径不再全量 reload（那会解码整库无关译文）；只增量更新本条统计。
+        // 聚合口径由每 5 次 upsert 触发的 lruSweep → reload 全量对拍自愈。
+        applyUpsertToStats(
+            url: metadataURL,
+            byteCount: Int64(metadataData.count),
+            createdAt: ISO8601DateFormatter.githubDate(from: translation.createdAt)
+        )
         try maybeTriggerLRUSweep()
     }
 
@@ -298,16 +321,19 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
     /// 扫盘更新派生量。**与 `lruSweep` 不同**：reload 不删任何文件，纯只读统计。
     ///
     /// 公开是为了让设置页 `.task { cache.reload() }` 在 Tab 出现时强制刷一遍数字。
+    /// 同时重建 `entryStats` 增量镜像，作为后续写路径增量更新的基准（权威口径）。
     func reload() {
         var totalBytes: Int64 = 0
         var itemCount: Int = 0
         var latestCreatedAt: Date?
+        var stats: [String: EntryStat] = [:]
 
         guard let root = try? rootURL(),
               fileManager.fileExists(atPath: root.path) else {
             self.totalBytes = 0
             self.itemCount = 0
             self.latestCreatedAt = nil
+            self.entryStats = [:]
             return
         }
 
@@ -321,13 +347,13 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
                        let stored = try? decoder.decode(ReadmeTranslation.self, from: data),
                        stored.formatVersion == ReadmeTranslation.currentFormatVersion {
                         itemCount += 1
-                        if let fileSize = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-                            totalBytes += Int64(fileSize)
-                        }
-                        if let created = ISO8601DateFormatter.githubDate(from: stored.createdAt),
-                           latestCreatedAt == nil || created > latestCreatedAt! {
+                        let fileSize = Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+                        totalBytes += fileSize
+                        let created = ISO8601DateFormatter.githubDate(from: stored.createdAt)
+                        if let created, latestCreatedAt == nil || created > latestCreatedAt! {
                             latestCreatedAt = created
                         }
+                        stats[file.path] = EntryStat(size: fileSize, createdAt: created)
                     }
                 }
             }
@@ -336,6 +362,56 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
         self.totalBytes = totalBytes
         self.itemCount = itemCount
         self.latestCreatedAt = latestCreatedAt
+        self.entryStats = stats
+    }
+
+    // MARK: - 私有：派生量增量维护（P1-2）
+
+    /// `upsert` 写盘成功后按单条更新聚合值，避免解码整库。
+    ///
+    /// 口径与 `reload()` 严格一致：新 key 计数 +1；覆盖 key 字节数按差值加减；
+    /// createdAt 取「新值直接更大」或「曾持有最大值被更小值覆盖时从内存镜像重算」，
+    /// 全程 0 次额外磁盘扫描。前置条件是 `entryStats` 与磁盘一致——该一致性由
+    /// 上一次权威 `reload()` 建立，并随 `find` 清理 / 后续 reload 持续维持。
+    private func applyUpsertToStats(url: URL, byteCount: Int64, createdAt: Date?) {
+        let key = url.path
+        let old = entryStats[key]
+        if old == nil {
+            itemCount += 1
+        }
+        totalBytes += byteCount - (old?.size ?? 0)
+        entryStats[key] = EntryStat(size: byteCount, createdAt: createdAt)
+
+        if let createdAt, latestCreatedAt == nil || createdAt > latestCreatedAt! {
+            // 快路径：新值即全局最大。
+            latestCreatedAt = createdAt
+        } else if let oldCreated = old?.createdAt, oldCreated == latestCreatedAt,
+                  createdAt == nil || createdAt! < oldCreated {
+            // 曾持有最大 createdAt 的条目被更旧值覆盖 → 内存重算最大值（无 IO）。
+            recomputeLatestCreatedAtFromStats()
+        }
+    }
+
+    /// `find` 命中损坏 / 旧格式条目并将其删除后，同步扣减聚合值。
+    /// 不做此步会让已删除条目在下次权威 reload 前持续虚占 itemCount / totalBytes。
+    private func applyRemovalToStats(url: URL) {
+        guard let old = entryStats.removeValue(forKey: url.path) else { return }
+        itemCount -= 1
+        totalBytes -= old.size
+        if old.createdAt != nil && old.createdAt == latestCreatedAt {
+            recomputeLatestCreatedAtFromStats()
+        }
+    }
+
+    /// 从内存镜像重算 `latestCreatedAt`（O(n) 次日期比较，n 为条目数，无磁盘 IO）。
+    private func recomputeLatestCreatedAtFromStats() {
+        var newest: Date?
+        for stat in entryStats.values {
+            if let created = stat.createdAt, newest == nil || created > newest! {
+                newest = created
+            }
+        }
+        latestCreatedAt = newest
     }
 
     // MARK: - 私有：路径 / 触发 / 清扫

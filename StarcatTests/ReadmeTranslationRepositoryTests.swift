@@ -12,7 +12,9 @@
 //  - deleteEverything() 一次性清空整个磁盘缓存；
 //  - 损坏 metadata JSON → find 返 nil + 自动删除损坏对，避免长期占空间；
 //  - LRU sweep 按"60 天未访问" 优先删，仍超 50MB 再按 mtime 升序补删；
-//  - 写入后 totalBytes / itemCount / latestCreatedAt 三个 Observable 派生量同步更新。
+//  - 写入后 totalBytes / itemCount / latestCreatedAt 三个 Observable 派生量同步更新；
+//  - P1-2 增量统计：普通 upsert 0 次全库扫盘（不再写后整库 reload），
+//    聚合值与 reload() 权威口径对拍一致。
 //
 //  关键约束：
 //  - 每个用例用 `rootOverride: tempDir` 注入隔离目录，绝不污染 production
@@ -391,5 +393,151 @@ struct ReadmeTranslationRepositoryTests {
         await #expect(throws: DiskReadmeTranslationCacheError.self) {
             try await cache.find(owner: "octo", repo: "../escape", targetLanguage: "zh-Hans")
         }
+    }
+
+    // MARK: - P1-2 增量统计（写路径不再全量 reload）
+
+    @Test("P1-2：普通 upsert（新增与覆盖）0 次全库扫盘")
+    func upsertDoesNotScanWholeCache() async throws {
+        let fm = DirectoryScanCountingFileManager()
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-translation-test-\(UUID().uuidString)", isDirectory: true)
+        let cache = DiskReadmeTranslationCache(fileManager: fm, rootOverride: root)
+        defer { cleanup(root) }
+
+        // 预置 2 条（sweep 计数 = 2，未到 5 次阈值）；init 期的扫描不计入
+        try await cache.upsert(makeTranslation(lang: "zh-Hans"), owner: "octo", repo: "a")
+        try await cache.upsert(makeTranslation(lang: "ja"), owner: "octo", repo: "b")
+        fm.resetCount()
+
+        // 第 3 次（新增）与第 4 次（覆盖）upsert 都不应触发任何目录枚举；
+        // 全量 reload 的唯一入口是目录枚举，0 次 = 0 次解码无关译文。
+        try await cache.upsert(makeTranslation(lang: "en"), owner: "octo", repo: "c")
+        #expect(fm.directoryScanCount == 0)
+        #expect(cache.itemCount == 3)
+
+        try await cache.upsert(
+            makeTranslation(lang: "zh-Hans", text: "v2", hash: "h2"),
+            owner: "octo",
+            repo: "a"
+        )
+        #expect(fm.directoryScanCount == 0)
+        // 覆盖不增计数
+        #expect(cache.itemCount == 3)
+    }
+
+    @Test("P1-2：增量统计与 reload() 权威口径对拍一致")
+    func incrementalStatsMatchReloadGroundTruth() async throws {
+        let (cache, root) = try makeIsolatedCache()
+        defer { cleanup(root) }
+        let maxCreatedAt = "2026-06-16T10:00:00Z"
+        let midCreatedAt = "2026-06-15T10:00:00Z"
+        try await cache.upsert(
+            makeTranslation(lang: "zh-Hans", text: String(repeating: "长", count: 500), createdAt: maxCreatedAt),
+            owner: "octo",
+            repo: "demo"
+        )
+        try await cache.upsert(
+            makeTranslation(lang: "ja", text: "こんにちは", createdAt: midCreatedAt),
+            owner: "octo",
+            repo: "demo"
+        )
+
+        // 覆盖「曾持有最大 createdAt」的条目为更旧值 → 走内存重算路径
+        try await cache.upsert(
+            makeTranslation(lang: "zh-Hans", text: "v2", createdAt: "2026-06-14T10:00:00Z"),
+            owner: "octo",
+            repo: "demo"
+        )
+
+        #expect(cache.itemCount == 2)
+        #expect(cache.latestCreatedAt == ISO8601DateFormatter.githubDate(from: midCreatedAt))
+
+        // 对拍：reload 全量扫盘后三个派生量都不得变化（增量 = 权威口径）
+        let countBefore = cache.itemCount
+        let bytesBefore = cache.totalBytes
+        let latestBefore = cache.latestCreatedAt
+        cache.reload()
+        #expect(cache.itemCount == countBefore)
+        #expect(cache.totalBytes == bytesBefore)
+        #expect(cache.latestCreatedAt == latestBefore)
+    }
+
+    @Test("P1-2：find 清理损坏条目后聚合值即时扣减，与 reload 对拍一致")
+    func findCorruptEntryAdjustsStatsImmediately() async throws {
+        let (cache, root) = try makeIsolatedCache()
+        defer { cleanup(root) }
+        let latestCreatedAt = "2026-06-16T10:00:00Z"
+        let olderCreatedAt = "2026-06-15T10:00:00Z"
+        try await cache.upsert(
+            makeTranslation(lang: "zh-Hans", createdAt: latestCreatedAt),
+            owner: "octo",
+            repo: "demo"
+        )
+        try await cache.upsert(
+            makeTranslation(lang: "ja", createdAt: olderCreatedAt),
+            owner: "octo",
+            repo: "demo"
+        )
+
+        // 手工损坏持有最大 createdAt 的 zh 条目；find 命中损坏后删除该条
+        let metadataURL = root
+            .appendingPathComponent("octo", isDirectory: true)
+            .appendingPathComponent("demo", isDirectory: true)
+            .appendingPathComponent("zh-Hans.json")
+        try Data("not-a-valid-json".utf8).write(to: metadataURL, options: .atomic)
+        let result = try await cache.find(owner: "octo", repo: "demo", targetLanguage: "zh-Hans")
+        #expect(result == nil)
+
+        // 增量扣减已生效：计数回到 1，最大 createdAt 退回 ja 条目
+        #expect(cache.itemCount == 1)
+        #expect(cache.latestCreatedAt == ISO8601DateFormatter.githubDate(from: olderCreatedAt))
+
+        // 对拍 reload：聚合值不变
+        let countBefore = cache.itemCount
+        let bytesBefore = cache.totalBytes
+        cache.reload()
+        #expect(cache.itemCount == countBefore)
+        #expect(cache.totalBytes == bytesBefore)
+    }
+
+    @Test("P1-2：第 5 次 upsert 触发 sweep 后统计仍精确（行为不变）")
+    func fifthUpsertTriggersSweepAndKeepsStatsExact() async throws {
+        let (cache, root) = try makeIsolatedCache()
+        defer { cleanup(root) }
+        for (index, repo) in ["a", "b", "c", "d", "e"].enumerated() {
+            try await cache.upsert(
+                makeTranslation(lang: "zh-Hans", text: "内容\(index)", hash: "h\(index)"),
+                owner: "octo",
+                repo: repo
+            )
+        }
+        // sweep 自带的权威 reload 重建统计后不得丢条目或错记字节
+        #expect(cache.itemCount == 5)
+        let countBefore = cache.itemCount
+        let bytesBefore = cache.totalBytes
+        cache.reload()
+        #expect(cache.itemCount == countBefore)
+        #expect(cache.totalBytes == bytesBefore)
+    }
+}
+
+/// P1-2 回归用 FileManager spy：只拦截 `contentsOfDirectory(at:)` 计数，
+/// 其余全部走 super 真实现。全量 reload 必经目录枚举，因此计数为 0 即证明
+/// 写路径没有发生整库重扫。
+private final class DirectoryScanCountingFileManager: FileManager {
+    private(set) var directoryScanCount = 0
+
+    override func contentsOfDirectory(
+        at url: URL,
+        includingPropertiesForKeys keys: [URLResourceKey]?,
+        options mask: FileManager.DirectoryEnumerationOptions
+    ) throws -> [URL] {
+        directoryScanCount += 1
+        return try super.contentsOfDirectory(at: url, includingPropertiesForKeys: keys, options: mask)
+    }
+
+    func resetCount() {
+        directoryScanCount = 0
     }
 }
