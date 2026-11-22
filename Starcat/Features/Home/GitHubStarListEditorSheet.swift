@@ -6,7 +6,7 @@
 //
 //  设计约束：
 //  - name / description / private 写 GitHub；颜色和 AI 分组规则只写 Starcat 本地缓存。
-//  - 新建默认无图标，显式传空字符串；nil 在 Repository 中代表保留旧颜色，不能用于清除
+//  - 新建默认无图标，显式传空字符串；nil 在 Repository 中代表保留旧颜色，不能用于清除。
 //  - 删除 list 是远端 destructive mutation，必须二次确认。
 //  - Header 对齐新建标签：单行标题（新增分组 / 编辑分组）+ 左上角分组语义图标（rectangle.3.group），不要二级标题。
 //  - GitHub / Starcat 分成两段，避免创建时把 AI 规则当成必填项。
@@ -26,6 +26,7 @@ struct GitHubStarListEditorSheet: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
+    @FocusState private var isNameFocused: Bool
     @State private var name: String
     @State private var description: String
     @State private var isPrivate: Bool
@@ -42,6 +43,10 @@ struct GitHubStarListEditorSheet: View {
 
     private var trimmedName: String {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSave: Bool {
+        !isSaving && !isLoadingAIRule && !trimmedName.isEmpty
     }
 
     private var hasAIInstruction: Bool {
@@ -75,7 +80,7 @@ struct GitHubStarListEditorSheet: View {
             footer
         }
         .frame(width: 520)
-        .frame(minHeight: 360)
+        .defaultFocus($isNameFocused, true)
         .task(id: list?.id) {
             await loadAIRule()
         }
@@ -99,7 +104,7 @@ struct GitHubStarListEditorSheet: View {
                 .frame(width: 20, height: 20)
 
             Text(isEditing ? "githubStarLists.editor.title.edit" : "githubStarLists.editor.title.create")
-                .font(.headline)
+                .font(interfaceScale.font(.panelTitle))
 
             Spacer(minLength: 8)
 
@@ -108,71 +113,90 @@ struct GitHubStarListEditorSheet: View {
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.vertical, 12)
     }
 
     private var formBody: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                githubSection
-                starcatSection
+        VStack(alignment: .leading, spacing: 12) {
+            githubSection
+            Divider()
+            starcatSection
 
-                if let errorMessage {
-                    Text(verbatim: errorMessage)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            if let errorMessage {
+                Text(verbatim: errorMessage)
+                    .font(interfaceScale.font(.caption))
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(20)
         }
+        .padding(20)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var githubSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("githubStarLists.editor.section.github")
+            sectionTitle("githubStarLists.editor.section.githubGroup")
 
             labeledField("githubStarLists.editor.name") {
-                TextField("githubStarLists.editor.name.placeholder", text: $name)
-                    .textFieldStyle(.roundedBorder)
+                TextField(
+                    "githubStarLists.editor.name",
+                    text: $name,
+                    prompt: Text("githubStarLists.editor.name.placeholder")
+                )
+                .labelsHidden()
+                .font(interfaceScale.font(.body))
+                .textFieldStyle(.roundedBorder)
+                .focused($isNameFocused)
+                // 回车提交只属于单行名称，避免把多行编辑或输入法由窗口级快捷键接管。
+                .onSubmit { Task { await save() } }
             }
 
-            labeledField("githubStarLists.editor.description") {
+            labeledField("githubStarLists.editor.description.optional") {
                 TextField(
-                    "githubStarLists.editor.description.placeholder",
+                    "githubStarLists.editor.description.optional",
                     text: $description,
+                    prompt: Text("githubStarLists.editor.description.placeholder"),
                     axis: .vertical
                 )
-                .starcatMarkdownBodyFont()
+                .labelsHidden()
+                .starcatMarkdownBodyFont(baseline: .compact)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(2...4)
             }
 
-            Toggle(isOn: $isPrivate) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("githubStarLists.editor.private")
-                    Text("githubStarLists.editor.private.help")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            switchRow(
+                "githubStarLists.editor.private.group",
+                isOn: $isPrivate,
+                help: "githubStarLists.editor.private.visibilityHelp"
+            )
         }
     }
 
     private var starcatSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("githubStarLists.editor.section.starcat")
-
-            labeledField("githubStarLists.editor.color") {
-                colorRow
-            }
-
+            sectionTitle("githubStarLists.editor.section.starcatLocal")
+            colorField
             aiRuleBlock
         }
     }
 
+    /// 长译文和大字号下让色板另起一行，保留完整标签和各色点的点击区。
+    private var colorField: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                fieldLabel("githubStarLists.editor.color.group")
+                colorRow
+            }
+            .fixedSize(horizontal: true, vertical: false)
+
+            labeledField("githubStarLists.editor.color.group") {
+                colorRow
+            }
+        }
+    }
+
     private var colorRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             noColorButton
             ForEach(TagColorPalette.presets, id: \.hex) { preset in
                 Button {
@@ -182,48 +206,49 @@ struct GitHubStarListEditorSheet: View {
                         .fill(Color(hex: preset.hex) ?? .accentColor)
                         .frame(width: 20, height: 20)
                         .overlay {
-                            if selectedColorHex == preset.hex {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .foregroundStyle(.white)
-                            }
+                            Circle().strokeBorder(
+                                selectedColorHex == preset.hex ? Color.primary : Color.secondary.opacity(0.25),
+                                lineWidth: selectedColorHex == preset.hex ? 2 : 1
+                            )
                         }
-                        .overlay {
-                            Circle()
-                                .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
-                        }
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .help(Text(LocalizedStringKey(preset.name)))
+                .accessibilityLabel(Text(LocalizedStringKey(preset.name)))
+                .accessibilityAddTraits(selectedColorHex == preset.hex ? .isSelected : [])
             }
-            Spacer(minLength: 0)
         }
     }
 
-    /// 无图标和实际颜色一样是可保存的选择，不能再交给默认补色逻辑处理
+    /// 无图标是可保存的选择，提交空值以清除原有颜色。
     private var noColorButton: some View {
         Button {
             selectedColorHex = GitHubStarList.noColorHex
         } label: {
-            ZStack {
-                Circle()
-                    .strokeBorder(Color.secondary.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
-                    .frame(width: 20, height: 20)
-                if selectedColorHex.isEmpty {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                ZStack {
+                    Circle()
+                        .strokeBorder(Color.secondary.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
+                        .frame(width: 20, height: 20)
+                    if selectedColorHex.isEmpty {
+                        Image(systemName: "checkmark")
+                            .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                .accessibilityHidden(true)
+
+                fieldLabel("githubStarLists.editor.color.none")
             }
-            .frame(width: 24, height: 24)
-            // plain 按钮的空心描边不能承担完整点击区；在 label 内覆盖中心空白与边缘
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(minHeight: 24)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .help(Text("githubStarLists.editor.color.none"))
-        .accessibilityLabel(Text("githubStarLists.editor.color.none"))
         .accessibilityAddTraits(selectedColorHex.isEmpty ? .isSelected : [])
     }
 
@@ -231,20 +256,22 @@ struct GitHubStarListEditorSheet: View {
     private var aiRuleBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.78)) {
                     isAIRuleExpanded.toggle()
                 }
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: isAIRuleExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption.weight(.semibold))
+                        .font(interfaceScale.font(.captionStrong))
                         .foregroundStyle(.secondary)
-                        .frame(width: 12)
+                        .frame(width: interfaceScale.scaled(12))
+                        .accessibilityHidden(true)
                     Text("githubStarLists.editor.aiRule.title")
-                        .font(.subheadline.weight(.semibold))
+                        .font(interfaceScale.font(.bodyEmphasis))
                         .foregroundStyle(.primary)
                     Spacer(minLength: 0)
                 }
+                .frame(minHeight: 24)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -252,31 +279,25 @@ struct GitHubStarListEditorSheet: View {
 
             if isAIRuleExpanded {
                 TextField(
-                    "githubStarLists.editor.aiRule.placeholder",
+                    "githubStarLists.editor.aiRule.title",
                     text: $aiInstruction,
+                    prompt: Text("githubStarLists.editor.aiRule.example"),
                     axis: .vertical
                 )
-                .starcatMarkdownBodyFont()
+                .labelsHidden()
+                .starcatMarkdownBodyFont(baseline: .compact)
                 .textFieldStyle(.roundedBorder)
-                .lineLimit(3...6)
+                .lineLimit(2...6)
                 .disabled(isLoadingAIRule)
 
-                Text("githubStarLists.editor.aiRule.help")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                formHint("githubStarLists.editor.aiRule.providerHelp")
 
-                Toggle(isOn: $autoApplyEnabled) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("githubStarLists.editor.aiRule.autoApply")
-                        if !hasAIInstruction {
-                            Text("githubStarLists.editor.aiRule.autoApply.disabledHelp")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                .disabled(isLoadingAIRule || !hasAIInstruction)
+                switchRow(
+                    "githubStarLists.editor.aiRule.autoApply",
+                    isOn: $autoApplyEnabled,
+                    isDisabled: isLoadingAIRule || !hasAIInstruction,
+                    help: !hasAIInstruction ? "githubStarLists.editor.aiRule.backgroundGrouping.disabledHelp" : nil
+                )
             }
         }
         .onChange(of: hasAIInstruction) { _, hasRule in
@@ -300,22 +321,69 @@ struct GitHubStarListEditorSheet: View {
             Button("common.cancel") {
                 dismiss()
             }
+            .keyboardShortcut(.cancelAction)
             .disabled(isSaving)
 
-            Button(isSaving ? "githubStarLists.editor.saving" : "action.save") {
+            Button(isSaving ? "githubStarLists.editor.saving" : (isEditing ? "action.save" : "action.create")) {
                 Task { await save() }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(isSaving || isLoadingAIRule || trimmedName.isEmpty)
+            .disabled(!canSave)
         }
+        .font(interfaceScale.font(.body))
         .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.vertical, 12)
     }
 
     private func sectionTitle(_ key: LocalizedStringKey) -> some View {
         Text(key)
-            .font(.caption.weight(.semibold))
+            .font(interfaceScale.font(.captionStrong))
             .foregroundStyle(.secondary)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func fieldLabel(_ key: LocalizedStringKey) -> some View {
+        Text(key)
+            .font(interfaceScale.font(.body))
+            .foregroundStyle(.primary)
+    }
+
+    private func formHint(_ key: LocalizedStringKey) -> some View {
+        Text(key)
+            .font(interfaceScale.font(.caption))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// 开关禁用时原因仍可读；轨道复用 AI 分组预检的紧凑样式。
+    private func switchRow(
+        _ title: LocalizedStringKey,
+        isOn: Binding<Bool>,
+        isDisabled: Bool = false,
+        help: LocalizedStringKey?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Toggle(isOn: isOn) {
+                HStack(spacing: 8) {
+                    Text(title)
+                        .font(interfaceScale.font(.body))
+                        .foregroundStyle(isDisabled ? .secondary : .primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    CompactSwitchIndicator(isOn: isOn.wrappedValue, isEnabled: !isDisabled)
+                }
+                .frame(minHeight: 24)
+                .contentShape(Rectangle())
+            }
+            .toggleStyle(.button)
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .disabled(isDisabled)
+
+            if let help {
+                formHint(help)
+            }
+        }
     }
 
     private func labeledField<Content: View>(
@@ -323,14 +391,13 @@ struct GitHubStarListEditorSheet: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(titleKey)
-                .font(.subheadline.weight(.semibold))
+            fieldLabel(titleKey)
             content()
         }
     }
 
     private func save() async {
-        guard !trimmedName.isEmpty else { return }
+        guard canSave else { return }
         isSaving = true
         errorMessage = nil
         defer { isSaving = false }
