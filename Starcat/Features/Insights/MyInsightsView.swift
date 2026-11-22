@@ -767,6 +767,9 @@ private struct MyInsightsDashboard: View {
         )
     }
 
+    /// 在卡片的内边距里为整行背景留出空间，文字和色条仍与卡片标题图标对齐。
+    private static let distributionRowHorizontalInset: CGFloat = 8
+
     private func distributionSection(
         title: LocalizedStringKey,
         subtitle: LocalizedStringKey,
@@ -793,7 +796,7 @@ private struct MyInsightsDashboard: View {
                 }
             }
         ) {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     distributionBarRow(
                         item,
@@ -806,6 +809,7 @@ private struct MyInsightsDashboard: View {
                     )
                 }
             }
+            .padding(.horizontal, -Self.distributionRowHorizontalInset)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(Text(title))
         }
@@ -851,6 +855,8 @@ private struct MyInsightsDashboard: View {
                 animationDelay: Double(rowIndex) * 0.045
             )
         }
+        .padding(.horizontal, Self.distributionRowHorizontalInset)
+        .padding(.vertical, 4)
         .contentShape(Rectangle())
         .listRowSurface(index: rowIndex)
 
