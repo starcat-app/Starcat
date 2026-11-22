@@ -242,7 +242,7 @@ final class DeveloperLanguageService {
             snapshot: snapshot
         )
         do {
-            let data = try JSONEncoder().encode(envelope)
+            let data = try CacheJSONCodec.pack(JSONEncoder().encode(envelope))
             UserDefaults.standard.set(data, forKey: cacheKey(for: login))
         } catch {
             AppLog.network.warning("Developer languages persist failed: \(error.localizedDescription, privacy: .public)")
@@ -252,9 +252,12 @@ final class DeveloperLanguageService {
     private func restoreFromDisk(login: String) {
         guard let data = UserDefaults.standard.data(forKey: cacheKey(for: login)) else { return }
         do {
-            let envelope = try JSONDecoder().decode(DiskEnvelope.self, from: data)
+            let envelope = try JSONDecoder().decode(DiskEnvelope.self, from: CacheJSONCodec.unpack(data))
             snapshot = envelope.snapshot
             lastFetchedAt = Date(timeIntervalSince1970: envelope.fetchedAt)
+            if let upgraded = CacheJSONCodec.upgradeIfSmaller(data) {
+                UserDefaults.standard.set(upgraded, forKey: cacheKey(for: login))
+            }
             AppLog.network.debug("Developer languages restored from disk: login=\(login, privacy: .public)")
         } catch {
             UserDefaults.standard.removeObject(forKey: cacheKey(for: login))

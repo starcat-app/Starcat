@@ -7,23 +7,17 @@
 //  模块职责：
 //  - 把 repo 的语义向量持久化到 `repo_embeddings` 表。
 //  - 以 Float32 BLOB 保存 embedding，避免引入 sqlite-vss / sqlite-vec 动态扩展。
-//  - 把"上次进过向量"的结构化快照（IndexedSnapshot）存为 JSON，让 diff 算法判定
+//  - 把"上次进过向量"的结构化快照（IndexedSnapshot）存为压缩 JSON，让 diff 算法判定
 //    是否需要重建向量，替代旧 v1 的 `content_hash` 全等比对。
 //
 //  关键约束：
 //  - 主键是 `(repo_id, model)`；同一个 repo 可为不同 embedding model 保存不同向量。
-//  - `snapshotJson` 是 `IndexedSnapshot` 的 Codable JSON 编码：
+//  - `snapshotPayload` 是 `IndexedSnapshot` 的压缩 BLOB：
 //    - body：AI 摘要与 README 并存（摘要在前），都没有才用 description+topics
 //    - notes：用户私有笔记（可空）
 //    - metadata：fullName / description / language / topics / license / homepage 元数据元组
 //  - BLOB 编/解码保持在本模型内，业务层只处理 `[Float]`，不接触二进制细节。
 //
-//  v2 schema 变更（2026-06-12，产品上线前直接改 v1，不写 ALTER）：
-//  - 删除 `contentHash` / `indexedText` 字段（对应 v1 的 `content_hash` / `indexed_text` 两列）
-//  - 新增 `snapshotJson` 字段（对应 v1 的 `snapshot_json` 列）
-//  - 删除 `idx_repo_embeddings_model_hash` 索引（按主键命中，不再需要 hash 索引）
-//
-
 import Foundation
 import GRDB
 
@@ -36,11 +30,8 @@ struct RepoEmbedding: Codable, FetchableRecord, MutablePersistableRecord, Equata
     var dimensions: Int
     var embedding: Data
 
-    /// `IndexedSnapshot` 的 JSON 编码，用于 diff 算法判定是否需要重建向量。
-    /// 不直接存 indexedText：snapshot 可实时
-    /// `IndexedTextBuilder.render(snapshot:userPromptTemplate:)` 出 indexedText，
-    /// 字段拆分让"判断要不要重建"和"喂模型的字符串"两个职责解耦。
-    var snapshotJson: String
+    /// 查询先保留压缩字节，需要内容比对时才解码，避免批量读取时常驻全部正文。
+    var snapshotPayload: Data
     var updatedAt: String
 
     enum CodingKeys: String, CodingKey {
@@ -48,7 +39,7 @@ struct RepoEmbedding: Codable, FetchableRecord, MutablePersistableRecord, Equata
         case model
         case dimensions
         case embedding
-        case snapshotJson = "snapshot_json"
+        case snapshotPayload = "snapshot_payload"
         case updatedAt = "updated_at"
     }
 
@@ -56,14 +47,14 @@ struct RepoEmbedding: Codable, FetchableRecord, MutablePersistableRecord, Equata
         repoId: Int64,
         model: String,
         vector: [Float],
-        snapshotJson: String,
+        snapshotPayload: Data,
         updatedAt: String
     ) {
         self.repoId = repoId
         self.model = model
         self.dimensions = vector.count
         self.embedding = Self.encode(vector)
-        self.snapshotJson = snapshotJson
+        self.snapshotPayload = snapshotPayload
         self.updatedAt = updatedAt
     }
 

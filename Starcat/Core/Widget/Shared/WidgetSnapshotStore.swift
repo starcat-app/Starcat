@@ -56,7 +56,7 @@ struct WidgetSnapshotStore: Sendable {
 
         let snapshot: WidgetSnapshot
         do {
-            snapshot = try Self.makeDecoder().decode(WidgetSnapshot.self, from: data)
+            snapshot = try Self.makeDecoder().decode(WidgetSnapshot.self, from: CacheJSONCodec.unpack(data))
         } catch {
             throw WidgetSnapshotStoreError.corruptedSnapshot
         }
@@ -69,7 +69,7 @@ struct WidgetSnapshotStore: Sendable {
         return snapshot
     }
 
-    /// 原子发布一份完整快照。
+    /// 原子发布一份完整快照。旧 JSON 由宿主在下一次发布时替换，Widget 读取仍兼容旧快照。
     func save(_ snapshot: WidgetSnapshot) throws {
         let fileManager = FileManager.default
         let temporaryURL = containerURL.appendingPathComponent(
@@ -82,7 +82,7 @@ struct WidgetSnapshotStore: Sendable {
                 at: containerURL,
                 withIntermediateDirectories: true
             )
-            let data = try Self.makeEncoder().encode(snapshot)
+            let data = try CacheJSONCodec.pack(Self.makeEncoder().encode(snapshot))
             try data.write(to: temporaryURL, options: [])
 
             if fileManager.fileExists(atPath: snapshotURL.path) {
@@ -105,7 +105,7 @@ struct WidgetSnapshotStore: Sendable {
     private static func makeEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         return encoder
     }
 

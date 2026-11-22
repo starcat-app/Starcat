@@ -86,7 +86,7 @@ struct SnakeFrameRendererTests {
         #expect(staticRevision > 0)
         #expect(service.frameImage != nil)
 
-        let animator = try #require(SnakeAnimatorFactory.make(style: .zigzag, weeks: nil))
+        let animator = try #require(SnakeAnimatorFactory.make(style: .zigzag, payload: nil))
         service.configure(animator: animator, payload: nil, colorScheme: .dark)
         #expect(service.readyRevision == staticRevision, "后台首帧返回前，旧图片不能充当新玩法就绪")
 

@@ -39,8 +39,11 @@ final class ProfileExtrasService {
             if userID != nil { reset() }
             userID = user.id
             if let data = defaults.data(forKey: cacheKey),
-               let cached = try? JSONDecoder().decode(Snapshot.self, from: data) {
+               let cached = try? JSONDecoder().decode(Snapshot.self, from: CacheJSONCodec.unpack(data)) {
                 snapshot = cached
+                if let upgraded = CacheJSONCodec.upgradeIfSmaller(data) {
+                    defaults.set(upgraded, forKey: cacheKey)
+                }
             }
         }
         guard force || inflightTask == nil else { return }
@@ -121,7 +124,7 @@ final class ProfileExtrasService {
             failures.insert(section)
             loading.remove(section)
         }
-        if let data = try? JSONEncoder().encode(snapshot) {
+        if let data = try? CacheJSONCodec.pack(JSONEncoder().encode(snapshot)) {
             defaults.set(data, forKey: cacheKey)
         }
     }

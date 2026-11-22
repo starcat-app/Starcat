@@ -164,7 +164,10 @@ final class DiskExternalSearchCache {
         }
         let data = try Data(contentsOf: fileURL)
         do {
-            let value = try valueDecoder.decode(type, from: data)
+            let value = try valueDecoder.decode(type, from: CacheJSONCodec.unpack(data))
+            if let savedBytes = CacheJSONCodec.migrateFileIfSmaller(data, at: fileURL) {
+                totalBytes = max(0, totalBytes - savedBytes)
+            }
             try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: fileURL.path)
             return value
         } catch {
@@ -176,7 +179,7 @@ final class DiskExternalSearchCache {
 
     private func writeAtomically<T: Encodable>(_ value: T, to fileURL: URL) throws {
         try fileManager.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let data = try valueEncoder.encode(value)
+        let data = try CacheJSONCodec.pack(valueEncoder.encode(value))
         try data.write(to: fileURL, options: [.atomic])
         reload()
     }

@@ -44,11 +44,13 @@ actor FollowGraphDiskCache {
               let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
               size <= maximumBytes,
               let data = try? Data(contentsOf: url),
-              let snapshot = try? JSONDecoder().decode(FollowGraphSnapshot.self, from: data),
+              let json = try? CacheJSONCodec.unpack(data), json.count <= maximumBytes,
+              let snapshot = try? JSONDecoder().decode(FollowGraphSnapshot.self, from: json),
               snapshot.formatVersion == 1, snapshot.relation == relation, snapshot.accountID == account, snapshot.rootID == account,
               snapshot.nodes[account] != nil,
               snapshot.edges.allSatisfy({ snapshot.nodes[$0.source] != nil && snapshot.nodes[$0.target] != nil })
         else { return nil }
+        CacheJSONCodec.migrateFileIfSmaller(data, at: url)
         return snapshot
     }
 
@@ -57,7 +59,7 @@ actor FollowGraphDiskCache {
         let data = try JSONEncoder().encode(snapshot)
         guard data.count <= maximumBytes else { throw CocoaError(.fileWriteOutOfSpace) }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try data.write(to: url, options: .atomic)
+        try CacheJSONCodec.pack(data).write(to: url, options: .atomic)
     }
 
     func bytes(account: String, relation: FollowGraphRelation = .following) -> Int64 {

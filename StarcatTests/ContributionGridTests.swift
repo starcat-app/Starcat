@@ -27,7 +27,8 @@ struct ContributionGridTests {
 
     @Test("最近30天按两行时间顺序排列，合计不包含更早日期")
     func recentDaysAndTotal() throws {
-        let grid = ContributionGrid(weeks: fixtureWeeks(), range: .recent30)
+        let payload = fixturePayload(fixtureWeeks())
+        let grid = ContributionGrid(payload: payload, range: .recent30)
         #expect(grid.cols == 15)
         #expect(grid.rows == 2)
         #expect(grid.day(at: GridPosition(col: 0, row: 0))?.date == "2026-09-30")
@@ -36,7 +37,7 @@ struct ContributionGridTests {
         #expect(grid.day(at: GridPosition(col: 14, row: 1))?.date == "2026-10-29")
         #expect(grid.totalContributions == 735)
 
-        let annual = ContributionGrid(weeks: fixtureWeeks())
+        let annual = ContributionGrid(payload: payload)
         for position in grid.allPositions {
             let day = try #require(grid.day(at: position))
             let original = try #require(annual.allPositions.compactMap { annual.day(at: $0) }
@@ -51,7 +52,7 @@ struct ContributionGridTests {
     ])
     func longerRecentRanges(range: ContributionGraphRange) throws {
         let weeks = fixtureWeeks(count: 120)
-        let grid = ContributionGrid(weeks: weeks, range: range)
+        let grid = ContributionGrid(payload: fixturePayload(weeks), range: range)
         let dayCount = try #require(range.dayCount)
         #expect(grid.cols == (range == .recent60 ? 20 : 23))
         #expect(grid.rows == (range == .recent60 ? 3 : 4))
@@ -84,7 +85,9 @@ struct ContributionGridTests {
                 weekday: day.weekday
             )
         }
-        let grid = ContributionGrid(weeks: [ContributionWeek(contributionDays: days)], range: .recent30)
+        let grid = ContributionGrid(
+            payload: fixturePayload([ContributionWeek(contributionDays: days)]), range: .recent30
+        )
         #expect(grid.day(at: GridPosition(col: 0, row: 1)) == nil)
         #expect(grid.day(at: GridPosition(col: 0, row: 0))?.date == "2026-09-30")
         let zeroDay = try #require(grid.day(at: GridPosition(col: 14, row: 1)))
@@ -97,16 +100,16 @@ struct ContributionGridTests {
         let day = ContributionDay(
             date: "2026-10-29", contributionCount: 0, contributionLevel: .none, weekday: 4
         )
-        let weeks = [ContributionWeek(contributionDays: [day])]
-        let annual = ContributionGrid(weeks: weeks)
+        let payload = fixturePayload([ContributionWeek(contributionDays: [day])])
+        let annual = ContributionGrid(payload: payload)
         #expect(annual.day(at: GridPosition(col: 52, row: 4)) == day)
         #expect(annual.day(at: GridPosition(col: 52, row: 5)) == nil)
         #expect(annual.day(at: GridPosition(col: 51, row: 4)) == nil)
-        let recent = ContributionGrid(weeks: weeks, range: .recent30)
+        let recent = ContributionGrid(payload: payload, range: .recent30)
         #expect(recent.day(at: GridPosition(col: 14, row: 1)) == day)
         #expect(recent.day(at: GridPosition(col: 13, row: 1)) == nil)
         #expect(!recent.isPlaceholder)
-        #expect(ContributionGrid(weeks: nil, range: .recent30).isPlaceholder)
+        #expect(ContributionGrid(payload: nil, range: .recent30).isPlaceholder)
     }
 
     @Test("暗色低档色块与空格和卡片底分离，四档贡献逐级提亮")
@@ -137,7 +140,7 @@ struct ContributionGridTests {
                 layout: range.layout,
                 containerSize: CGSize(width: width, height: width * 110 / 634)
             )
-            let grid = ContributionGrid(weeks: nil, range: range)
+            let grid = ContributionGrid(payload: nil, range: range)
             for position in grid.allPositions {
                 let rect = geometry.rect(at: position)
                 #expect(geometry.position(at: CGPoint(x: rect.midX, y: rect.midY)) == position)
@@ -156,7 +159,7 @@ struct ContributionGridTests {
 
     @Test("悬停跨格间隙保留上一日，进入下一格更新，离开草坪清空", arguments: ContributionGraphRange.allCases)
     func continuousInspection(range: ContributionGraphRange) throws {
-        let grid = ContributionGrid(weeks: fixtureWeeks(count: 120), range: range)
+        let grid = ContributionGrid(payload: fixturePayload(fixtureWeeks(count: 120)), range: range)
         let geometry = ContributionGraphGeometry(
             layout: range.layout, containerSize: CGSize(width: 232, height: 232 * 110 / 634)
         )
@@ -212,18 +215,20 @@ struct ContributionGridTests {
     @Test("日均使用当前范围，包含零贡献日并排除空位")
     func tooltipComparisonUsesDisplayedDays() throws {
         let weeks = fixtureWeeks()
+        let payload = fixturePayload(weeks)
         let locale = Locale(identifier: "en-US")
-        let recent = ContributionGrid(weeks: weeks, range: .recent30)
+        let recent = ContributionGrid(payload: payload, range: .recent30)
         let day = try #require(weeks.last?.contributionDays.last)
-        let recentMetrics = ContributionTooltipMetrics(day: day, weeks: weeks, grid: recent, locale: locale)
+        let recentMetrics = ContributionTooltipMetrics(day: day, maximumCount: payload.maximumCount, grid: recent, locale: locale)
         #expect(recentMetrics.comparison?.dayCount == "30")
         #expect(recentMetrics.comparison?.average == "24.5")
         #expect(recentMetrics.comparison?.ratio == "1.6")
 
         let shortWeeks = fixtureWeeks(count: 3)
-        let sparse = ContributionGrid(weeks: shortWeeks, range: .recent90)
+        let shortPayload = fixturePayload(shortWeeks)
+        let sparse = ContributionGrid(payload: shortPayload, range: .recent90)
         let zeroDay = try #require(shortWeeks.first?.contributionDays.first)
-        let sparseMetrics = ContributionTooltipMetrics(day: zeroDay, weeks: shortWeeks, grid: sparse, locale: locale)
+        let sparseMetrics = ContributionTooltipMetrics(day: zeroDay, maximumCount: shortPayload.maximumCount, grid: sparse, locale: locale)
         #expect(sparseMetrics.comparison?.dayCount == "3")
         #expect(sparseMetrics.comparison?.average == "1.0")
         #expect(sparseMetrics.comparison?.ratio == "0.0")
@@ -286,7 +291,7 @@ struct ContributionGridTests {
             contributionLevel: .fourthQuartile, weekday: 5
         )
         let metrics = ContributionTooltipMetrics(
-            day: day, weeks: [ContributionWeek(contributionDays: [peak, day])],
+            day: day, maximumCount: fixturePayload([ContributionWeek(contributionDays: [peak, day])]).maximumCount,
             locale: Locale(identifier: "en-US")
         )
         #expect(metrics.countPlaceholder == testCase.expected)
@@ -304,14 +309,15 @@ struct ContributionGridTests {
                 )
             })
         }
-        let grid = ContributionGrid(weeks: weeks, range: range)
+        let payload = fixturePayload(weeks)
+        let grid = ContributionGrid(payload: payload, range: range)
         let day = try #require(grid.allPositions.compactMap { grid.day(at: $0) }
             .first { $0.contributionCount == 5 })
         if range != .year {
             #expect(grid.allPositions.compactMap { grid.day(at: $0) }
                 .allSatisfy { $0.contributionCount == 5 })
         }
-        let metrics = ContributionTooltipMetrics(day: day, weeks: weeks, locale: Locale(identifier: "en-US"))
+        let metrics = ContributionTooltipMetrics(day: day, maximumCount: payload.maximumCount, locale: Locale(identifier: "en-US"))
         #expect(metrics.countPlaceholder == "1,250")
         #expect(metrics.countText == "5")
     }
@@ -322,7 +328,7 @@ struct ContributionGridTests {
             date: "2026-01-09", contributionCount: 9, contributionLevel: .firstQuartile, weekday: 5
         )
         let metrics = ContributionTooltipMetrics(
-            day: day, weeks: [ContributionWeek(contributionDays: [day])],
+            day: day, maximumCount: day.contributionCount,
             locale: Locale(identifier: "zh-Hans")
         )
         #expect(metrics.dateText == "2026年01月09日")
@@ -342,13 +348,13 @@ struct ContributionGridTests {
         ].map { date, count in
             ContributionDay(date: date, contributionCount: count, contributionLevel: .firstQuartile, weekday: 0)
         }
-        let weeks = [ContributionWeek(contributionDays: samples)]
-        let grid = ContributionGrid(weeks: weeks, range: .recent90)
+        let payload = fixturePayload([ContributionWeek(contributionDays: samples)])
+        let grid = ContributionGrid(payload: payload, range: .recent90)
         let locale = Locale(identifier: language)
         for scale in [InterfaceScale.standard, .large] {
             var referenceSize: CGSize?
             for (index, day) in samples.enumerated() {
-                let metrics = ContributionTooltipMetrics(day: day, weeks: weeks, grid: grid, locale: locale)
+                let metrics = ContributionTooltipMetrics(day: day, maximumCount: payload.maximumCount, grid: grid, locale: locale)
                 let detail: ContributionTooltipDetail = switch index {
                 case 0: .loaded(.empty)
                 case 1: .unavailable
@@ -388,7 +394,7 @@ struct ContributionGridTests {
         )
         let locale = Locale(identifier: "en-US")
         let metrics = ContributionTooltipMetrics(
-            day: day, weeks: [ContributionWeek(contributionDays: [peak, day])], locale: locale
+            day: day, maximumCount: peak.contributionCount, locale: locale
         )
         for scale in [InterfaceScale.standard, .large] {
             let renderer = ImageRenderer(content: ContributionTooltipCard(metrics: metrics, color: .green)
@@ -421,7 +427,7 @@ struct ContributionGridTests {
           ContributionGraphRange.allCases.filter { $0 != .year })
     func recentAnimationBounds(style: SnakeStyle, range: ContributionGraphRange) throws {
         let animator = try #require(SnakeAnimatorFactory.make(
-            style: style, weeks: fixtureWeeks(count: 120), range: range
+            style: style, payload: fixturePayload(fixtureWeeks(count: 120)), range: range
         ))
         #expect(animator.totalSteps > 0)
         var visited = Set<GridPosition>()
@@ -437,6 +443,11 @@ struct ContributionGridTests {
         if style != .foodChase {
             #expect(visited.count == range.layout.cols * range.layout.rows)
         }
+    }
+
+    private func fixturePayload(_ weeks: [ContributionWeek]) -> ContributionCalendarPayload {
+        let total = weeks.lazy.flatMap(\.contributionDays).reduce(0) { $0 + $1.contributionCount }
+        return ContributionCalendarPayload(totalContributions: total, weeks: weeks)
     }
 
     /// 默认40天跨月数据，120天用例跨年；颜色直接使用接口档位。

@@ -280,7 +280,7 @@ final class UserProfileService {
     }
 
     /// 磁盘落盘信封：`{ "fetchedAt": <epoch>, "profile": <jsonEncoded GitHubUserDTO> }`。
-    /// 用 JSONEncoder 而非 PropertyListEncoder，文本调试可读（与 ContributionService 一致）。
+    /// 压缩封装只作用于存储，沿用旧 JSON 的业务字段。
     private struct DiskEnvelope: Codable {
         let fetchedAt: TimeInterval
         let profile: GitHubUserDTO
@@ -289,7 +289,7 @@ final class UserProfileService {
     private func persistToDisk(login: String, profile: GitHubUserDTO, fetchedAt: Date) {
         let envelope = DiskEnvelope(fetchedAt: fetchedAt.timeIntervalSince1970, profile: profile)
         do {
-            let data = try JSONEncoder().encode(envelope)
+            let data = try CacheJSONCodec.pack(JSONEncoder().encode(envelope))
             UserDefaults.standard.set(data, forKey: cacheKey(for: login))
         } catch {
             AppLog.network.warning("UserProfile persist failed: \(error.localizedDescription, privacy: .public)")
@@ -301,9 +301,12 @@ final class UserProfileService {
     private func restoreFromDisk(login: String) -> Bool {
         guard let data = UserDefaults.standard.data(forKey: cacheKey(for: login)) else { return false }
         do {
-            let envelope = try JSONDecoder().decode(DiskEnvelope.self, from: data)
+            let envelope = try JSONDecoder().decode(DiskEnvelope.self, from: CacheJSONCodec.unpack(data))
             self.profile = envelope.profile
             self.lastFetchedAt = Date(timeIntervalSince1970: envelope.fetchedAt)
+            if let upgraded = CacheJSONCodec.upgradeIfSmaller(data) {
+                UserDefaults.standard.set(upgraded, forKey: cacheKey(for: login))
+            }
             AppLog.network.debug("UserProfile restored from disk: login=\(login, privacy: .public)")
             return true
         } catch {

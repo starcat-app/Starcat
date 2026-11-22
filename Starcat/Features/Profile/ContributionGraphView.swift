@@ -132,7 +132,7 @@ struct ContributionGraphView: View {
 
     private var summaryText: String {
         if let days = selectedRange.dayCount {
-            let count = ContributionGrid(weeks: payload?.weeks, range: selectedRange).totalContributions
+            let count = ContributionGrid(payload: payload, range: selectedRange).totalContributions
             return String(
                 format: String.l10n("contribution.range.daysCount"), locale: locale,
                 days.formatted(.number.locale(locale)), count.formatted(.number.locale(locale))
@@ -145,8 +145,7 @@ struct ContributionGraphView: View {
     }
 
     var body: some View {
-        // 一次视图更新共用日期映射，避免逐格辅助功能描述重复解析整年的日期。
-        let grid = ContributionGrid(weeks: payload?.weeks, range: displayedRange)
+        let grid = ContributionGrid(payload: payload, range: displayedRange)
         let day = hoveredPosition.flatMap { grid.day(at: $0) }
         let dayDetail = detail(for: day)
         VStack(alignment: .leading, spacing: 6) {
@@ -179,7 +178,7 @@ struct ContributionGraphView: View {
                         }
                     }
                     .overlay(alignment: .topLeading) {
-                        if let hoveredPosition, grid.day(at: hoveredPosition) != nil {
+                        if let hoveredPosition, day != nil {
                             let rect = geometry.rect(at: hoveredPosition)
                             RoundedRectangle(cornerRadius: displayedRange == .year ? 1 : 3)
                                 .strokeBorder(.primary.opacity(0.8), lineWidth: 1)
@@ -197,7 +196,7 @@ struct ContributionGraphView: View {
                                 let palette = ContributionPalette.palette(for: colorScheme, style: style)
                                 ContributionTooltipCard(
                                     metrics: ContributionTooltipMetrics(
-                                        day: day, weeks: payload?.weeks, grid: grid, locale: locale
+                                        day: day, maximumCount: payload?.maximumCount ?? 0, grid: grid, locale: locale
                                     ),
                                     color: palette.tooltipColor(for: day.contributionLevel, scheme: colorScheme),
                                     detail: dayDetail
@@ -297,7 +296,7 @@ struct ContributionGraphView: View {
         // 查日数据时显示真实底图。格子间移动不重建动画，离开整个网格后恢复当前玩法。
         let shouldAnimate = !reduceMotion && !continuousAnimationsPaused && !isInspecting
         let animator = shouldAnimate ? SnakeAnimatorFactory.make(
-            style: settings.snakeStyle, weeks: payload?.weeks, range: displayedRange
+            style: settings.snakeStyle, payload: payload, range: displayedRange
         ) : nil
         renderService.configure(
             animator: animator,
@@ -401,7 +400,7 @@ struct ContributionGraphView: View {
             .accessibilityValue(Text(LocalizedStringKey(settings.snakeStyle.displayNameKey)))
             .accessibilityChildren {
                 ForEach(grid.allPositions, id: \.self) { position in
-                    if let day = grid.day(at: position) {
+                    if let day = grid.cell(at: position) {
                         Text(verbatim: "\(dateText(day)) — \(dayCountText(day))")
                     }
                 }
@@ -420,21 +419,20 @@ struct ContributionGraphView: View {
         return detailService.isPrefetchingDayActivity ? .loading : .unavailable
     }
 
-    private func dayCountText(_ day: ContributionDay) -> String {
+    private func dayCountText(_ day: ContributionCalendarPayload.Day) -> String {
         String(
             format: String.l10n("contribution.day.count"), locale: locale,
             day.contributionCount.formatted(.number.locale(locale))
         )
     }
 
-    private func dateText(_ day: ContributionDay) -> String {
-        guard let date = ContributionGrid.date(day.date) else { return day.date }
+    private func dateText(_ day: ContributionCalendarPayload.Day) -> String {
         let format = Date.FormatStyle(
             locale: locale,
             calendar: Calendar(identifier: .gregorian),
             timeZone: TimeZone(secondsFromGMT: 0)!
         ).year().month(.abbreviated).day().weekday(.abbreviated)
-        return date.formatted(format)
+        return day.calendarDate.formatted(format)
     }
 }
 

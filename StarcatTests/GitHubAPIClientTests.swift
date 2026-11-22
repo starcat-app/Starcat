@@ -442,6 +442,56 @@ struct GitHubAPIClientTests {
         }
     }
 
+    @Test("旧草坪首读恢复时间戳并自动压缩，迁移写入失败时保留旧缓存", arguments: [false, true])
+    @MainActor
+    func legacyContributionCalendarCache(failWrite: Bool) throws {
+        let suite = UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let directory = URL.temporaryDirectory.appending(component: suite)
+        let file = directory.appending(component: "alice.calendar.cache")
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        if failWrite {
+            try FileManager.default.createDirectory(at: file, withIntermediateDirectories: true)
+        }
+        let fetchedAt = Date().timeIntervalSince1970
+        let key = "contribution.calendar.alice"
+        let oldJSON = Data("""
+        {"fetchedAt":\(fetchedAt),"payload":{"totalContributions":0,"weeks":[
+          {"contributionDays":[{"date":"2026-12-29","contributionCount":0,"contributionLevel":"NONE","weekday":2},
+            {"date":"2026-12-31","contributionCount":0,"contributionLevel":"NONE","weekday":4}]}
+        ]}}
+        """.utf8)
+        defaults.set(oldJSON, forKey: key)
+        let service = ContributionService(apiClient: makeClient(), defaults: defaults, cacheDirectory: directory)
+        service.load(login: "Alice")
+        let payload = try #require(service.payload)
+        #expect(service.lastFetchedAt == Date(timeIntervalSince1970: fetchedAt))
+        #expect(!service.isPrefetchingDayActivity)
+        #expect(payload.days.map(\.date) == ["2026-12-29", "2026-12-31"])
+        #expect(payload.activityStats == .empty)
+        if failWrite {
+            #expect(defaults.data(forKey: key) == oldJSON)
+            try FileManager.default.removeItem(at: file)
+        } else {
+            #expect(defaults.data(forKey: key) == nil)
+        }
+
+        let restarted = ContributionService(apiClient: makeClient(), defaults: defaults, cacheDirectory: directory)
+        restarted.load(login: "alice")
+        #expect(restarted.payload == payload)
+        #expect(restarted.lastFetchedAt == service.lastFetchedAt)
+        #expect(defaults.data(forKey: key) == nil)
+        let stored = try Data(contentsOf: file)
+        #expect(CacheJSONCodec.isCompressed(stored))
+        #expect(stored.count < oldJSON.count)
+        restarted.reset(login: "Alice")
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+    }
+
     @Test("预拉优先近期活跃日，保留成功批次，重启与扩展范围只补缺")
     @MainActor
     func contributionActivityPrefetchAndRestore() async throws {
@@ -464,7 +514,7 @@ struct GitHubAPIClientTests {
         }
 
         stubContributionRequests(days: days, failingOn: pending.date)
-        let first = ContributionService(apiClient: client, defaults: defaults, activityCacheDirectory: directory)
+        let first = ContributionService(apiClient: client, defaults: defaults, cacheDirectory: directory)
         first.load(login: "Alice")
         try await waitForContributionPrefetch(first)
         #expect(first.cachedDayActivity(login: "alice", day: latest)?.reviews == 1)
@@ -480,7 +530,7 @@ struct GitHubAPIClientTests {
         #expect(firstVariables["from14"] == nil)
 
         stubContributionRequests(days: days)
-        let restarted = ContributionService(apiClient: client, defaults: defaults, activityCacheDirectory: directory)
+        let restarted = ContributionService(apiClient: client, defaults: defaults, cacheDirectory: directory)
         restarted.load(login: "alice")
         #expect(restarted.cachedDayActivity(login: "alice", day: latest)?.pullRequests == 1)
         #expect(restarted.cachedDayActivity(login: "bob", day: latest) == nil)

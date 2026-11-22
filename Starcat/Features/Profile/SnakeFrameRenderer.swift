@@ -71,7 +71,7 @@ enum SnakeFrameRenderer {
 
         if baseGrid == nil {
             drawGrid(
-                ctx: ctx, grid: ContributionGrid(weeks: payload?.weeks, range: range),
+                ctx: ctx, grid: ContributionGrid(payload: payload, range: range),
                 frame: frame, palette: palette, layout: layout
             )
         } else {
@@ -98,7 +98,7 @@ enum SnakeFrameRenderer {
 
         let palette = ContributionPalette.palette(for: colorScheme, style: style)
         drawGrid(
-            ctx: ctx, grid: ContributionGrid(weeks: payload?.weeks, range: range),
+            ctx: ctx, grid: ContributionGrid(payload: payload, range: range),
             frame: .empty, palette: palette, layout: layout
         )
         return ctx.makeImage()
@@ -134,7 +134,7 @@ enum SnakeFrameRenderer {
             return
         }
         for position in grid.allPositions {
-            guard let day = grid.day(at: position) else { continue }
+            guard let day = grid.cell(at: position) else { continue }
             let rect = CGRect(
                 x: CGFloat(position.col) * (layout.cellWidth + layout.cellSpacing),
                 y: CGFloat(position.row) * (layout.cellHeight + layout.cellSpacing),

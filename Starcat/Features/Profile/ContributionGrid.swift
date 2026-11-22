@@ -50,79 +50,79 @@ enum ContributionGraphRange: CaseIterable, Equatable, Sendable {
 
 /// 保留真实日期和 GitHub 颜色档位；空位与真实的零贡献日必须能区分。
 struct ContributionGrid: Sendable {
-    let days: [[ContributionDay?]]
+    private let days: [ContributionCalendarPayload.Day]
+    /// 只保存到同一份日数组的偏移。-1 是缺失日，不能用零贡献日补位。
+    private let dayOffsets: ArraySlice<Int>
     let cols: Int
     let rows: Int
     let isPlaceholder: Bool
 
     /// 近期以缓存中最新一天为终点按日历截取，不因漏日而把更早的数据补进来。
-    init(weeks: [ContributionWeek]?, range: ContributionGraphRange = .year) {
+    init(payload: ContributionCalendarPayload?, range: ContributionGraphRange = .year) {
         let layout = range.layout
         cols = layout.cols
         rows = layout.rows
-        isPlaceholder = weeks == nil
-        var mappedDays = Array(
-            repeating: Array<ContributionDay?>(repeating: nil, count: rows),
-            count: cols
-        )
-        let weeks = weeks ?? []
-        switch range {
-        case .year:
-            let visibleWeeks = weeks.suffix(cols)
-            let startColumn = cols - visibleWeeks.count
-            for (index, week) in visibleWeeks.enumerated() {
-                for day in week.contributionDays where (0..<rows).contains(day.weekday) {
-                    mappedDays[startColumn + index][day.weekday] = day
+        isPlaceholder = payload == nil
+        let days = payload?.days ?? []
+        self.days = days
+        var offsets = Array(repeating: -1, count: cols * rows)
+        if let payload {
+            if let dayCount = range.dayCount, let latest = days.lazy.map(\.dayIndex).max() {
+                let first = Int(latest) - dayCount + 1
+                for index in days.indices {
+                    let elapsed = Int(days[index].dayIndex) - first
+                    guard (0..<dayCount).contains(elapsed) else { continue }
+                    let column = elapsed % cols
+                    let row = elapsed / cols
+                    offsets[column * rows + row] = index
                 }
-            }
-        case .recent30, .recent60, .recent90:
-            let allDays = weeks.flatMap(\.contributionDays)
-            if let dayCount = range.dayCount,
-               let latest = allDays.map(\.date).max().flatMap(Self.date),
-               let first = Self.calendar.date(byAdding: .day, value: 1 - dayCount, to: latest) {
-                for day in allDays {
-                    guard let date = Self.date(day.date),
-                          date >= first, date <= latest,
-                          let index = Self.calendar.dateComponents([.day], from: first, to: date).day else {
-                        continue
+            } else if range == .year {
+                let visibleWeeks = min(cols, payload.weekCount)
+                for offset in 0..<visibleWeeks {
+                    let week = payload.weekCount - visibleWeeks + offset
+                    let column = cols - visibleWeeks + offset
+                    for index in payload.dayIndices(inWeek: week) {
+                        offsets[column * rows + days[index].weekday] = index
                     }
-                    mappedDays[index % cols][index / cols] = day
                 }
             }
         }
-        days = mappedDays
+        dayOffsets = offsets[...]
     }
 
-    private init(days: [[ContributionDay?]], rows: Int, isPlaceholder: Bool) {
+    private init(days: [ContributionCalendarPayload.Day], dayOffsets: ArraySlice<Int>, rows: Int, isPlaceholder: Bool) {
         self.days = days
-        cols = days.count
+        self.dayOffsets = dayOffsets
+        cols = dayOffsets.count / rows
         self.rows = rows
         self.isPlaceholder = isPlaceholder
     }
 
-    func day(at position: GridPosition) -> ContributionDay? {
+    func cell(at position: GridPosition) -> ContributionCalendarPayload.Day? {
         guard (0..<cols).contains(position.col), (0..<rows).contains(position.row) else { return nil }
-        return days[position.col][position.row]
+        let offset = dayOffsets[dayOffsets.startIndex + position.col * rows + position.row]
+        return offset < 0 ? nil : days[offset]
     }
 
-    func level(at position: GridPosition) -> ContributionLevel {
-        day(at: position)?.contributionLevel ?? .none
+    /// 仅在查看单日详情时构造日期字符串。
+    func day(at position: GridPosition) -> ContributionDay? {
+        guard let cell = cell(at: position) else { return nil }
+        return ContributionDay(
+            date: cell.date, contributionCount: cell.contributionCount,
+            contributionLevel: cell.contributionLevel, weekday: cell.weekday
+        )
     }
 
     /// 动画只读颜色权重，不能重新按近期数据分桶，否则同一天切换范围后会变色。
     func weight(at position: GridPosition) -> Int {
-        switch level(at: position) {
-        case .none: 0
-        case .firstQuartile: 1
-        case .secondQuartile: 2
-        case .thirdQuartile: 3
-        case .fourthQuartile: 4
-        }
+        cell(at: position)?.weight ?? 0
     }
 
     var totalContributions: Int {
-        days.flatMap { $0 }.compactMap { $0 }.reduce(0) { $0 + $1.contributionCount }
+        dayOffsets.reduce(0) { $0 + ($1 < 0 ? 0 : days[$1].contributionCount) }
     }
+
+    var dayCount: Int { dayOffsets.lazy.filter { $0 >= 0 }.count }
 
     var allPositions: [GridPosition] {
         (0..<cols).flatMap { column in
@@ -132,21 +132,15 @@ struct ContributionGrid: Sendable {
 
     /// 多蛇各自在自己的半区寻路，日期空位也保留原来的列位置。
     func columns(_ bounds: Range<Int>) -> ContributionGrid {
-        ContributionGrid(days: Array(days[bounds]), rows: rows, isPlaceholder: isPlaceholder)
+        let start = dayOffsets.startIndex + bounds.lowerBound * rows
+        let end = dayOffsets.startIndex + bounds.upperBound * rows
+        return ContributionGrid(days: days, dayOffsets: dayOffsets[start..<end], rows: rows, isPlaceholder: isPlaceholder)
     }
 
     /// GitHub 返回的是日历日期；统一按 UTC 解释，避免本机时区把午夜移到前一天。
     static func date(_ value: String) -> Date? {
-        let parts = value.split(separator: "-").compactMap { Int($0) }
-        guard parts.count == 3 else { return nil }
-        return calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+        ContributionCalendarPayload.Day.parseDate(value)
     }
-
-    private static let calendar: Calendar = {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-        return calendar
-    }()
 }
 
 /// 在年度容器内居中放置当前网格，绘制、描边和命中检测使用完全相同的缩放。
@@ -195,7 +189,7 @@ struct ContributionGraphGeometry {
         previous: GridPosition?
     ) -> GridPosition? {
         guard gridRect.contains(point) else { return nil }
-        if let position = position(at: point), grid.day(at: position) != nil {
+        if let position = position(at: point), grid.cell(at: position) != nil {
             return position
         }
         return previous
@@ -217,13 +211,12 @@ struct ContributionTooltipMetrics {
     let comparison: DailyComparison?
 
     /// 始终接收完整年度数据；最大值格式化后的分隔符也必须计入数字区宽度。
-    init(day: ContributionDay, weeks: [ContributionWeek]?, grid: ContributionGrid? = nil, locale: Locale) {
-        let maximumCount = weeks?.lazy.flatMap(\.contributionDays).map(\.contributionCount).max() ?? 0
+    init(day: ContributionDay, maximumCount: Int, grid: ContributionGrid? = nil, locale: Locale) {
         countText = day.contributionCount.formatted(.number.locale(locale))
         countPlaceholder = maximumCount.formatted(.number.locale(locale))
 
         // 从当前显示范围取真实日历日期。零贡献日计入分母，布局补位不计入。
-        let dayCount = grid?.days.joined().reduce(0) { $0 + ($1 == nil ? 0 : 1) } ?? 0
+        let dayCount = grid?.dayCount ?? 0
         if let grid, dayCount > 0 {
             let average = Double(grid.totalContributions) / Double(dayCount)
             let decimal = FloatingPointFormatStyle<Double>.number.precision(.fractionLength(1)).locale(locale)

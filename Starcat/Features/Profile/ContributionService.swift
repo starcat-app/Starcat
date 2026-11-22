@@ -23,14 +23,13 @@
 //                          │     ▲     │
 //                          │     │     │ ttl 内命中
 //                          │     │     ▼
-//                          │  cache (内存 + UserDefaults 持久化)
+//                          │  cache（内存 + 系统 Caches 目录）
 //                          ▼
 //                   GitHubAPIClient.graphql
 //
 //  缓存策略：
 //  - **内存**：service 实例持有最新一份 `payload`；@Observable 让 SidebarView 自动重渲染。
-//  - **磁盘**（UserDefaults）：把 payload + 时间戳序列化为 JSON。下次启动先 `restore()`
-//    秒显（避免冷启动空白），再异步触发后台刷新。
+//  - **磁盘**：每个账号一份紧凑的年度概览。启动先恢复草坪，再按 TTL 后台刷新。
 //  - **每日明细**：按当前显示范围批量预拉；仅把 UTC 日期与五个计数存入系统 Caches。
 //  - **TTL**：3 小时。`load(force: true)` 显式强刷（用户点刷新按钮等）。
 //  - **错误处理**：拉取失败保留旧数据 + 设 `lastError`，UI 仍能显示历史草坪 + 一个可选错误标记。
@@ -78,7 +77,7 @@ final class ContributionService {
     /// 这里直接持有具体 `GitHubAPIClient` actor。Mock 注入由测试中通过 init 替换实现。
     private let apiClient: GitHubAPIClient
 
-    /// 缓存 key 前缀；按 login 分桶（同一台机器可能切换账号登录）。
+    /// 旧概览的 UserDefaults key 前缀。新文件成功写入后才删除。
     private let cacheKeyPrefix = "contribution.calendar."
 
     /// TTL：3 小时（与 GitHub 草坪刷新粒度同量级，避免无意义高频请求）。
@@ -91,7 +90,7 @@ final class ContributionService {
     private var activityTask: Task<Void, Never>?
     private var activityCache = ContributionActivityCache()
     @ObservationIgnored private var activityRange: ContributionGraphRange = .recent90
-    private let activityCacheDirectory: URL
+    private let cacheDirectory: URL
     private let defaults: UserDefaults
 
     var isPrefetchingDayActivity: Bool { inflightTask != nil || activityTask != nil }
@@ -101,11 +100,11 @@ final class ContributionService {
     init(
         apiClient: GitHubAPIClient,
         defaults: UserDefaults = .standard,
-        activityCacheDirectory: URL = URL.cachesDirectory.appending(path: "com.starcat.app/contributions")
+        cacheDirectory: URL = URL.cachesDirectory.appending(path: "com.starcat.app/contributions")
     ) {
         self.apiClient = apiClient
         self.defaults = defaults
-        self.activityCacheDirectory = activityCacheDirectory
+        self.cacheDirectory = cacheDirectory
     }
 
     // MARK: - 公开 API
@@ -159,7 +158,7 @@ final class ContributionService {
                 self.payload = fetched
                 self.lastFetchedAt = fetchedAt
                 self.lastError = nil
-                self.persistToDisk(login: login, payload: fetched, fetchedAt: fetchedAt)
+                self.persistToDisk(DiskEnvelope(fetchedAt: fetchedAt.timeIntervalSince1970, payload: fetched), login: login)
                 self.onPayloadDidChange?()
                 AppLog.network.info("Contribution calendar fetched: login=\(login, privacy: .public), total=\(fetched.totalContributions, privacy: .public)")
             } catch is CancellationError {
@@ -186,32 +185,32 @@ final class ContributionService {
     private func prefetchDayActivities() {
         guard activityTask == nil, let login = activeLogin,
               let payload, let snapshotAt = lastFetchedAt?.timeIntervalSince1970 else { return }
-        let datedDays = payload.weeks.flatMap(\.contributionDays).compactMap { day in
-            ContributionActivityCache.dayIndex(day.date).map { (index: $0, day: day) }
-        }.sorted { $0.index > $1.index }
-        guard let latestDay = datedDays.first?.index, let earliestDay = datedDays.last?.index else { return }
-        let cacheStart = max(earliestDay, firstDay(in: .year, endingAt: latestDay))
+        let datedDays = payload.days.sorted { $0.dayIndex > $1.dayIndex }
+        guard let newest = datedDays.first, let oldest = datedDays.last else { return }
+        let latestDay = Int(newest.dayIndex)
+        let cacheStart = max(Int(oldest.dayIndex), firstDay(in: .year, endingAt: latestDay))
         let file = activityFile(for: login)
         var cache = activityCache
         cache.align(to: cacheStart...latestDay)
 
         let recentStart = latestDay - 2
         let refreshRecent = cache.recentSnapshotAt != snapshotAt
-        let pending = datedDays.prefix { $0.index >= cacheStart }.filter { entry in
-            if entry.day.contributionCount == 0 {
-                cache[entry.index] = .empty
+        let pending = datedDays.prefix { $0.dayIndex >= cacheStart }.filter { day in
+            let index = Int(day.dayIndex)
+            if day.contributionCount == 0 {
+                cache[index] = .empty
                 return false
             }
-            if cache.activity(on: entry.index, matching: entry.day.contributionCount) == nil {
-                cache[entry.index] = nil
+            if cache.activity(on: index, matching: day.contributionCount) == nil {
+                cache[index] = nil
                 return true
             }
-            return refreshRecent && entry.index >= recentStart
+            return refreshRecent && index >= recentStart
         }
-        let recentPendingCount = pending.prefix { $0.index >= recentStart }.count
+        let recentPendingCount = pending.prefix { $0.dayIndex >= recentStart }.count
         if recentPendingCount == 0 { cache.recentSnapshotAt = snapshotAt }
         publishActivityCache(cache, to: file)
-        guard let first = pending.first, first.index >= firstDay(in: activityRange, endingAt: latestDay) else { return }
+        guard let first = pending.first, first.dayIndex >= firstDay(in: activityRange, endingAt: latestDay) else { return }
 
         activityTask = Task(priority: .utility) { [weak self] in
             guard let self else { return }
@@ -221,18 +220,17 @@ final class ContributionService {
                 while !remaining.isEmpty {
                     let rangeStart = self.firstDay(in: self.activityRange, endingAt: latestDay)
                     let batch = remaining.prefix(GitHubAPIClient.contributionActivityBatchSize)
-                        .prefix { $0.index >= rangeStart }
+                        .prefix { $0.dayIndex >= rangeStart }
                     guard !batch.isEmpty else { break }
-                    let activities = try await self.apiClient.contributionDayActivities(
-                        login: login, dates: batch.map(\.day.date)
-                    )
+                    let dates = batch.map(\.date)
+                    let activities = try await self.apiClient.contributionDayActivities(login: login, dates: dates)
                     try Task.checkCancellation()
                     var refreshedRecentCount = 0
-                    for entry in batch {
-                        guard let activity = activities[entry.day.date],
-                              activity.calendarCount == entry.day.contributionCount else { continue }
-                        cache[entry.index] = activity
-                        if entry.index >= recentStart { refreshedRecentCount += 1 }
+                    for (day, date) in zip(batch, dates) {
+                        guard let activity = activities[date],
+                              activity.calendarCount == day.contributionCount else { continue }
+                        cache[Int(day.dayIndex)] = activity
+                        if day.dayIndex >= recentStart { refreshedRecentCount += 1 }
                     }
                     if remaining.startIndex == pending.startIndex, refreshedRecentCount == recentPendingCount {
                         cache.recentSnapshotAt = snapshotAt
@@ -273,6 +271,7 @@ final class ContributionService {
         lastFetchedAt = nil
         if let login {
             defaults.removeObject(forKey: cacheKey(for: login))
+            try? FileManager.default.removeItem(at: calendarFile(for: login))
             try? FileManager.default.removeItem(at: activityFile(for: login))
         }
     }
@@ -284,40 +283,48 @@ final class ContributionService {
     }
 
     private func activityFile(for login: String) -> URL {
-        activityCacheDirectory.appending(component: "\(login.lowercased()).json.zlib")
+        cacheDirectory.appending(component: "\(login.lowercased()).json.zlib")
     }
 
-    /// 落盘格式：`{ "fetchedAt": <epoch>, "payload": <jsonEncoded ContributionCalendarPayload> }`。
-    /// 用 JSONEncoder 而非 PropertyListEncoder，统一文本调试可读。
+    private func calendarFile(for login: String) -> URL {
+        cacheDirectory.appending(component: "\(login.lowercased()).calendar.cache")
+    }
+
+    /// 迁移沿用旧 envelope，原始拉取时间参与 TTL 和最近三天的明细匹配。
     private struct DiskEnvelope: Codable {
         let fetchedAt: TimeInterval
         let payload: ContributionCalendarPayload
     }
 
-    private func persistToDisk(login: String, payload: ContributionCalendarPayload, fetchedAt: Date) {
-        let envelope = DiskEnvelope(fetchedAt: fetchedAt.timeIntervalSince1970, payload: payload)
+    private func persistToDisk(_ envelope: DiskEnvelope, login: String) {
         do {
-            let data = try JSONEncoder().encode(envelope)
-            defaults.set(data, forKey: cacheKey(for: login))
+            let data = try CacheJSONCodec.pack(JSONEncoder().encode(envelope))
+            try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+            try data.write(to: calendarFile(for: login), options: .atomic)
+            defaults.removeObject(forKey: cacheKey(for: login))
         } catch {
             AppLog.network.warning("Contribution persist failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
     private func restoreFromDisk(login: String) {
-        guard let data = defaults.data(forKey: cacheKey(for: login)) else { return }
-        do {
-            let envelope = try JSONDecoder().decode(DiskEnvelope.self, from: data)
-            self.payload = envelope.payload
-            self.lastFetchedAt = Date(timeIntervalSince1970: envelope.fetchedAt)
-            self.onPayloadDidChange?()
-            AppLog.network.debug("Contribution restored from disk: login=\(login, privacy: .public)")
-        } catch {
-            // 解码失败（schema 演进 / 损坏）→ 清掉脏数据
-            defaults.removeObject(forKey: cacheKey(for: login))
-            AppLog.network.warning("Contribution disk decode failed, dropping cache: \(error.localizedDescription, privacy: .public)")
+        let decoder = JSONDecoder()
+        let key = cacheKey(for: login)
+        let envelope: DiskEnvelope
+        if let data = try? Data(contentsOf: calendarFile(for: login)),
+           let current = try? decoder.decode(DiskEnvelope.self, from: CacheJSONCodec.unpack(data)) {
+            envelope = current
+            defaults.removeObject(forKey: key)
+        } else if let data = defaults.data(forKey: key),
+                  let legacy = try? decoder.decode(DiskEnvelope.self, from: CacheJSONCodec.unpack(data)) {
+            envelope = legacy
+            persistToDisk(legacy, login: login)
+        } else {
+            return
         }
+        payload = envelope.payload
+        lastFetchedAt = Date(timeIntervalSince1970: envelope.fetchedAt)
+        onPayloadDidChange?()
+        AppLog.network.debug("Contribution restored from disk: login=\(login, privacy: .public)")
     }
 }
-
-// 注：Encodable conformance 已在 ContributionsAPI.swift 中声明（合成必须与类型同源文件）。

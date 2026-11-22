@@ -158,7 +158,7 @@ final class RepoSkillStore {
                 db, sql: "SELECT payload FROM repo_skill_scans WHERE repo_id = ?", arguments: [repo.id]
             ) else { return nil }
             // 读库队列完成解码，主线程只接收当前仓库的已解析快照。
-            return try? JSONDecoder().decode(RepoSkillScan.self, from: data)
+            return try? JSONDecoder().decode(RepoSkillScan.self, from: CacheJSONCodec.unpack(data))
         }
         try Task.checkCancellation()
         guard epoch == expected, !isChangingAccount else { throw CancellationError() }
@@ -346,7 +346,7 @@ final class RepoSkillStore {
     /// 大正文和文件清单的 JSON 编码必须在通用执行器完成，主线程只提交数据库异步写入。
     @concurrent private nonisolated static func encode(_ value: RepoSkillScan) async throws -> Data {
         try Task.checkCancellation()
-        return try JSONEncoder().encode(value)
+        return try CacheJSONCodec.pack(JSONEncoder().encode(value))
     }
 
     func downloader(for repo: Repo) -> any RepoFileDownloading {

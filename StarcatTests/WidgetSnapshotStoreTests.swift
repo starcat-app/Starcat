@@ -33,6 +33,8 @@ struct WidgetSnapshotStoreTests {
 
             try store.save(snapshot)
 
+            let stored = try Data(contentsOf: directory.appendingPathComponent(WidgetSharedConfiguration.snapshotFileName))
+            #expect(CacheJSONCodec.isCompressed(stored))
             #expect(try store.load() == snapshot)
         }
     }

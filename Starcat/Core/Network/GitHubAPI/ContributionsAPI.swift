@@ -229,17 +229,76 @@ struct ContributionDayActivity: Equatable, Sendable {
 /// camelCase 字段名会被反向转成 snake_case 查找——对纯 camelCase 字段无影响，
 /// 但需注意：若新增字段含全小写复合词（如 `htmlurl`），decoder 仍按 snake_case 规则解析。
 ///
-/// `Codable`（Encodable + Decodable）一并声明，是因为 `ContributionService` 把整份
-/// payload 序列化到 UserDefaults 做磁盘缓存。Swift 要求 `Encodable` 自动合成
-/// `encode(to:)` 必须与类型声明同源文件，所以这里直接挂 Codable，而非在 service
-/// 文件里 extension（会触发 `extension outside of file ... prevents automatic synthesis`）。
+/// 同时支持 GraphQL 的周对象和磁盘的紧凑快照。日期用 UTC 日序号存储，
+/// 界面、动画与明细预取共享同一个连续数组。
 struct ContributionCalendarPayload: Codable, Equatable, Sendable {
-    /// 近 1 年总贡献数。
+    /// 四个标量保留接口语义。未返回的日期不占元素，返回的零贡献日照常存储。
+    struct Day: Codable, Equatable, Sendable {
+        let dayIndex: Int32
+        private let count: UInt32
+        private let grade: UInt8
+        private let weekdayValue: UInt8
+
+        var contributionCount: Int { Int(count) }
+        var contributionLevel: ContributionLevel { ContributionLevel.allCases[Int(grade)] }
+        var weekday: Int { Int(weekdayValue) }
+        var weight: Int { Int(grade) }
+        var calendarDate: Date { Date(timeIntervalSince1970: Double(dayIndex) * 86_400) }
+        var date: String { Self.dateFormat.format(calendarDate) }
+
+        private static let dateFormat = Date.ISO8601FormatStyle().year().month().day().dateSeparator(.dash)
+
+        init?(_ day: ContributionDay) {
+            guard let index = Self.index(for: day.date),
+                  let count = UInt32(exactly: day.contributionCount),
+                  (0..<7).contains(day.weekday),
+                  let grade = ContributionLevel.allCases.firstIndex(of: day.contributionLevel)
+            else { return nil }
+            dayIndex = index
+            self.count = count
+            self.grade = UInt8(grade)
+            weekdayValue = UInt8(day.weekday)
+        }
+
+        static func index(for date: String) -> Int32? {
+            guard let parsed = parseDate(date) else { return nil }
+            return Int32(exactly: parsed.timeIntervalSince1970 / 86_400)
+        }
+
+        static func parseDate(_ value: String) -> Date? {
+            try? dateFormat.parse(value)
+        }
+
+        /// 保存数值元组，避免为每一天重复写入字段名、日期字符串和等级字符串。
+        init(from decoder: Decoder) throws {
+            var values = try decoder.unkeyedContainer()
+            dayIndex = try values.decode(Int32.self)
+            count = try values.decode(UInt32.self)
+            grade = try values.decode(UInt8.self)
+            weekdayValue = try values.decode(UInt8.self)
+            guard values.isAtEnd, grade < ContributionLevel.allCases.count, weekdayValue < 7 else {
+                throw DecodingError.dataCorruptedError(in: values, debugDescription: "Invalid contribution day")
+            }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var values = encoder.unkeyedContainer()
+            try values.encode(dayIndex)
+            try values.encode(count)
+            try values.encode(grade)
+            try values.encode(weekdayValue)
+        }
+    }
+
     let totalContributions: Int
-    /// 53 周快照，每周含 7 天（最后一周可能不满 7 天，因为日历对齐）。
-    let weeks: [ContributionWeek]
+    let days: [Day]
+    /// 每周结束位置（不含末尾），相邻的相同值表示接口返回了一个空周。
+    private let weekEnds: [Int]
     /// 同一时间窗口内的五类贡献统计，供桌面 Widget 的雷达图使用。
     let activityStats: ContributionActivityStats
+
+    var weekCount: Int { weekEnds.count }
+    var maximumCount: Int { days.lazy.map(\.contributionCount).max() ?? 0 }
 
     init(
         totalContributions: Int,
@@ -247,27 +306,67 @@ struct ContributionCalendarPayload: Codable, Equatable, Sendable {
         activityStats: ContributionActivityStats = .empty
     ) {
         self.totalContributions = max(0, totalContributions)
-        self.weeks = weeks
+        var days: [Day] = []
+        var weekEnds: [Int] = []
+        for week in weeks {
+            days.append(contentsOf: week.contributionDays.lazy.compactMap(Day.init))
+            weekEnds.append(days.count)
+        }
+        self.days = days
+        self.weekEnds = weekEnds
         self.activityStats = activityStats
+    }
+
+    func dayIndices(inWeek week: Int) -> Range<Int> {
+        let start = week == 0 ? 0 : weekEnds[week - 1]
+        return start..<weekEnds[week]
     }
 
     private enum CodingKeys: String, CodingKey {
         case totalContributions
+        case days
+        case weekEnds
         case weeks
         case activityStats
     }
 
-    /// 旧版 UserDefaults 缓存没有五维统计；缺失时回落为零，保留草坪秒显能力。
+    /// 旧版只有周对象，部分版本还缺少五维合计。一次读取即可转换为当前内存格式。
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.init(
-            totalContributions: try container.decode(Int.self, forKey: .totalContributions),
-            weeks: try container.decode([ContributionWeek].self, forKey: .weeks),
-            activityStats: try container.decodeIfPresent(
-                ContributionActivityStats.self,
-                forKey: .activityStats
-            ) ?? .empty
-        )
+        let total = try container.decode(Int.self, forKey: .totalContributions)
+        let stats = try container.decodeIfPresent(ContributionActivityStats.self, forKey: .activityStats) ?? .empty
+        if container.contains(.days) {
+            let days = try container.decode([Day].self, forKey: .days)
+            let weekEnds = try container.decode([Int].self, forKey: .weekEnds)
+            var start = 0
+            for end in weekEnds {
+                guard end >= start, end <= days.count else {
+                    throw DecodingError.dataCorruptedError(forKey: .weekEnds, in: container, debugDescription: "Invalid week boundary")
+                }
+                start = end
+            }
+            guard start == days.count else {
+                throw DecodingError.dataCorruptedError(forKey: .weekEnds, in: container, debugDescription: "Incomplete week boundaries")
+            }
+            self.init(totalContributions: total, days: days, weekEnds: weekEnds, activityStats: stats)
+        } else {
+            self.init(totalContributions: total, weeks: try container.decode([ContributionWeek].self, forKey: .weeks), activityStats: stats)
+        }
+    }
+
+    private init(totalContributions: Int, days: [Day], weekEnds: [Int], activityStats: ContributionActivityStats) {
+        self.totalContributions = max(0, totalContributions)
+        self.days = days
+        self.weekEnds = weekEnds
+        self.activityStats = activityStats
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(totalContributions, forKey: .totalContributions)
+        try container.encode(days, forKey: .days)
+        try container.encode(weekEnds, forKey: .weekEnds)
+        try container.encode(activityStats, forKey: .activityStats)
     }
 }
 
@@ -323,7 +422,7 @@ struct ContributionDay: Codable, Equatable, Sendable {
 ///
 /// 渲染时按分级取颜色，而非按 count 自己分桶——保证与 GitHub 主页视觉完全一致。
 /// 解码用 `RawValue: String`，未知值（GitHub 未来扩展）回落到 `.none`。
-enum ContributionLevel: String, Codable, Equatable, Sendable {
+enum ContributionLevel: String, CaseIterable, Codable, Equatable, Sendable {
     case none = "NONE"
     case firstQuartile = "FIRST_QUARTILE"
     case secondQuartile = "SECOND_QUARTILE"

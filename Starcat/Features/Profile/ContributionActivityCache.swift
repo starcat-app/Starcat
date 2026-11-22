@@ -18,7 +18,7 @@ struct ContributionActivityCache: Codable, Equatable {
     var recentSnapshotAt: TimeInterval?
 
     static func dayIndex(_ date: String) -> Int? {
-        ContributionGrid.date(date).map { Int($0.timeIntervalSince1970 / 86_400) }
+        ContributionCalendarPayload.Day.index(for: date).map(Int.init)
     }
 
     /// 新概览跨日后平移窗口，仅保留仍落在新范围内的计数。

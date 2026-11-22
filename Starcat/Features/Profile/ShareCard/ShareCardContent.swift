@@ -627,12 +627,13 @@ struct ShareCardContent: View {
 
     /// 从草坪 payload 派生 Dashboard 的 Activity Facts，不额外发起网络请求。
     private var dashboardActivityFacts: [DashboardFact] {
-        let days = contribution?.weeks.flatMap(\.contributionDays) ?? []
-        let activeDays = days.filter { $0.contributionCount > 0 }.count
-        let activeWeeks = contribution?.weeks.filter { week in
-            week.contributionDays.contains { $0.contributionCount > 0 }
-        }.count ?? 0
-        let bestDay = days.map(\.contributionCount).max() ?? 0
+        let activeDays = contribution?.days.lazy.filter { $0.contributionCount > 0 }.count ?? 0
+        let activeWeeks = contribution.map { payload in
+            (0..<payload.weekCount).lazy.filter { week in
+                payload.days[payload.dayIndices(inWeek: week)].contains { $0.contributionCount > 0 }
+            }.count
+        } ?? 0
+        let bestDay = contribution?.maximumCount ?? 0
 
         return [
             DashboardFact(symbol: "calendar", labelKey: "sharecard.dashboard.fact.activeDays", value: "\(activeDays)"),
@@ -722,43 +723,29 @@ struct ShareCardContent: View {
         let formatter = DateFormatter()
         formatter.locale = locale
         formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
         formatter.setLocalizedDateFormatFromTemplate("MMM")
         return formatter.string(from: date)
     }
 
     private func contributionDate(forColumn column: Int) -> Date? {
-        guard let weeks = contribution?.weeks, !weeks.isEmpty else { return nil }
-
-        let startColumn = max(0, 53 - weeks.count)
+        guard let contribution, contribution.weekCount > 0 else { return nil }
+        let startColumn = max(0, 53 - contribution.weekCount)
         let rawWeekIndex = column - startColumn
         guard rawWeekIndex >= 0 else { return nil }
 
-        let weekIndex = min(rawWeekIndex, weeks.count - 1)
-        guard let dateString = weeks[weekIndex].contributionDays.first?.date
-                ?? weeks[weekIndex].contributionDays.last?.date else {
-            return nil
-        }
-        return parseGitHubDate(dateString)
+        let weekIndex = min(rawWeekIndex + max(0, contribution.weekCount - 53), contribution.weekCount - 1)
+        return contribution.days[contribution.dayIndices(inWeek: weekIndex)].first?.calendarDate
     }
 
     private func fallbackContributionDate(forColumn column: Int) -> Date {
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = locale
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let now = Date()
         let start = calendar.date(byAdding: .month, value: -12, to: now) ?? now
         let monthOffset = Int((Double(column) / 52.0 * 12.0).rounded())
         return calendar.date(byAdding: .month, value: monthOffset, to: start) ?? now
-    }
-
-    private func parseGitHubDate(_ value: String) -> Date? {
-        let parts = value.split(separator: "-").compactMap { Int($0) }
-        guard parts.count == 3 else { return nil }
-        var components = DateComponents()
-        components.calendar = Calendar(identifier: .gregorian)
-        components.year = parts[0]
-        components.month = parts[1]
-        components.day = parts[2]
-        return components.date
     }
 
     // MARK: - 链接行（HOM-174 新增）
@@ -2506,41 +2493,21 @@ private struct ContributionStaticGrid: View {
     }
 
     /// 单遍绘制 53×7=371 格圆角矩形。
-    /// 没数据时整片用 NONE 色填充作为骨架；有数据时按 weeks 数组从右对齐绘制。
+    /// 没数据时整片用 NONE 色填充作为骨架；有数据时与侧栏共用右对齐映射。
     private func drawGrid(ctx: GraphicsContext, scale: CGFloat) {
         let cellW = cellWidth * scale
         let cellH = cellHeight * scale
         let spacing = cellSpacing * scale
         let corner = cellCornerRadius * scale
 
-        guard let weeks = payload?.weeks else {
-            // 占位：整面 none 色，让分享图在没拿到数据时也不空白
-            for col in 0..<53 {
-                for row in 0..<7 {
-                    let x = CGFloat(col) * (cellW + spacing)
-                    let y = CGFloat(row) * (cellH + spacing)
-                    let rect = CGRect(x: x, y: y, width: cellW, height: cellH)
-                    ctx.fill(Path(roundedRect: rect, cornerRadius: corner),
-                             with: .color(palette.color(for: .none)))
-                }
-            }
-            return
-        }
-
-        // 账号较新时 weeks 可能不足 53 周，与 ContributionGraphView 同款"右对齐"策略
-        let startColumn = max(0, 53 - weeks.count)
-
-        for (weekIdx, week) in weeks.enumerated() {
-            let col = startColumn + weekIdx
-            let x = CGFloat(col) * (cellW + spacing)
-            for day in week.contributionDays {
-                let y = CGFloat(day.weekday) * (cellH + spacing)
-                let rect = CGRect(x: x, y: y, width: cellW, height: cellH)
-                ctx.fill(
-                    Path(roundedRect: rect, cornerRadius: corner),
-                    with: .color(palette.color(for: day.contributionLevel))
-                )
-            }
+        let grid = ContributionGrid(payload: payload)
+        for position in grid.allPositions {
+            let level = grid.cell(at: position)?.contributionLevel
+            guard grid.isPlaceholder || level != nil else { continue }
+            let x = CGFloat(position.col) * (cellW + spacing)
+            let y = CGFloat(position.row) * (cellH + spacing)
+            let rect = CGRect(x: x, y: y, width: cellW, height: cellH)
+            ctx.fill(Path(roundedRect: rect, cornerRadius: corner), with: .color(palette.color(for: level ?? .none)))
         }
     }
 }

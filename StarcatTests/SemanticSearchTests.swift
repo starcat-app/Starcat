@@ -219,7 +219,7 @@ struct SemanticSearchTests {
                 repoId: repo.id,
                 model: model,
                 vector: [1],
-                snapshotJson: "{}",
+                snapshotPayload: Data("{}".utf8),
                 updatedAt: "2026-11-12T00:00:00Z"
             )
         ])
@@ -724,21 +724,21 @@ struct SemanticIndexProgressSinkTests {
             repoId: 1,
             model: "text-embedding-3-small",
             vector: [0.1, 0.2],
-            snapshotJson: "{}",
+            snapshotPayload: Data("{}".utf8),
             updatedAt: "2026-01-01T00:00:00Z"
         )
         let otherModel = RepoEmbedding(
             repoId: 2,
             model: "other-model",
             vector: [0.3, 0.4],
-            snapshotJson: "{}",
+            snapshotPayload: Data("{}".utf8),
             updatedAt: "2026-01-01T00:00:00Z"
         )
         let outsideCandidate = RepoEmbedding(
             repoId: 99,
             model: "text-embedding-3-small",
             vector: [0.5, 0.6],
-            snapshotJson: "{}",
+            snapshotPayload: Data("{}".utf8),
             updatedAt: "2026-01-01T00:00:00Z"
         )
         try await repository.upsert([current, otherModel, outsideCandidate])
