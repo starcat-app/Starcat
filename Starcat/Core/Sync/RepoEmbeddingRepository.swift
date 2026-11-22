@@ -51,7 +51,9 @@ struct GRDBRepoEmbeddingRepository: RepoEmbeddingRepositoryProtocol {
                 let end = repoIDs.index(start, offsetBy: Self.queryChunkSize, limitedBy: repoIDs.endIndex) ?? repoIDs.endIndex
                 let placeholders = Array(repeating: "?", count: end - start).joined(separator: ",")
                 var args: [any DatabaseValueConvertible] = [model]
-                args.append(contentsOf: repoIDs[start..<end])
+                // 切片形态必须元素级上转型：`[any DVC].append(contentsOf:)` 的泛型约束
+                // 要求 S.Element 恰好等于存在类型，ArraySlice<Int64> 不满足（Array 直传可以）。
+                args.append(contentsOf: repoIDs[start..<end].map { $0 as (any DatabaseValueConvertible) })
                 rows.append(contentsOf: try RepoEmbedding.fetchAll(db, sql: """
                     SELECT * FROM repo_embeddings
                     WHERE model = ? AND repo_id IN (\(placeholders))
