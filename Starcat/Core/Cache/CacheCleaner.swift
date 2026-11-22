@@ -81,7 +81,12 @@ final class CacheCleaner {
     func loadStatistics() async -> CacheStatistics {
         let (readmeCount, readmeBytes) = await loadReadmeStats()
         let imageDisk = await calculateImageDiskBytes() + attachmentImages.diskSize()
-        let archives = loadArchiveStats()
+        // 目录枚举和文件属性读取都是同步磁盘 I/O，设置页只等待统计快照。
+        let archives = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                continuation.resume(returning: self.loadArchiveStats())
+            }
+        }
         return CacheStatistics(
             readmeCount: readmeCount,
             readmeBytes: readmeBytes,

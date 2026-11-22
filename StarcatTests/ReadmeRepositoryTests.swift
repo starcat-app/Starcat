@@ -221,7 +221,11 @@ struct CacheCleanerTests {
         try Data(repeating: 1, count: 3).write(to: ownerDirectory.appendingPathComponent("one.zip"))
         try Data(repeating: 2, count: 5).write(to: ownerDirectory.appendingPathComponent("two.ZIP"))
         let keepURL = root.appendingPathComponent("keep.txt")
+        let hiddenDirectory = root.appendingPathComponent(".hidden", isDirectory: true)
+        let hiddenArchive = hiddenDirectory.appendingPathComponent("hidden.zip")
         try Data("keep".utf8).write(to: keepURL)
+        try fileManager.createDirectory(at: hiddenDirectory, withIntermediateDirectories: true)
+        try Data(repeating: 3, count: 7).write(to: hiddenArchive)
         defer { try? fileManager.removeItem(at: root) }
 
         let cleaner = CacheCleaner(
