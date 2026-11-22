@@ -568,6 +568,9 @@ struct RepoSkillDetailPane: View {
                     onTranslationSourceChange: { snapshot in
                         receiveTranslationSource(snapshot, documentID: document.skillID)
                     },
+                    // 源码视图覆盖阅读层时不消费翻译；仅当前已加载文档参与提取与上桥。
+                    translationMode: document.skillID == skill.id && !showsManifestSource
+                        ? settings.readmeTranslationMode : nil,
                     onDocumentReady: revealManifest,
                     registersFindShortcut: !showsManifestSource && previewedFile == nil
                 )

@@ -16,6 +16,8 @@ struct RepoFileTextPreview: View {
     let onFailure: (String) -> Void
     var translationRenderState: ReadmeTranslationRenderState = .hidden
     var onTranslationSourceChange: ((ReadmeTranslationSourceSnapshot, String) -> Void)?
+    /// 由调用方按「是否存在翻译场景 + 是否可见渲染层」计算；nil = 不提取、不上桥。
+    var translationMode: ReadmeTranslationMode? = nil
     @State private var renderedID: String?
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
@@ -42,6 +44,7 @@ struct RepoFileTextPreview: View {
                     onTranslationSourceChange: { snapshot in
                         onTranslationSourceChange?(snapshot, document.id)
                     },
+                    translationMode: translationMode,
                     onDocumentReady: { identifier in
                         guard identifier == self.document?.id else { return }
                         withAnimation(.easeOut(duration: reduceMotion ? 0.06 : 0.12)) {

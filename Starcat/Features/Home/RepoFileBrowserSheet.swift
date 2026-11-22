@@ -467,7 +467,11 @@ struct RepoFileBrowserSheet: View {
                 mode: viewModel.previewMode, onFailure: viewModel.markdownFailed,
                 translationRenderState: translationDocument == nil
                     ? .hidden : translationVM.visibleRenderState(matching: translationControl.identity),
-                onTranslationSourceChange: receiveTranslationSource
+                onTranslationSourceChange: receiveTranslationSource,
+                // 与下方翻译按钮同口径：仅当前文档 + 渲染预览是消费者；
+                // 源码模式按钮禁用，阅读器也不做无谓的提取与上桥。
+                translationMode: translationDocument != nil && viewModel.isMarkdownPreview
+                    && viewModel.previewMode != .source ? settings.readmeTranslationMode : nil
             )
         case .image(let data):
             imagePreview(data)

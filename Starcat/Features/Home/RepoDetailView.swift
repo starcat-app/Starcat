@@ -985,6 +985,8 @@ struct ReadmeStateView: View {
                     translationSourceDocumentKey = documentKey
                     translationSourceSnapshot = snapshot
                 },
+                // 有翻译控件的文档才是消费者；语言版 README 也走同一控件判定。
+                translationMode: translationControl(for: document.target)?.settings.readmeTranslationMode,
                 starHistoryRenderState: document.target == nil ? effectiveStarHistoryRenderState : .empty,
                 onApproachingBottom: approachingBottom,
                 onDocumentReady: receiveReadmeReady,

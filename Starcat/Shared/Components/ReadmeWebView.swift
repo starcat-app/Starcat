@@ -139,6 +139,10 @@ struct ReadmeWebView: View {
     /// 用户点击翻译后才会把当前模式对应的数据发给 AI。
     var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void = { _ in }
 
+    /// 当前文档的翻译消费者模式。nil 表示本阅读器不参与翻译：不提取源文、
+    /// 不建 targets、不上桥（Activity、独立窗口等无翻译回调的入口自动走默认值）。
+    var translationMode: ReadmeTranslationMode? = nil
+
     /// README 末尾 Star History 的受控 HTML。默认空状态让其它 README 调用方保持原行为。
     var starHistoryRenderState: ReadmeStarHistoryRenderState = .empty
 
@@ -187,7 +191,8 @@ struct ReadmeWebView: View {
             markdownLinkRepositoryOwner: markdownLinkRepositoryOwner,
             markdownLinkRepositoryName: markdownLinkRepositoryName,
             onOpenRepositoryMarkdown: onOpenRepositoryMarkdown,
-            resourcePolicy: resourcePolicy
+            resourcePolicy: resourcePolicy,
+            translationMode: translationMode
         )
         .id(authSession.state.user?.id)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -380,6 +385,9 @@ struct ReadmeWebContentView: NSViewRepresentable {
     var markdownLinkRepositoryName: String?
     var onOpenRepositoryMarkdown: ((RepositoryMarkdownLinkTarget) -> Void)?
     var resourcePolicy: ReadmeResourcePolicy = .repository
+    /// 翻译消费者模式；nil = 无消费者。置于属性列表末尾：带默认值，全标签实参的
+    /// 既有测试构造点（ImageClickHost 等）无需改动。
+    var translationMode: ReadmeTranslationMode? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -430,6 +438,7 @@ struct ReadmeWebContentView: NSViewRepresentable {
             translationRenderState,
             reduceMotion: reduceMotion
         )
+        context.coordinator.updateTranslationConsumerMode(translationMode)
         loadIfNeeded(into: webView, context: context)
         context.coordinator.updateStarHistoryRenderState(
             starHistoryRenderState,
@@ -455,6 +464,7 @@ struct ReadmeWebContentView: NSViewRepresentable {
             translationRenderState,
             reduceMotion: reduceMotion
         )
+        context.coordinator.updateTranslationConsumerMode(translationMode)
         loadIfNeeded(into: webView, context: context)
         context.coordinator.updateStarHistoryRenderState(
             starHistoryRenderState,
@@ -614,6 +624,15 @@ struct ReadmeWebContentView: NSViewRepresentable {
         private var documentReadyToken: String?
         /// ready 令牌在首次交接后会清空；图片浮层需在整份文档存活期间识别消息来源。
         private var imagePreviewDocumentToken: String?
+        /// 当前翻译消费者及模式；nil 表示无消费者，页面不提取、不建 targets、不上桥。
+        /// 消息校验与测试都要读它，所以只限制写入。
+        private(set) var translationConsumerMode: ReadmeTranslationMode?
+        /// 提取请求序号：导航切换和同导航内切模式都会 bump；旧序号/旧模式的迟到
+        /// 提取结果据此作废，防止覆盖当前快照。
+        private(set) var translationRequestID = 0
+        /// 当前模式的 targets 是否已在页面建立。可见译文必须等它就绪才能回放：
+        /// 提前应用时 JS 找不到 target 会静默丢弃，且 revision 已记账会阻断后续重放。
+        private var hasCurrentModeTargets = false
         var lastScrollToTopRequestID = 0
         var onScrollReportChange: (RepoDetailScrollReport) -> Void = { _ in }
         var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void = { _ in }
@@ -769,6 +788,10 @@ struct ReadmeWebContentView: NSViewRepresentable {
             let readyToken = UUID().uuidString
             documentReadyToken = readyToken
             imagePreviewDocumentToken = readyToken
+            // 新导航作废上一文档的一切提取请求：旧文档排队中的翻译源消息会带着
+            // 旧 requestID 回来，bump 之后一律不再被验收。
+            translationRequestID &+= 1
+            hasCurrentModeTargets = false
             // controller 仅承载本阅读器的脚本；逐导航替换，旧 DOM 排队中的消息仍携带旧令牌。
             userContentController?.removeAllUserScripts()
             userContentController?.addUserScript(WKUserScript(
@@ -782,6 +805,9 @@ struct ReadmeWebContentView: NSViewRepresentable {
                     const article = document.querySelector('body > article');
                     if (!article) return;
                     document.body.dataset.readmeDocumentToken = '\(readyToken)';
+                    // 新文档重置译文入场去重表；提取请求只在消费者发起时运行，
+                    // 所以这里（每文档一次）是唯一可靠的复位时机。
+                    window.starcatReadmeAnimatedTranslationIDs = {};
                     document.body.classList.toggle('readme-reduce-motion', \(translationReduceMotion));
                     // document-end 已解析正文与本地 CSS；读取布局后即可交接，不等整页 load。
                     article.getBoundingClientRect();
@@ -792,6 +818,39 @@ struct ReadmeWebContentView: NSViewRepresentable {
                 injectionTime: .atDocumentEnd,
                 forMainFrameOnly: true
             ))
+        }
+
+        /// 更新翻译消费者模式（nil = 无消费者）。
+        ///
+        /// 模式变化必须 bump 请求序号并清 targets 标记：同一导航内切模式时页面 DOM
+        /// 可能还挂着上一模式的译文，JS 会先复位再按新模式重抽；旧模式的迟到消息
+        /// 因 requestID/模式不匹配被丢弃，不会覆盖当前快照。切到 nil 只作废请求，
+        /// 不再发起新提取（页面不清理也无妨，译文不会被应用）。
+        func updateTranslationConsumerMode(_ mode: ReadmeTranslationMode?) {
+            guard mode != translationConsumerMode else { return }
+            translationConsumerMode = mode
+            translationRequestID &+= 1
+            hasCurrentModeTargets = false
+            // 同一文档内模式往返（源码↔渲染、segmented↔full）会走 resetTranslationDOM
+            // 把页面恢复成原文再重建 targets；若保留已应用 revision，pending 状态会被
+            // 「该 revision 已应用」记账挡住，译文无法回放到新 targets——源码往返后
+            // 译文就此消失（快照只喂翻译按钮，没有其它自动重放路径）。与导航路径
+            // prepareForDocumentReload 的清零对齐。
+            lastAppliedTranslationRevision = nil
+            requestTranslationExtraction()
+        }
+
+        /// 请求页面按当前消费者模式提取翻译源。
+        ///
+        /// 为什么用 evaluateJavaScript 而不是向页面发消息：提取逻辑在页面脚本里，
+        /// 页面尚未就绪（脚本未注入）时调用会静默失败；body-ready 交接与每次模式
+        /// 切换都会走到这里，天然覆盖「脚本晚于首次调用」的窗口。
+        func requestTranslationExtraction() {
+            guard let webView, let mode = translationConsumerMode else { return }
+            // mode 是受控枚举字符串、requestID 是整数，均无注入面。
+            webView.evaluateJavaScript(
+                "window.starcatRequestReadmeTranslationSource && window.starcatRequestReadmeTranslationSource('\(mode.rawValue)', \(translationRequestID));"
+            )
         }
 
         /// 保存最新 SwiftUI 状态，并在当前文档已可用时做无重载 DOM 更新。
@@ -813,7 +872,10 @@ struct ReadmeWebContentView: NSViewRepresentable {
 
         private func applyTranslationRenderStateIfNeeded() {
             guard let webView,
-                  lastAppliedTranslationRevision != pendingTranslationRenderState.revision
+                  lastAppliedTranslationRevision != pendingTranslationRenderState.revision,
+                  // targets 未就绪时不回放可见译文：JS 找不到 target 会静默丢弃该条，
+                  // 而 revision 已在这里记账的话，提取结果回来后也无法重放。
+                  !pendingTranslationRenderState.isVisible || hasCurrentModeTargets
             else { return }
 
             let state = pendingTranslationRenderState
@@ -1865,77 +1927,170 @@ struct ReadmeWebContentView: NSViewRepresentable {
                 return (clone.textContent || '').replace(/\\s+/g, ' ').trim();
             }
 
-            function extractTranslationSource() {
+            // 翻译 DOM 复位：恢复全文 Text node、拆掉全文包装 span、删除分段译文行，
+            // 再清空双 targets 存储与 dataset 标记。
+            // 为什么每次提取前必须复位：同一导航内切换模式时页面可能还挂着上一模式的
+            // 译文 DOM，从译文上再提取会把译文当原文发给 AI。
+            function resetTranslationDOM() {
+                restoreFullTranslationTextNodes();
+                var fullNodes = window.starcatReadmeFullTextNodes || {};
+                var fullIDs = Object.keys(fullNodes);
+                for (var fullIndex = 0; fullIndex < fullIDs.length; fullIndex += 1) {
+                    var entry = fullNodes[fullIDs[fullIndex]];
+                    var wrapper = entry && entry.wrapper;
+                    if (wrapper && wrapper.parentNode) {
+                        // Text node 移回原父级后再删包装，恢复后的结构与初始 DOM 一致。
+                        while (wrapper.firstChild) {
+                            wrapper.parentNode.insertBefore(wrapper.firstChild, wrapper);
+                        }
+                        wrapper.parentNode.removeChild(wrapper);
+                    }
+                    if (entry) { entry.wrapper = null; }
+                }
+                var lines = document.querySelectorAll('.starcat-readme-translation');
+                for (var lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+                    lines[lineIndex].parentNode.removeChild(lines[lineIndex]);
+                }
+                var marked = document.querySelectorAll('[data-starcat-translation-id]');
+                for (var markedIndex = 0; markedIndex < marked.length; markedIndex += 1) {
+                    delete marked[markedIndex].dataset.starcatTranslationSource;
+                    delete marked[markedIndex].dataset.starcatTranslationId;
+                }
+                window.starcatReadmeSegmentElements = {};
+                window.starcatReadmeFullTextNodes = {};
+            }
+
+            // 单条翻译源的字素上限；Swift 侧 decode 还保留同值兜底。
+            var README_TRANSLATION_MAX_GRAPHEMES = 20000;
+            // undefined = 未探测；null = 探测失败；其它 = 已就绪的 Segmenter 实例。
+            var readmeTranslationGraphemeSegmenter = undefined;
+
+            function exceedsGraphemeLimit(text) {
+                var value = text || '';
+                // Intl.Segmenter 不可用时退回 UTF-16 长度：emoji 密集的长文可能被
+                // 提前拦下，但方向保守——少发一段优于把半个字素发给 AI。
+                if (typeof Intl === 'undefined' || typeof Intl.Segmenter !== 'function') {
+                    return value.length > README_TRANSLATION_MAX_GRAPHEMES;
+                }
+                if (readmeTranslationGraphemeSegmenter === undefined) {
+                    try {
+                        readmeTranslationGraphemeSegmenter =
+                            new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+                    } catch (error) {
+                        readmeTranslationGraphemeSegmenter = null;
+                    }
+                }
+                if (!readmeTranslationGraphemeSegmenter) {
+                    return value.length > README_TRANSLATION_MAX_GRAPHEMES;
+                }
+                var count = 0;
+                // 逐段计数、超限立即返回，避免对超长文本做完整分词。
+                var segments = readmeTranslationGraphemeSegmenter.segment(value);
+                for (var chunk of segments) {
+                    count += 1;
+                    if (count > README_TRANSLATION_MAX_GRAPHEMES) { return true; }
+                }
+                return false;
+            }
+
+            // 翻译源提取为按需请求制：Swift 侧存在消费者（translationMode 非 nil）才调用。
+            // 为什么：对大文档全量克隆候选块 / 遍历 Text node 属于纯浪费，无消费者时
+            // 必须零开销；targets 也只建立当前模式的，桥接只携带所选模式原文。
+            window.starcatRequestReadmeTranslationSource = function(mode, requestID) {
                 var article = document.querySelector('.markdown-body article') ||
                     document.querySelector('.markdown-body');
                 if (!article) { return; }
 
-                // 新文档重抽段：上一份 README 的入场去重表必须丢掉。
-                window.starcatReadmeAnimatedTranslationIDs = {};
+                resetTranslationDOM();
 
-                var candidates = article.querySelectorAll(
-                    'h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th, summary, dt, dd'
-                );
-                var segments = [];
-                window.starcatReadmeSegmentElements = {};
-                for (var index = 0; index < candidates.length; index += 1) {
-                    var element = candidates[index];
-                    if (element.closest('pre, code, kbd, samp, script, style, svg, noscript')) {
-                        continue;
-                    }
-                    var text = normalizedSegmentText(element);
-                    if (text.length < 2 || /^https?:\\/\\/\\S+$/.test(text)) {
-                        continue;
-                    }
-                    var id = 'starcat-readme-segment-' + segments.length;
-                    element.dataset.starcatTranslationSource = 'true';
-                    element.dataset.starcatTranslationId = id;
-                    window.starcatReadmeSegmentElements[id] = element;
-                    segments.push({ id: id, text: text });
-                }
-
-                // 全文模式按 Text node 替换译文，而不是覆盖 element.innerHTML。
-                // 这样 inline link、图片、属性和代码节点始终由原 DOM 持有；切回原文时
-                // 只需恢复 nodeValue，不需要重载整份 README。
-                var fullTextNodes = [];
-                window.starcatReadmeFullTextNodes = {};
-                var walker = document.createTreeWalker(
-                    article,
-                    NodeFilter.SHOW_TEXT,
-                    {
-                        acceptNode: function(node) {
-                            var parent = node.parentElement;
-                            if (!parent || parent.closest(
-                                'pre, code, kbd, samp, script, style, svg, noscript, .starcat-readme-translation'
-                            )) {
-                                return NodeFilter.FILTER_REJECT;
-                            }
-                            var text = (node.nodeValue || '').trim();
-                            if (text.length < 2 || /^https?:\\/\\/\\S+$/.test(text)) {
-                                return NodeFilter.FILTER_REJECT;
-                            }
-                            return NodeFilter.FILTER_ACCEPT;
+                var items = [];
+                if (mode === 'segmented') {
+                    var segmentQuota = 2000;
+                    var candidates = article.querySelectorAll(
+                        'h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th, summary, dt, dd'
+                    );
+                    var slot = 0;
+                    for (var index = 0; index < candidates.length && slot < segmentQuota; index += 1) {
+                        var element = candidates[index];
+                        // mermaid 渲染失败的本地化提示是异步插入的：若被编入正文编号，
+                        // 提取时序不同会产生两套编号，主题重载后按旧 ID 回放就会错位。
+                        if (element.closest('pre, code, kbd, samp, script, style, svg, noscript, .starcat-mermaid-error')) {
+                            continue;
                         }
+                        var text = normalizedSegmentText(element);
+                        if (text.length < 2 || /^https?:\\/\\/\\S+$/.test(text)) {
+                            continue;
+                        }
+                        // 名额按过筛候选计：超长项同样占名额，但不注册 target、不进发送
+                        // 列表；后续合法项保留原 DOM 序号（ID 跳号），前缀之外不补位。
+                        var id = 'starcat-readme-segment-' + slot;
+                        slot += 1;
+                        if (exceedsGraphemeLimit(text)) { continue; }
+                        element.dataset.starcatTranslationSource = 'true';
+                        element.dataset.starcatTranslationId = id;
+                        window.starcatReadmeSegmentElements[id] = element;
+                        items.push({ id: id, text: text });
                     }
-                );
-                var textNode = walker.nextNode();
-                while (textNode) {
-                    var fullID = 'starcat-readme-text-' + fullTextNodes.length;
-                    var original = textNode.nodeValue || '';
-                    window.starcatReadmeFullTextNodes[fullID] = {
-                        node: textNode,
-                        original: original
-                    };
-                    fullTextNodes.push({ id: fullID, text: original.trim() });
-                    textNode = walker.nextNode();
+                } else if (mode === 'full') {
+                    var fullQuota = 8000;
+                    // 全文模式按 Text node 替换译文，而不是覆盖 element.innerHTML。
+                    // 这样 inline link、图片、属性和代码节点始终由原 DOM 持有；切回原文时
+                    // 只需恢复 nodeValue，不需要重载整份 README。
+                    var walker = document.createTreeWalker(
+                        article,
+                        NodeFilter.SHOW_TEXT,
+                        {
+                            acceptNode: function(node) {
+                                var parent = node.parentElement;
+                                // .starcat-mermaid-error 同分段路径：异步插入的错误提示
+                                // 不得占用正文编号，否则提取时序会改变后续段落 ID。
+                                if (!parent || parent.closest(
+                                    'pre, code, kbd, samp, script, style, svg, noscript, .starcat-readme-translation, .starcat-mermaid-error'
+                                )) {
+                                    return NodeFilter.FILTER_REJECT;
+                                }
+                                var text = (node.nodeValue || '').trim();
+                                if (text.length < 2 || /^https?:\\/\\/\\S+$/.test(text)) {
+                                    return NodeFilter.FILTER_REJECT;
+                                }
+                                return NodeFilter.FILTER_ACCEPT;
+                            }
+                        }
+                    );
+                    var slot = 0;
+                    var textNode = walker.nextNode();
+                    while (textNode && slot < fullQuota) {
+                        var id = 'starcat-readme-text-' + slot;
+                        slot += 1;
+                        var trimmed = (textNode.nodeValue || '').trim();
+                        if (exceedsGraphemeLimit(trimmed)) {
+                            // 名额已满就不再前进：nextNode() 会连续执行过滤器跳过不合格
+                            // 节点，直到下一个合格项或文档末尾——尾部大量代码块文本时
+                            // 这次多余扫描可能横跨整份剩余文档。
+                            if (slot >= fullQuota) { break; }
+                            textNode = walker.nextNode();
+                            continue;
+                        }
+                        window.starcatReadmeFullTextNodes[id] = {
+                            node: textNode,
+                            original: textNode.nodeValue || ''
+                        };
+                        items.push({ id: id, text: trimmed });
+                        if (slot >= fullQuota) { break; }
+                        textNode = walker.nextNode();
+                    }
+                } else {
+                    return;
                 }
 
                 window.webkit.messageHandlers.\(ReadmeWebViewConstants.translationSourceMessageName)
                     .postMessage({
-                        segmented: segments,
-                        full: fullTextNodes
+                        token: document.body.dataset.readmeDocumentToken || '',
+                        mode: mode,
+                        request: requestID,
+                        items: items
                     });
-            }
+            };
 
             function restoreFullTranslationTextNodes() {
                 var nodes = window.starcatReadmeFullTextNodes || {};
@@ -2145,7 +2300,8 @@ struct ReadmeWebContentView: NSViewRepresentable {
             window.addEventListener('load', report);
             enhanceImages();
             enhanceVideos();
-            extractTranslationSource();
+            // 翻译源不再无条件提取：由 Swift 侧 translationMode 非 nil 时按需调用
+            // starcatRequestReadmeTranslationSource，无消费者时页面零提取开销。
             requestMermaidRendering();
             setTimeout(report, 0);
         })();
@@ -2205,6 +2361,8 @@ struct ReadmeWebContentView: NSViewRepresentable {
                     self.applyStarHistoryRenderStateIfNeeded()
                     self.onImagePreviewVisibilityChange(false)
                     self.onDocumentReady(documentID)
+                    // 正文就绪后增强脚本一定已注入；这里是提取请求最可靠的兜底触发点。
+                    self.requestTranslationExtraction()
                 }
                 return
             }
@@ -2218,40 +2376,57 @@ struct ReadmeWebContentView: NSViewRepresentable {
             }
 
             if message.name == ReadmeWebViewConstants.translationSourceMessageName {
-                guard let payload = message.body as? [String: Any] else { return }
+                // 按需请求制的验收门：导航令牌（复用图片浮层的存活期令牌）+ 当前请求
+                // 序号 + 当前消费者模式三者都对上才接受。主题重载可能沿用 documentID，
+                // 模式切换也可能发生在同一导航内，所以三个身份缺一不可。
+                guard message.frameInfo.isMainFrame,
+                      let payload = message.body as? [String: Any],
+                      let token = payload["token"] as? String,
+                      let requestID = (payload["request"] as? NSNumber)?.intValue,
+                      let modeRaw = payload["mode"] as? String,
+                      let mode = ReadmeTranslationMode(rawValue: modeRaw),
+                      token == imagePreviewDocumentToken,
+                      requestID == translationRequestID,
+                      mode == translationConsumerMode
+                else { return }
 
-                func decodeSegments(
-                    key: String,
-                    idPrefix: String,
-                    limit: Int
-                ) -> [ReadmeSourceSegment] {
-                    guard let items = payload[key] as? [[String: Any]] else { return [] }
-                    return items.prefix(limit).compactMap { item -> ReadmeSourceSegment? in
+                let idPrefix: String
+                let limit: Int
+                switch mode {
+                case .segmented:
+                    idPrefix = "starcat-readme-segment-"
+                    limit = 2_000
+                case .full:
+                    idPrefix = "starcat-readme-text-"
+                    limit = 8_000
+                }
+                let items = (payload["items"] as? [[String: Any]] ?? []).prefix(limit).compactMap {
+                    item -> ReadmeSourceSegment? in
                     guard let id = item["id"] as? String,
                           let text = item["text"] as? String,
                           id.hasPrefix(idPrefix),
                           !text.isEmpty,
+                          // JS 已按字素上限拦截；这里兜底 Segmenter 不可用时的 UTF-16 路径。
                           text.count <= 20_000
                     else { return nil }
                     return ReadmeSourceSegment(id: id, text: text)
                 }
+                // 快照只填当前模式：无消费者的另一侧保持空，调用方不会误读旧数据。
+                let snapshot = mode == .segmented
+                    ? ReadmeTranslationSourceSnapshot(segmented: items, full: [])
+                    : ReadmeTranslationSourceSnapshot(segmented: [], full: items)
+                hasCurrentModeTargets = true
+                let capturedRequestID = translationRequestID
+                let capturedMode = translationConsumerMode
+                Task { @MainActor [weak self] in
+                    // 消息验证与主线程交付之间可能已切模式或导航；迟到的提取结果
+                    // 不得覆盖当前快照，也不得触发当前文档的译文回放。
+                    guard let self,
+                          capturedRequestID == self.translationRequestID,
+                          capturedMode == self.translationConsumerMode else { return }
+                    self.onTranslationSourceChange(snapshot)
+                    self.applyTranslationRenderStateIfNeeded()
                 }
-
-                let snapshot = ReadmeTranslationSourceSnapshot(
-                    segmented: decodeSegments(
-                        key: "segmented",
-                        idPrefix: "starcat-readme-segment-",
-                        limit: 2_000
-                    ),
-                    full: decodeSegments(
-                        key: "full",
-                        idPrefix: "starcat-readme-text-",
-                        limit: 8_000
-                    )
-                )
-                // 捕获收到消息时的文档回调；主线程任务排队期间可能已切到另一个 Skill。
-                let onSourceChange = onTranslationSourceChange
-                Task { @MainActor in onSourceChange(snapshot) }
                 return
             }
 
