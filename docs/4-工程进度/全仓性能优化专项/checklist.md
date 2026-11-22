@@ -1,6 +1,6 @@
 # 全仓性能优化 Checklist
 
-> 状态：开发中（P0 / P1-1 与首批 P1-2 / P1-3 / P2-2 / P2-3 / P2-5 / P2-6 已提交；2026-11-22 在 P1-5 联调中发现两处已提交代码的编译错误被此前验收流程漏判——rtk 代理过滤会吞掉编译诊断与失败退出码——全部已提交项的定向测试将在修复后统一重跑确认；下一项 P1-5 实施中）
+> 状态：开发中（计划内修复全部提交：P0-1、P1-1~P1-8、P2-1~P2-8、P2-11；P2-9 / P2-10 / P2-12 实测后暂缓不动。含三笔补充提交：P1-5 联调暴露的两处编译错误修复（rtk 代理过滤会吞掉编译诊断与失败退出码的教训）、P1-3 分块查询跨块去重（`0bd607e5`）、P1-4 对抗审查折入三处修复（`065b6931`）。统一定向重跑进行中：SemanticSearchTests 22 用例 + ReadmeDocumentReadyWebKitTests 14 用例已确认绿（2026-11-22）；全量重跑 + 双渠道构建后一次性交付人工验收清单）
 >
 > 开工日期：2026-11-22
 >
@@ -40,29 +40,39 @@
   - 验收：5k 候选排名与现实现一致；主 actor 连续占用与总耗时采样下降；取消行为不变。
     - 实现（2026-11-22）：余弦打分 / 排序 / 截断移出主 actor（`SemanticSearchService` 打分段改后台计算，主 actor 只收结果）；取向量改 500-ID 分块查询（`RepoEmbeddingRepository.fetchEmbeddings`，与 `countEmbeddings` 对齐；分块在同一 read 快照内，评分输入不跨快照）。
     - 已知约束：本条提交内 `fetchEmbeddings` 分块参数有一处切片形态的存在类型转换编译错误（Array 直传合法、ArraySlice 不合法），2026-11-22 P1-5 联调时暴露，已补元素级上转型单独修复（见 §6 fix 记录）。
+    - 补充修复（2026-11-22）：对抗审查暴露跨块重复 ID 问题——IN 去重只在块内天然成立，重复候选 ID 落进不同分块时同一行被各块分别返回 / 计数（语义评分对重复向量叠加、Search Center 覆盖率虚高；全量测试含重复 ID 用例确定性暴露 1201/1200）。`deduplicatedIDs` 分块前按值去重，顺带减少分块数（`0bd607e5`）。
     - 回归：`StarcatTests/SemanticSearchTests` 新增 5k 候选排名与旧实现对拍、分块边界、取消语义等用例（数字待统一重跑后回填）。
-- [ ] **P1-4 README WebView 正文双路翻译提取**
+- [x] **P1-4 README WebView 正文双路翻译提取**（已实现并提交，待 dong4j 人工验收）
   - 位置：`ReadmeWebView.swift:2134,2141`（常规正文同时触发两套提取）；`:1836` 深克隆、`:1895` TreeWalker、`:1926` 桥传；条数 / 字符上限在 `:2217` 接收端才执行。
   - 方案：按消费者与模式触发提取；上限前移到 JS 侧，Web 进程不再白做被截断丢弃的遍历与桥接。
   - 验收：提取次数与桥接字节数下降可测；切仓后文档与译文对应正确；字号 CSS 旁路不受影响。
-- [x] **P1-5 搜索合并在主 actor 逐个 firstIndex（最坏二次复杂度）**（已实现，自动化验收中）
+    - 实现（2026-11-22）：消费者视图把 `translationMode`（settings 读取或 nil）传进 WebView：nil 零提取；有消费者只建当前模式一套 targets（分段克隆候选块 / 全文 TreeWalker），切模式先 `resetTranslationDOM` 恢复原文再按新模式重抽；上限前移 JS 侧（分段 2000 候选 / 全文 8000 文本节点、单段 20,000 字素）；requestID + 模式 + 导航令牌三重校验丢弃迟到消息；缓存译文挂起等 targets 就绪后回放。快照只喂翻译按钮发起翻译，无自动重放路径。涉及 `ReadmeWebView` / `RepoDetailView` / `RepoFileBrowserSheet` / `RepoFileTextPreview` / `RepoSkillDetailPane`。
+    - 对抗审查（workflow 三视角审查 + 人工逐条裁决）折入三处修复（`065b6931`）：① 模式往返（源码↔渲染）清 `lastAppliedTranslationRevision`，否则缓存译文被「已应用」记账挡住无法回放到新 targets、译文永久消失；② 分段 / 全文提取排除列表补 `.starcat-mermaid-error`，异步插入的渲染失败提示不再占用正文编号（否则提取时序不同产生两套编号，主题重载按旧 ID 回放错位）；③ 全文配额用尽即 break，`nextNode()` 级联过滤不再横扫剩余整份文档。另两条裁决不修：切 Skill 同帧模式变化时旧文档多跑一次提取（正确性无碍、触发罕见，记录为已知小浪费）；UTF-16 回退保守丢段（已文档化取舍，macOS 15 WebKit 必有 `Intl.Segmenter`，实际影响≈0）。
+    - 回归：`StarcatTests/ReadmeDocumentReadyWebKitTests` 新增 10 用例（nil 不提取、分段 / 全文单模式单套 targets、切模式恢复原文重抽、缓存挂起回放、迟到消息三重校验、分段配额 / 超长跳号、全文配额，含对抗审查后的「模式往返后同一 revision 译文重新回放」）；2026-11-22 定向重跑 14/14 绿。
+- [x] **P1-5 搜索合并在主 actor 逐个 firstIndex（最坏二次复杂度）**（已实现并提交，统一定向重跑确认中，待 dong4j 人工验收）
   - 位置：`RepoRepository.swift:559,582,595`（非空 FTS 相关性查询无限量）；`LocalKeywordSearchProvider.swift:35`；`RepositorySearchMerger.swift:24,54`；`SearchCoordinator.swift:168,196,239`（来源交付与追加页时在主 actor 重建）。
   - 方案：仓库身份字典索引化合并；保持排序、去重与来源归并语义；交付批次结构暂不动，后续另行评估。
   - 验收：固定样本对拍合并结果与现实现一致；合并工作量从最坏二次降为线性。
     - 实现（2026-11-22）：`RepositorySearchMerger.merge` 改双字典查表——「数字 ID 首现下标 + 规范化名称首现下标」两张字典等价复刻 `firstIndex` 语义（匹配集合 = ID 命中 ∪ 名称命中、取更小下标），合并整体从最坏 O(n·m) 降为 O(n+m)；合并只改来源与本地状态字段、不改 `identity`，多轮合并无需重建字典；`isSameRepository` 与调用方不变。
     - 回归：`StarcatTests/SearchCoordinatorTests` 新增 12 场景对拍测试（`mergeMatchesLegacyFirstIndexReference`，冻结旧 firstIndex 实现为参照）：空批次、nil ID 退化名称匹配、ID 0 可匹配 / 不同名不匹配、同名不同 ID、双键冲突取更小下标、来源归并、链式命中、本地状态补入等逐一与旧实现对拍。
-- [ ] **P1-6 智能集合逐规则重复查询**
+- [x] **P1-6 智能集合逐规则重复查询**（已实现并提交，统一定向重跑确认中，待 dong4j 人工验收）
   - 位置：`SmartCollectionsOverviewView.swift:365,435`；`HomeViewModel.swift:2182` 起（每条规则重复取候选 / 状态 / 非空笔记 ID）。
   - 方案：同一刷新、同 scope 内共享查询与规则上下文；`IndexedSnapshot.swift:38` 快照是否同时携带摘要与 README 先测字节量再决定缩减。
   - 验收：N 条规则的查询次数从 O(N) 次独立取数收敛为共享；刷新结果与现实现一致；`SmartCollectionPerformanceTests` 防线保持。
-- [ ] **P1-7 Trending / Activity / Explore 的 `.task(id:)` 身份携带候选构造**
+    - 实现（2026-11-22）：`SmartCollectionCountBatch` 一次构建候选 / 状态 / 非空笔记 ID 基础集，N 条规则共享同一批查询，逐规则 countRepos 从 O(N) 次独立取数收敛；数组版对完全相同的规则复用首现计数；概览页 `loadUserCounts` 改走批量入口一次回填全部计数；`buildSmartCollectionFilterContext` 增加共享 batch 参数，列表加载路径 batch=nil 行为与原实现等价。
+    - 回归：`StarcatTests/HomeViewModelFilterSortTests` 新增批量计数与逐规则计数逐条对拍（含重复规则复用断言）。
+- [x] **P1-7 Trending / Activity / Explore 的 `.task(id:)` 身份携带候选构造**（已实现并提交，无相关单测，待 dong4j 人工验收）
   - 位置：`TrendingView.swift:157`、`ActivityView.swift:323`、`ExploreView.swift:262`。筛选关闭时（guard 之前的 `id` 求值）仍构造 skillCandidates（筛选 / 临时 Repo 构造 / 查 starred registry）。
   - 方案：筛选关闭用常量任务身份；开启用覆盖候选、筛选与分页变化的身份；候选构造移入任务体。
   - 验收：筛选关闭时候选构造 0 次；开启时补扫正常；Activity 池上限（200 / 120 / 100）不变。
-- [ ] **P1-8 每日推荐命中判断前全量取已收藏列表**
+    - 实现（2026-11-22）：三视图 `.task(id:)` 改三元身份：技能筛选关闭时用常量身份（候选数组构造无消费方、任务体 guard 天然 no-op），开启时才拼候选 ID + 筛选维度的组合身份；关闭时字符串拼接与任务重启都消失，开启时身份粒度与原先完全一致。
+    - 回归：纯 `.task` 身份构造调整，无相关单测；任务体逻辑未动，Activity 池上限与开启筛选路径行为不变。
+- [x] **P1-8 每日推荐命中判断前全量取已收藏列表**（已实现并提交，统一定向重跑确认中，待 dong4j 人工验收）
   - 位置：`DailyRecommendationStore.swift:122`（缓存命中判断前 `fetchAllStarred()`）；宿主监听 `DailyRecommendationHost.swift:77`。
   - 方案：复用路径改为仅查询已收藏 ID；保留 `DailyRecommendationPreparation.swift:28` 的同 key 单飞与异 key 取消。
   - 验收：同日重复激活不重复全量取数；手动换批、新 Star 排除行为不变。
+    - 实现（2026-11-22）：`load()` 新增 `fetchStarredIDs` 轻量读：当日缓存命中路径在早退前用 ID 集排除新 Star，不再为一次重看拉完整 Stars 列表；完整列表延后为需要种子 / 补页路径的第二读，两读间新 Star ID 并入排除集。Host 注入 `fetchStarredRepoIDs`。
+    - 回归：`StarcatTests/DailyRecommendationTests` 既有用例补读 1 参数适配，语义不变。
 
 ## 3. P2 次级优化
 
@@ -78,6 +88,7 @@
 - [x] **P2-4 AuthSession 同账号恢复双回调**（已实现并提交，定向测试统一重跑确认中，待 dong4j 人工验收） — `AuthSession.swift:238,248,285`、`AppDependencies.swift:1935`。区分首激活 / 资料刷新 / 真换号后合并回调；验缓存命中、缺失、401、离线、换号五路径。
     - 实现（2026-11-22）：以「实际打开的数据库」为准（AppDependencies 注入 `activeDatabaseUserID = { [db] in db.currentUserId }`，只捕获 DatabaseManager 避免与 session 成环），缓存激活已为同账号切库时 `/user` 验证成功跳过第二次完整回调；属性缺失 / currentUserId 为 nil / 不同账号照常触发，保留冷启动、换号、切库失败重试语义。Web / Device / PAT 主动登录路径必须切库，不动。
     - 回归：`StarcatTests/SwitchUserDatabaseTests` 新增同账号跳过与三种照常触发用例（restore 端到端被测试 host Keychain 门控挡住，决策收口为独立方法供单测）（数字待统一重跑后回填）。
+    - 测试修正（2026-11-22）：换号取消用例修正等待顺序竞态——URLProtocolStub 队头 handler 同步阻塞期间后续请求进不了 stub，`gate.release(0)` 前移到 `waitForRequestCount(2)` 之前，先放行 A 让 B 登记计数；区分力不变（`cb0451d8`）。
 - [x] **P2-5 StarredExporter 逐仓串行读取**（已实现并提交，定向测试统一重跑确认中，待 dong4j 人工验收） — `StarredExporter.swift:199`。分批取数与摘录生成；复用 `ShareCardSheet.swift:911` 分阶段反馈；验查询数与峰值内存。
     - 实现（2026-11-22）：导出改批量取数（`ReadmeRepository` / `RepoNoteRepository` 新增批量 API，协议同步扩展），摘录生成移出主线程；分阶段反馈保留。
     - 回归：`StarcatTests/ReadmeContentRepositoryTests` + `RepoNoteRepositoryTests` 批量 API 用例（数字待统一重跑后回填）。
@@ -138,7 +149,19 @@
 - [x] `perf(keychain): github token 读路径加进程内缓存消除逐请求读文件`（P2-3）— `9d042960`
 - [x] `perf(export): 知识库导出改批量取数与离主线程摘录`（P2-5）— `ed1de17c`
 - [x] `perf(profile): 开发语言快照改有界并发取语言`（P2-6）— `c27c759a`
-- [ ] `fix(search): 嵌入分块查询参数切片加存在类型转换`（P1-3 联调暴露的编译错误修复）
-- [ ] `fix(profile): 开发语言任务 defer 守卫改条件清理`（P2-6 联调暴露的编译错误修复）
-- [ ] `perf(search): 搜索合并改身份字典查表消除逐个 firstIndex`（P1-5，实现+测试合一提交）
-- [ ] 后续每项独立提交（实现+测试合一），全部完成后统一 `docs(perf):` 回填本清单
+- [x] `fix(search): 嵌入分块查询参数切片加存在类型转换`（P1-3 联调暴露的编译错误修复）— `def043a0`
+- [x] `fix(profile): 开发语言任务 defer 守卫改条件清理`（P2-6 联调暴露的编译错误修复）— `e66401e8`
+- [x] `perf(search): 搜索合并改身份字典查表消除逐个 firstIndex`（P1-5，实现+测试合一提交）— `caee6e7c`
+- [x] `perf(view): 技能筛选关闭时任务身份改常量避免候选白算`（P1-7）— `4534ea13`
+- [x] `test(perf): 换号取消用例先放行队头再等新请求计数`（P2-4 回归用例竞态修正）— `cb0451d8`
+- [x] `perf(recommend): 当日缓存命中改轻量 ID 读免完整 Stars 拉取`（P1-8）— `4c953537`
+- [x] `perf(collection): 智能集合批量计数共享查询消除逐规则重复取数`（P1-6）— `a0ff9ebf`
+- [x] `perf(search): 搜索中心候选列表与计数共享同一快照派生`（P2-7）— `3d20035f`
+- [x] `perf(auth): 同账号启动校验跳过重复切库屏障`（P2-4）— `0434917b`
+- [x] `perf(db): 开池迁移与账号屏障分段埋点`（P2-11 埋点）— `056d8902`
+- [x] `perf(cache): 归档统计枚举移出主 actor`（P2-8）— `bb2a61b0`
+- [x] `perf(rag): Meilisearch 无 Embedding 全量刷新按文档指纹跳过远端重传`（P2-1）— `9bde516b`
+- [x] `docs(perf): checklist 回填 P2-1/4/7/8/9/11 状态与实测结论` — `f48daff8`
+- [x] `fix(search): 向量 IN 分块查询跨块重复 ID 去重`（P1-3 对抗审查补充修复）— `0bd607e5`
+- [x] `perf(readme): 翻译源按消费者模式按需提取`（P1-4，含对抗审查三修复与回归）— `065b6931`
+- [ ] 后续每项独立提交（实现+测试合一）已收口；剩余为全量重跑 + 双渠道构建确认后的 docs 状态翻转提交
