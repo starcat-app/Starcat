@@ -1,6 +1,6 @@
 # 全仓性能优化 Checklist
 
-> 状态：开发中（P0 自动化验收通过，待 dong4j 人工验收；P1-1 进行中）
+> 状态：开发中（P0 / P1-1 自动化验收通过，待 dong4j 人工验收；下一项 P1-2 待 dong4j 授权）
 >
 > 开工日期：2026-11-22
 >
@@ -20,10 +20,14 @@
 
 ## 2. P1 主线程卡顿
 
-- [ ] **P1-1 聊天落盘阻塞主线程且整会话重写**
+- [x] **P1-1 聊天落盘阻塞主线程且整会话重写**（已实现，自动化验收通过，待 dong4j 人工验收）
   - 位置：`RepoAIChatViewModel.swift:531,548,653,688,738,873`（主 actor 同步保存）；`DiskChatHistoryStore.swift:579,741`（JSON 后端重写当前会话全部分块 + 遍历全库目录统计）、`:1085`（SQLite 后端删全消息重插）。
   - 方案：保留「先存用户消息」恢复语义；JSON 后端改增量写受影响分块，全库字节统计移出保存热路径；SQLite 后端按 ordinal 增量 upsert。
   - 验收：200 条消息会话的写入量对比；成功 / 取消 / 失败路径回归；落盘不再造成可感主线程卡顿。
+    - 实现（2026-11-22）：JSON 后端追加保存只重写受影响尾部 chunk——200 条会话每回合从 10 chunk 全量重写降为 1~2 chunk + metadata（mtime 断言 chunk 0-9 不触碰），同数保存（取消 / 失败补存）跳过分块写；全库字节统计移出保存热路径改增量维护（与 reload 重算口径对拍一致）；SQLite 后端按 ordinal 增量 upsert——200 删 + 200 插降为 1~2 insert（rowid 快照断言逐行原地保留）。
+    - 独立复核发现并修复 3 个增量写回归风险：① 迁移同 UUID 同消息数不同内容会因增量保留旧前缀导致回读校验失败（`saveSession` 增加 `replacingExisting` 参数，迁移写入整体替换，恢复「传入即权威」）；② SQLite 消息数回退分支只删不插，传入的截断窗口与新消息丢失（恢复全量重插语义）；③ metadata messageCount 损坏为负会负下标崩溃、chunks 目录缺失时增量写永久丢前缀（负数归一化按损坏重建 + 缺失降级全量重建恢复数据）。
+    - 已知约束：保存中途失败重试的字节差统计可能漏计 1~2 chunk，偏差有界且 `reload()` 全量重算自愈；不为罕见异常路径引入失败时全库扫描。
+    - 回归：`DiskChatHistoryStoreTests` 36/36 + `DiskChatHistoryMigrationTests` 10/10 通过（含迁移 merge / 并发写 / 损坏源回归）；双渠道构建通过。
 - [ ] **P1-2 README 翻译缓存写后全量 reload**
   - 位置：`DiskReadmeTranslationCache.swift:58`（`@MainActor`）、`:192`（upsert 后 reload）、`:301`（同步遍历解码全部译文）。
   - 方案：普通写入只更新单条与聚合统计（对照 `RepoContextStorage` 等 summary-first 路径）；sweep / 淘汰 / 旧格式清理 / 强刷各自最小 reload。
@@ -92,7 +96,9 @@
 
 ## 6. 计划提交
 
-- [ ] `docs(perf): 建立全仓性能优化专项清单`（含审查报告落盘、LESSONS 登记、BRANCH.md 分支用途扩展）
-- [ ] `fix(chat): 修复 SQLite 聊天历史 LRU 淘汰删光全部会话`（P0-1；原计划 `perf(chat)`，按提交规范 type 与语义一致原则改为 `fix`）
-- [ ] `test(chat): 补 SQLite 聊天历史 LRU 淘汰回归`（P0-1）
+- [x] `docs(perf): 建立全仓性能优化专项清单`（含审查报告落盘、LESSONS 登记、BRANCH.md 分支用途扩展）— `bb69fece`
+- [x] `fix(chat): 修复 SQLite 聊天历史 LRU 淘汰删光全部会话`（P0-1；原计划 `perf(chat)`，按提交规范 type 与语义一致原则改为 `fix`）— `b6620693`
+- [x] `test(chat): 补 SQLite 聊天历史 LRU 淘汰回归`（P0-1）— `5d3ba662`
+- [x] `perf(chat): 聊天落盘改增量写消除整会话重写`（P1-1 实现；含迁移替换语义与异常态数据完整性修复）— `b848ecf`
+- [x] `test(chat): 补聊天落盘增量写回归`（P1-1）— `b3571f8`
 - [ ] 后续每项独立 `perf(...)` + `test(...)` 提交
