@@ -220,6 +220,16 @@ targets:
     # 显式依赖最终 Info.plist，让版本写入在 ProcessInfoPlistFile 之后、签名之前执行。
     # postBuildScripts 仅决定 phase 位置，不能约束 Xcode 的 plist 生成任务。
     postBuildScripts:
+      - &tagIconCatalogBuildPhase
+        name: "Generate Tag Icon Catalog"
+        script: |
+          python3 "${SRCROOT}/scripts/generate-tag-icon-catalog.py" \
+            "${SRCROOT}/Starcat/Resources/Assets.xcassets" "${SCRIPT_OUTPUT_FILE_0}"
+        outputFiles:
+          - "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/TagIconCatalog.json"
+        showEnvVarsInLog: false
+        # 目录里的新增和删除都要参与索引，不依赖手工维护 input file list。
+        basedOnDependencyAnalysis: false
       - name: "Auto Bump Version (from git)"
         script: '"${SRCROOT}/scripts/bump-version.sh"'
         inputFiles:
@@ -392,6 +402,7 @@ targets:
         embed: true
         codeSign: true
     postBuildScripts:
+      - *tagIconCatalogBuildPhase
       - name: "Auto Bump Version (from git)"
         script: '"${SRCROOT}/scripts/bump-version.sh"'
         inputFiles:

@@ -28,7 +28,7 @@ struct Tag: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, Eq
     /// 颜色 hex，如 `#FF5722`；可空，UI 缺省取主题色。
     var color: String?
 
-    /// SF Symbol 名，如 `tag`；可空。
+    /// SF Symbol 名（如 `tag`）或内置素材标识（如 `asset:docker`）；可空。
     var icon: String?
 
     var sortOrder: Int

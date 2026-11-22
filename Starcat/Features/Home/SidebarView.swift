@@ -2851,10 +2851,11 @@ struct SidebarView: View {
                 .frame(width: Self.trailingFixedWidth, alignment: .trailing)
             }
         } icon: {
-            // 优先 user-defined SF Symbol；否则 fallback "tag.fill"。
-            // tags 注册条目转 Lucide 资产时（批量阶段），此处需一并改为 BusinessIcon 渲染。
-            Image(systemName: tag.icon ?? "tag.fill")
-                .font(interfaceScale.font(.iconSmall, weight: .semibold))
+            TagIconView(
+                identifier: tag.icon ?? "tag.fill",
+                size: interfaceScale.scaled(StarcatTypography.iconSmall.pointSize),
+                weight: .semibold
+            )
                 .foregroundStyle(
                     SidebarSemanticIconStyle(
                         semanticColor: Color(hex: tag.color ?? TagColorPalette.defaultHex) ?? .accentColor

@@ -96,8 +96,7 @@ struct TagWallChip: View {
             // 图标：tag.icon 优先，无则用 `tag.fill` 兜底，跟 sidebar tagRow 同款语言。
             // 未选中时显式给 swatchColor，让 tag 颜色身份不被 .primary 覆盖；
             // 选中时跟随外层 selectedForeground，保持与文字同色。
-            Image(systemName: tag.icon ?? "tag.fill")
-                .font(.system(size: 11, weight: .medium))
+            TagIconView(identifier: tag.icon ?? "tag.fill", size: 11, weight: .medium)
                 .foregroundStyle(isSelected ? selectedForeground : swatchColor)
 
             Text(verbatim: tag.name)

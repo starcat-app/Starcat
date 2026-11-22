@@ -192,8 +192,7 @@ struct TagManagementView: View {
                 .fill(Color(hex: tag.color ?? TagColorPalette.defaultHex) ?? .accentColor)
                 .frame(width: 10, height: 10)
             if let icon = tag.icon {
-                Image(systemName: icon)
-                    .font(.system(size: 12))
+                TagIconView(identifier: icon, size: 12)
                     .foregroundStyle(.secondary)
                     .frame(width: 14)
             }
@@ -351,8 +350,7 @@ private struct MergeTagsSheet: View {
                                 .frame(width: 10, height: 10)
 
                             if let icon = tag.icon {
-                                Image(systemName: icon)
-                                    .font(.system(size: 12))
+                                TagIconView(identifier: icon, size: 12)
                                     .foregroundStyle(.secondary)
                                     .frame(width: 14)
                             }
@@ -460,6 +458,7 @@ private struct NewTagSheet: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 SFSymbolGridPicker(selection: $icon, columns: 8)
+                MoreTagIconsButton(selection: $icon)
             }
 
             HStack {

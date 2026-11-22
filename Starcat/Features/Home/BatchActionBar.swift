@@ -898,7 +898,8 @@ private struct BatchTagSheet: View {
                     .fill(Color(hex: tag.color ?? TagColorPalette.defaultHex) ?? .accentColor)
                     .frame(width: 8, height: 8)
                 if let icon = tag.icon {
-                    Image(systemName: icon).font(.system(size: 11)).foregroundStyle(.secondary)
+                    TagIconView(identifier: icon, size: 11)
+                        .foregroundStyle(.secondary)
                 }
                 Text(verbatim: tag.name).lineLimit(1)
                 Spacer()

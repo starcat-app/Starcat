@@ -472,7 +472,7 @@ struct TagPickerView: View {
         return tags.filter { $0.name.lowercased().contains(q) }
     }
 
-    /// 行视觉对齐侧栏 tagRow：彩色 SF Symbol + 名称；选中用浅蓝底 + 右侧勾。
+    /// 行视觉对齐侧栏 tagRow：标签图标 + 名称；选中用浅蓝底 + 右侧勾。
     /// 去掉左侧 checkbox / 独立色点，避免一行四个信号抢注意力。
     private func pickerRow(tag: Tag) -> some View {
         let isOn = selected.contains(tag.id)
@@ -483,8 +483,7 @@ struct TagPickerView: View {
             if isOn { selected.remove(tag.id) } else { selected.insert(tag.id) }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: tag.icon ?? "tag.fill")
-                    .font(.system(size: 12))
+                TagIconView(identifier: tag.icon ?? "tag.fill", size: 12)
                     .foregroundStyle(tagColor)
                     .frame(width: 16, alignment: .center)
                 Text(verbatim: tag.name)
@@ -614,6 +613,7 @@ struct InlineTagCreatePanel: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 iconGrid(columns: 6)
+                MoreTagIconsButton(selection: $icon)
             }
         }
         .frame(height: 216)
@@ -639,6 +639,7 @@ struct InlineTagCreatePanel: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 iconGrid(columns: 8)
+                MoreTagIconsButton(selection: $icon)
             }
 
             if let error {
@@ -824,8 +825,7 @@ struct TagChip: View {
                 .fill(swatchColor)
                 .frame(width: 6, height: 6)
             if let icon = tag.icon {
-                Image(systemName: icon)
-                    .font(.system(size: 10))
+                TagIconView(identifier: icon, size: 10)
             }
             Text(verbatim: tag.name)
                 .font(.caption)

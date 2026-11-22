@@ -4,11 +4,8 @@
 //
 //  SF Symbol 图标选择器（grid 风格）+ 默认图标列表。
 //
-//  设计取舍：
-//  - 不用 macOS 26 的 `Image(systemName:).symbolPicker(...)` 系统选择器
-//    （API 仍不稳定，且 1500+ 图标对"打分类标签"场景过载）
-//  - 提供 30 个精挑常用图标，覆盖：代码 / 资料 / 工具 / 概念 / 媒体 / 设备
-//  - 用户想用别的图标可手填 SF Symbol 名（Phase 2 加搜索）
+//  30 个常用图标覆盖代码、资料、工具、概念、媒体和设备；
+//  表单通过共用的 MoreTagIconsButton 补充已有 App 素材。
 //
 
 import SwiftUI

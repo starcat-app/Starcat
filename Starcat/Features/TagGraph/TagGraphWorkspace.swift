@@ -204,7 +204,11 @@ struct TagGraphWorkspace: View {
                     ForEach(Array(matches.enumerated()), id: \.element.id) { index, node in
                         Button { locate(node) } label: {
                             HStack(spacing: 8) {
-                                Image(systemName: node.kind == .tag ? (node.icon ?? "tag") : "book.closed")
+                                TagIconView(
+                                    identifier: node.kind == .tag ? (node.icon ?? "tag") : "book.closed",
+                                    size: 13,
+                                    fallback: "tag"
+                                )
                                     .foregroundStyle(.secondary)
                                 Text(verbatim: node.name)
                                     .foregroundStyle(.primary)
@@ -257,20 +261,31 @@ struct TagGraphWorkspace: View {
     }
 }
 
-/// SF Symbols 只在标签图使用。按符号名缓存透明 PNG，避免数据库刷新时重复栅格化。
+/// 标签图画布按图标标识缓存透明 PNG，避免数据库刷新时重复栅格化。
 @MainActor private enum TagGraphSymbolCache {
     private static var glyphs: [String: String?] = [:]
 
-    static func glyph(for symbol: String) -> String? {
-        if let cached = glyphs[symbol] { return cached }
-        guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil),
-              let configured = image.withSymbolConfiguration(.init(pointSize: 40, weight: .medium)),
-              let value = dataURL(configured) else {
-            // 记录失败可以避免每次图刷新都请求系统符号；renderer 会回退到标签首字。
-            glyphs[symbol] = .some(nil)
-            return nil
+    static func glyph(for identifier: String) -> String? {
+        if let cached = glyphs[identifier] { return cached }
+        let image: NSImage?
+        if let asset = TagIconCatalog.entry(for: identifier)?.image {
+            // 画布节点使用 64px 纹理，保持比例并限制发送给 WebView 的 PNG 大小。
+            image = NSImage(size: NSSize(width: 64, height: 64), flipped: false) { rect in
+                let scale = min(rect.width / asset.size.width, rect.height / asset.size.height)
+                let size = NSSize(width: asset.size.width * scale, height: asset.size.height * scale)
+                asset.draw(in: NSRect(
+                    x: rect.midX - size.width / 2, y: rect.midY - size.height / 2,
+                    width: size.width, height: size.height
+                ))
+                return true
+            }
+        } else {
+            let symbol = TagIconCatalog.systemName(for: identifier, fallback: "tag")
+            image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 40, weight: .medium))
         }
-        glyphs[symbol] = value
+        let value = image.flatMap(dataURL)
+        glyphs[identifier] = .some(value)
         return value
     }
 

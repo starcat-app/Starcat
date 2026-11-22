@@ -72,8 +72,7 @@ struct TagGraphNodeCard: View {
             ZStack {
                 Circle().fill(color.opacity(0.18))
                 Circle().strokeBorder(color.opacity(0.30), lineWidth: 1)
-                Image(systemName: node.icon ?? "tag")
-                    .font(.system(size: 24, weight: .medium))
+                TagIconView(identifier: node.icon ?? "tag", size: 24, weight: .medium, fallback: "tag")
                     .foregroundStyle(.primary)
             }
         } else {

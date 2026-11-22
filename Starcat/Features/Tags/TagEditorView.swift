@@ -25,7 +25,7 @@ struct TagEditorView: View {
     /// 多选时显示"已选 N 个"提示；不允许编辑。
     let selectionCount: Int
 
-    /// 保存回调：(name, color hex, icon SF Symbol) → ViewModel.update
+    /// 保存回调：(name, color hex, icon identifier) → ViewModel.update
     let onSave: (String, String?, String?) async -> Void
 
     /// 删除回调：触发确认 alert 再调 ViewModel.delete
@@ -76,7 +76,7 @@ struct TagEditorView: View {
                     .fill(Color(hex: editingColor) ?? .accentColor)
                     .frame(width: 14, height: 14)
                 if let icon = editingIcon {
-                    Image(systemName: icon).font(.system(size: 13))
+                    TagIconView(identifier: icon, size: 13)
                 }
                 Text(editingName.isEmpty ? tag.name : editingName)
                     .font(.system(size: 15, weight: .semibold))
@@ -127,6 +127,7 @@ struct TagEditorView: View {
                                 Spacer()
                             }
                             SFSymbolGridPicker(selection: $editingIcon)
+                            MoreTagIconsButton(selection: $editingIcon)
                         }
                     }
                 }

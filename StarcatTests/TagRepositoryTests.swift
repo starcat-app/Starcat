@@ -31,6 +31,39 @@ struct TagRepositoryTests {
         #expect(got?.color == "#FF5722")
     }
 
+    @Test("内置图标可离线检索和加载，保存后按同一标识回读")
+    @MainActor
+    func bundledIconRoundTrip() async throws {
+        let docker = try #require(TagIconCatalog.matching(" DOCKER\n").first { $0.id == "asset:docker" })
+        #expect(docker.source == .devicon)
+        #expect(!docker.isTemplate)
+        #expect(docker.image != nil)
+
+        let (repo, _) = try makeRepo()
+        var tag = Tag.fixture(id: "t-docker", name: "容器")
+        tag.icon = docker.id
+        try await repo.create(tag)
+
+        let identifier = try #require(try await repo.find(id: tag.id)?.icon)
+        #expect(identifier == docker.id)
+        #expect(TagIconCatalog.entry(for: identifier)?.image != nil)
+    }
+
+    @Test("图标索引覆盖所有来源，原有 SF Symbol 和缺失素材可正确解析")
+    @MainActor
+    func iconCatalogSourcesAndFallback() throws {
+        #expect(Set(TagIconCatalog.entries.map(\.source)) == Set(TagIconCatalog.Source.allCases))
+        let terminal = try #require(TagIconCatalog.matching("terminal").first { $0.source == .lucide && $0.name == "terminal" })
+        #expect(terminal.isTemplate)
+        #expect(terminal.image != nil)
+        let chatGPT = try #require(TagIconCatalog.entry(for: "asset:chatgpt"))
+        #expect(chatGPT.isTemplate)
+        #expect(TagIconCatalog.entry(for: "bookmark") == nil)
+        #expect(TagIconCatalog.systemName(for: "bookmark", fallback: "tag") == "bookmark")
+        #expect(TagIconCatalog.entry(for: "asset:missing-test-icon") == nil)
+        #expect(TagIconCatalog.systemName(for: "asset:missing-test-icon", fallback: "tag") == "tag")
+    }
+
     @Test("find: 未命中返回 nil")
     func findMiss() async throws {
         let (repo, _) = try makeRepo()

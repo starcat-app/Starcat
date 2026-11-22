@@ -299,7 +299,7 @@ final class StarcatMCPToolRegistry {
                 inputSchema: Self.objectSchema([
                     "name": Self.stringSchema("Tag name."),
                     "color": Self.stringSchema("Optional hex color, e.g. #0A84FF."),
-                    "icon": Self.stringSchema("Optional SF Symbol name."),
+                    "icon": Self.stringSchema("Optional SF Symbol name or bundled asset identifier, e.g. asset:docker."),
                     "dry_run": Self.booleanSchema("Validate the write without persisting it.", defaultValue: true)
                 ], required: ["name"]),
                 annotations: .init(readOnlyHint: false, openWorldHint: false)
