@@ -28,6 +28,42 @@ enum SkillEvaluationHarnessAgent: String, CaseIterable {
     }
 }
 
+/// 摘要使用报告中的有效分数和覆盖结果。详情可能只保留部分证据行，不能用行数反推总数。
+struct SkillEvaluationHeadlineMetric: Equatable {
+    let titleKey: String
+    let value: String
+
+    init?(_ report: SkillEvaluationRecord) {
+        let checkID: String
+        switch report.mode {
+        case .security:
+            checkID = "security"
+            titleKey = SkillEvaluationReportLine.Term.findingCount.rawValue
+        case .rubric:
+            checkID = "rubric"
+            titleKey = "skills.evaluation.report.qualityScore"
+        case .similarity:
+            checkID = "similarity"
+            titleKey = "skills.evaluation.report.highestSimilarity"
+        case .quick, .context:
+            return nil
+        }
+        guard let check = report.checks.first(where: { $0.id == checkID }),
+              check.state != .incomplete else { return nil }
+        if report.mode == .security {
+            guard let count = check.details.lazy.map({ SkillEvaluationReportLine(checkID: checkID, raw: $0) })
+                .compactMap({ line -> String? in
+                    guard case .metric(.findingCount, let value) = line else { return nil }
+                    return value
+                }).first else { return nil }
+            value = count
+        } else {
+            guard let score = check.score else { return nil }
+            value = report.mode == .rubric ? "\(score)/100" : String(score)
+        }
+    }
+}
+
 /// 展示态区分无记录与无法消歧的记录，避免把任何一个缺口显示成通过。
 struct SkillEvaluationHarnessRow: Identifiable {
     enum Status: Equatable {
