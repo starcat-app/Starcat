@@ -16,6 +16,7 @@
 //
 
 import Foundation
+import GRDB
 import Testing
 @testable import Starcat
 
@@ -606,5 +607,342 @@ struct DiskChatHistoryStoreTests {
 
         try store.lruSweep()
         #expect(store.sessionCount == 2)
+    }
+
+    // MARK: - P1-1 增量保存（全仓性能优化专项回归）
+
+    // 追加保存是对话回合的热路径（每回合至少 2 次）。旧实现每次整会话重写：
+    // JSON 重写全部分块并遍历全库统计；SQLite 删光该会话消息再全量重插。
+    // 本区块锁定增量语义：
+    // 1. JSON 只重写受影响的尾部 chunk（mtime 断言即「200 条会话写入量对比」的验收证据）；
+    // 2. 全库字节统计走 delta 维护，口径与 reload() 全量重算严格一致；
+    // 3. 消息数回退（读盘失败降级）走整体重建并清掉多余 chunk，不留脏残留；
+    // 4. SQLite 追加时不删已有行（rowid 不变），回退时清掉多余 ordinal。
+
+    /// 会话 chunk 文件路径（与实现侧 `%06d.json` 命名一一对应）。
+    private func chunkURL(_ root: URL, sessionId: UUID, index: Int) -> URL {
+        root.appendingPathComponent("octo")
+            .appendingPathComponent("demo")
+            .appendingPathComponent(sessionId.uuidString)
+            .appendingPathComponent("chunks")
+            .appendingPathComponent(String(format: "%06d.json", index))
+    }
+
+    private func setMtime(_ url: URL, to date: Date) throws {
+        try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
+    }
+
+    /// mtime 读回。断言一律用相对比较：任何重写都会把 mtime 推到当前时间
+    /// （与 1970 基准差 5 亿秒以上），1 秒容差只吸收文件系统的时间格式化误差。
+    private func mtimeOf(_ url: URL) throws -> Date {
+        try #require(try FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date)
+    }
+
+    /// 在既有会话尾部追加一条消息——对话回合的唯一真实形态（RepoAIChatViewModel 只在尾部追加）。
+    private func sessionAppending(_ message: ChatMessage, to session: ChatSession) -> ChatSession {
+        ChatSession(
+            id: session.id,
+            title: session.title,
+            createdAt: session.createdAt,
+            updatedAt: session.updatedAt,
+            messages: session.messages + [message]
+        )
+    }
+
+    /// 用只读第二连接查 chat_messages 的 ordinal → rowid 快照。
+    /// rowid 由 SQLite 按插入顺序分配：删光重插会全部变化，原地保留则不变。
+    private func sqliteRowidSnapshot(_ reader: DatabaseQueue, sessionId: UUID) throws -> [Int: Int64] {
+        try reader.read { db in
+            // 用 Int/Int64.fetchAll（DatabaseValueConvertible 核心取数 API），不依赖
+            // Row 下标的列读取语法；两条查询同 WHERE 同 ORDER，行序一致可 zip。
+            let ordinals = try Int.fetchAll(
+                db,
+                sql: "SELECT ordinal FROM chat_messages WHERE session_id = ? ORDER BY ordinal",
+                arguments: [sessionId.uuidString]
+            )
+            let rowids = try Int64.fetchAll(
+                db,
+                sql: "SELECT rowid FROM chat_messages WHERE session_id = ? ORDER BY ordinal",
+                arguments: [sessionId.uuidString]
+            )
+            return Dictionary(uniqueKeysWithValues: zip(ordinals, rowids))
+        }
+    }
+
+    private func makeReadonlyReader(root: URL) throws -> DatabaseQueue {
+        var config = Configuration()
+        config.readonly = true
+        return try DatabaseQueue(path: root.appendingPathComponent("chat-history.sqlite").path, configuration: config)
+    }
+
+    @Test("P1-1 追加保存只重写受影响的尾部 chunk")
+    func jsonIncrementalSaveOnlyTouchesTailChunks() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+
+        // 200 条 = 10 个整满 chunk（messagesPerChunk = 20），对应验收口径的会话量级。
+        let base = makeSession(messageCount: 200)
+        try store.saveSession(owner: "octo", repo: "demo", session: base)
+
+        // 把全部落盘文件 mtime 固定到 1970 基准；此后被重写的文件 mtime 会跳到当前时间。
+        let oldDate = Date(timeIntervalSince1970: 1000)
+        let metadataURL = root.appendingPathComponent("octo").appendingPathComponent("demo")
+            .appendingPathComponent(base.id.uuidString).appendingPathComponent("metadata.json")
+        let indexURL = root.appendingPathComponent("octo").appendingPathComponent("demo")
+            .appendingPathComponent("index.json")
+        for index in 0..<10 { try setMtime(chunkURL(root, sessionId: base.id, index: index), to: oldDate) }
+        try setMtime(metadataURL, to: oldDate)
+        try setMtime(indexURL, to: oldDate)
+
+        // 回合 1：追加第 201 条 → 落在新 chunk 10，chunk 0-9 不得重写。
+        let session = sessionAppending(
+            ChatMessage(id: UUID(), role: .user, content: "msg-200", timestamp: Date()),
+            to: base
+        )
+        try store.saveSession(owner: "octo", repo: "demo", session: session)
+        for index in 0..<10 {
+            #expect(
+                try mtimeOf(chunkURL(root, sessionId: base.id, index: index)).timeIntervalSince(oldDate) < 1,
+                "chunk \(index) 不应被追加保存重写"
+            )
+        }
+        #expect(try mtimeOf(chunkURL(root, sessionId: base.id, index: 10)).timeIntervalSince(oldDate) > 1000)
+        #expect(try mtimeOf(metadataURL).timeIntervalSince(oldDate) > 1000)
+        #expect(try mtimeOf(indexURL).timeIntervalSince(oldDate) > 1000)
+
+        // 回合 2：再追加第 202 条 → chunk 10 变为部分填充，增量重写仍只落它自己。
+        let session2 = sessionAppending(
+            ChatMessage(id: UUID(), role: .assistant, content: "msg-201", timestamp: Date()),
+            to: session
+        )
+        try store.saveSession(owner: "octo", repo: "demo", session: session2)
+        for index in 0..<10 {
+            #expect(
+                try mtimeOf(chunkURL(root, sessionId: base.id, index: index)).timeIntervalSince(oldDate) < 1,
+                "chunk \(index) 不应被第二轮追加重写"
+            )
+        }
+        #expect(try mtimeOf(chunkURL(root, sessionId: base.id, index: 10)).timeIntervalSince(oldDate) > 1000)
+
+        // 写入面收窄的同时内容必须完整：全量读回逐位校验首、中、尾。
+        let loaded = try #require(try store.loadSession(owner: "octo", repo: "demo", sessionId: base.id))
+        #expect(loaded.messages.count == 202)
+        #expect(loaded.messages[0].content == "msg-0")
+        #expect(loaded.messages[200].content == "msg-200")
+        #expect(loaded.messages[201].content == "msg-201")
+    }
+
+    @Test("P1-1 增量保存后统计与全量重算一致")
+    func jsonIncrementalSaveKeepsStatsConsistent() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+
+        let base = makeSession(messageCount: 200)
+        try store.saveSession(owner: "octo", repo: "demo", session: base)
+        let afterFull = store.totalBytes
+        store.reload()
+        #expect(store.totalBytes == afterFull, "全量路径的统计 delta 必须与重算口径一致")
+
+        let session = sessionAppending(
+            ChatMessage(id: UUID(), role: .user, content: "msg-200", timestamp: Date()),
+            to: base
+        )
+        try store.saveSession(owner: "octo", repo: "demo", session: session)
+        // 先快照增量维护值再 reload：计数累加逻辑发生在保存内，reload 之后断言会掩盖
+        // 维护值本身的错误（reload 全量重算总能得到正确值）。
+        let sessionCountAfterSave = store.sessionCount
+        let repoCountAfterSave = store.repoCount
+        let afterIncrement = store.totalBytes
+        store.reload()
+        #expect(store.totalBytes == afterIncrement, "增量路径的统计 delta 必须与重算口径一致")
+        #expect(sessionCountAfterSave == 1, "追加保存不得重复累加会话计数")
+        #expect(repoCountAfterSave == 1)
+        #expect(store.sessionCount == 1)
+        #expect(store.repoCount == 1)
+    }
+
+    @Test("P1-1 消息数回退走整体重建并清掉多余 chunk")
+    func jsonTruncatedSaveRebuildsAndCleansChunks() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+
+        let base = makeSession(messageCount: 200)
+        try store.saveSession(owner: "octo", repo: "demo", session: base)
+
+        // 读盘失败降级时 VM 会以内存窗口整会话重存（persistedMessages ?? messages）。
+        // 消息数回退必须整体重建：若残留尾部 chunk，读取端按 metadata 计数虽不会读到，
+        // 但残留会污染下一次全量重建的目录大小统计。
+        let truncated = ChatSession(
+            id: base.id,
+            title: base.title,
+            createdAt: base.createdAt,
+            updatedAt: base.updatedAt,
+            messages: Array(base.messages[0..<12])
+        )
+        try store.saveSession(owner: "octo", repo: "demo", session: truncated)
+
+        let loaded = try #require(try store.loadSession(owner: "octo", repo: "demo", sessionId: base.id))
+        #expect(loaded.messages.count == 12)
+        let chunksDir = root.appendingPathComponent("octo").appendingPathComponent("demo")
+            .appendingPathComponent(base.id.uuidString).appendingPathComponent("chunks")
+        let remaining = try FileManager.default.contentsOfDirectory(atPath: chunksDir.path).sorted()
+        #expect(remaining == ["000000.json"], "回退重建后只应剩 1 个 chunk，实际：\(remaining)")
+    }
+
+    @Test("P1-1 消息数不变时只更新 metadata 不触碰 chunk")
+    func jsonSameCountSaveSkipsChunks() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+
+        // 21 条 = 1 个整满 chunk + 1 个含最后一条的非整块：同数保存若错误地按
+        // oldCount 重写「受影响 chunk」，非整块 chunk 1 必然被触碰，正好暴露该缺陷
+        // （200 条整除边界测不出来）。
+        let base = makeSession(messageCount: 21)
+        try store.saveSession(owner: "octo", repo: "demo", session: base)
+
+        let oldDate = Date(timeIntervalSince1970: 1000)
+        for index in 0..<2 { try setMtime(chunkURL(root, sessionId: base.id, index: index), to: oldDate) }
+
+        // 取消 / 失败路径会以相同消息列表补存标题与时间戳：消息内容没变，chunk 不得重写。
+        let renamed = ChatSession(
+            id: base.id,
+            title: "renamed",
+            createdAt: base.createdAt,
+            updatedAt: base.updatedAt.addingTimeInterval(5),
+            messages: base.messages
+        )
+        try store.saveSession(owner: "octo", repo: "demo", session: renamed)
+
+        for index in 0..<2 {
+            #expect(
+                try mtimeOf(chunkURL(root, sessionId: base.id, index: index)).timeIntervalSince(oldDate) < 1,
+                "chunk \(index) 不应被同内容保存重写"
+            )
+        }
+        let loaded = try #require(try store.loadSession(owner: "octo", repo: "demo", sessionId: base.id))
+        #expect(loaded.title == "renamed")
+        #expect(loaded.messages.count == 21)
+    }
+
+    @Test("P1-1 SQLite 追加保存保留已有行（rowid 不变）")
+    func sqliteIncrementalSavePreservesExistingRows() throws {
+        let (store, root) = try makeIsolatedSQLiteStore()
+        defer { cleanup(root) }
+
+        let base = makeSession(messageCount: 200)
+        try store.saveSession(owner: "octo", repo: "demo", session: base)
+
+        // base 落盘后再插入占位会话抬高全表 rowid 上限：旧实现删光重插时 SQLite 从
+        // 剩余 max(rowid)+1 重新分配，占位必须插在 base 之后才能让重插的 rowid 落到
+        // 新空间、与原值不同——否则删光后的重插会复用相同 rowid，破坏行为测不出来。
+        let placeholder = makeSession(messageCount: 5)
+        try store.saveSession(owner: "octo", repo: "other", session: placeholder)
+
+        let reader = try makeReadonlyReader(root: root)
+        let before = try sqliteRowidSnapshot(reader, sessionId: base.id)
+        #expect(before.count == 200)
+
+        let session = sessionAppending(
+            ChatMessage(id: UUID(), role: .user, content: "msg-200", timestamp: Date()),
+            to: base
+        )
+        try store.saveSession(owner: "octo", repo: "demo", session: session)
+
+        let after = try sqliteRowidSnapshot(reader, sessionId: base.id)
+        // 旧实现删光重插会让全部 rowid 变化；增量路径必须逐行原地保留。
+        for (ordinal, rowid) in before {
+            #expect(after[ordinal] == rowid, "ordinal \(ordinal) 的行不应被追加保存删掉重插")
+        }
+        #expect(after.count == 201)
+
+        let loaded = try #require(try store.loadSession(owner: "octo", repo: "demo", sessionId: base.id))
+        #expect(loaded.messages.count == 201)
+        #expect(loaded.messages[0].content == "msg-0")
+        #expect(loaded.messages[200].content == "msg-200")
+    }
+
+    @Test("P1-1 SQLite 消息数回退按传入内容重建并清掉多余 ordinal 行")
+    func sqliteTruncatedSaveDeletesTailRows() throws {
+        let (store, root) = try makeIsolatedSQLiteStore()
+        defer { cleanup(root) }
+
+        let base = makeSession(messageCount: 200)
+        try store.saveSession(owner: "octo", repo: "demo", session: base)
+
+        // 读盘失败降级的截断窗口：传入即权威——前缀必须按传入内容重写（而非保留旧
+        // 内容），多余 ordinal 删掉，落盘状态与旧全量重插完全等价。传入消息用全新
+        // 内容，才能区分「落盘传入值」和「落盘旧前缀」。
+        let freshMessages = (0..<12).map { index in
+            ChatMessage(id: UUID(), role: .user, content: "fresh-\(index)", timestamp: Date())
+        }
+        let truncated = ChatSession(
+            id: base.id,
+            title: base.title,
+            createdAt: base.createdAt,
+            updatedAt: base.updatedAt,
+            messages: freshMessages
+        )
+        try store.saveSession(owner: "octo", repo: "demo", session: truncated)
+
+        let loaded = try #require(try store.loadSession(owner: "octo", repo: "demo", sessionId: base.id))
+        #expect(loaded.messages.count == 12)
+        #expect(loaded.messages[0].content == "fresh-0", "前缀必须按传入内容落盘")
+        #expect(loaded.messages[11].content == "fresh-11", "前缀必须按传入内容落盘")
+    }
+
+    @Test("P1-1 chunks 目录缺失时追加保存降级全量重建恢复前缀")
+    func jsonMissingChunksDirRebuildsPrefixOnAppend() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+
+        let base = makeSession(messageCount: 40)
+        try store.saveSession(owner: "octo", repo: "demo", session: base)
+
+        // 异常态：会话目录在、metadata 在，但前缀 chunk 已丢失（如外部清理误删）。
+        // 增量写无法恢复前缀（旧全量重建路径可以），必须降级整体重建，否则追加后
+        // [0, 40) 段永久读不回来——数据完整性优先于写入量优化。
+        let chunksDir = root.appendingPathComponent("octo").appendingPathComponent("demo")
+            .appendingPathComponent(base.id.uuidString).appendingPathComponent("chunks")
+        try FileManager.default.removeItem(at: chunksDir)
+
+        let session = sessionAppending(
+            ChatMessage(id: UUID(), role: .user, content: "msg-40", timestamp: Date()),
+            to: base
+        )
+        try store.saveSession(owner: "octo", repo: "demo", session: session)
+
+        let loaded = try #require(try store.loadSession(owner: "octo", repo: "demo", sessionId: base.id))
+        #expect(loaded.messages.count == 41)
+        #expect(loaded.messages[0].content == "msg-0", "重建必须恢复丢失的前缀 chunk")
+        #expect(loaded.messages[39].content == "msg-39")
+        #expect(loaded.messages[40].content == "msg-40")
+    }
+
+    @Test("P1-1 metadata messageCount 损坏为负数时重建且不崩溃")
+    func jsonNegativeMetadataCountRebuildsInsteadOfCrashing() throws {
+        let (store, root) = try makeIsolatedStore()
+        defer { cleanup(root) }
+
+        let base = makeSession(messageCount: 30)
+        try store.saveSession(owner: "octo", repo: "demo", session: base)
+
+        // 模拟 metadata 可正常解码但 messageCount 被外部改坏为负：负 oldCount 若直接
+        // 进入增量路径会产生负下标崩溃，必须归一化按损坏处理走整体重建。
+        let metadataURL = root.appendingPathComponent("octo").appendingPathComponent("demo")
+            .appendingPathComponent(base.id.uuidString).appendingPathComponent("metadata.json")
+        var object = (try JSONSerialization.jsonObject(with: Data(contentsOf: metadataURL), options: [])) as? [String: Any] ?? [:]
+        object["messageCount"] = -5
+        try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted]).write(to: metadataURL)
+
+        let session = sessionAppending(
+            ChatMessage(id: UUID(), role: .user, content: "msg-30", timestamp: Date()),
+            to: base
+        )
+        try store.saveSession(owner: "octo", repo: "demo", session: session)
+
+        let loaded = try #require(try store.loadSession(owner: "octo", repo: "demo", sessionId: base.id))
+        #expect(loaded.messages.count == 31)
+        #expect(loaded.messages[0].content == "msg-0")
+        #expect(loaded.messages[30].content == "msg-30")
     }
 }
