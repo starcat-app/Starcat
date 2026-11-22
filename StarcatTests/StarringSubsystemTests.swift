@@ -169,10 +169,12 @@ struct StarringSubsystemTests {
             try db.execute(
                 sql: """
                 INSERT INTO repo_embeddings
-                    (repo_id, model, dimensions, embedding, snapshot_json, updated_at)
-                VALUES (?, 'test-model', 1, ?, '{}', '2026-10-15T00:00:00Z')
+                    (repo_id, model, dimensions, embedding, snapshot_payload, updated_at)
+                VALUES (?, 'test-model', 1, ?, ?, '2026-10-15T00:00:00Z')
                 """,
-                arguments: [saved.id, Data([0, 0, 0, 0])]
+                // snapshot_payload 在 dev 侧已是压缩 BLOB；未压缩 JSON bytes 经 unpack 原样透传，
+                // 本 fixture 只验证 unstar 时该行被删除，内容无语义要求
+                arguments: [saved.id, Data([0, 0, 0, 0]), Data("{}".utf8)]
             )
             try db.execute(
                 sql: """
