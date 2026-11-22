@@ -13,6 +13,7 @@ struct RepoSkillBadge: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var workspaceWindow = WorkspaceSceneWindowReference()
 
     var body: some View {
@@ -20,6 +21,10 @@ struct RepoSkillBadge: View {
         let presence = store.presence(for: repo)
         // 只有拿到识别结果才允许点开；检测失败保留点开重试，避免胶囊变成死入口。
         let canOpen = presence == .contains || store.errors[repo.id] != nil
+        // 退场过渡自带动画，需要显式尊重应用内动画开关。
+        let removalTransition: AnyTransition = dependencies.settings.disableAnimations
+            ? .identity
+            : .opacity.animation(.easeOut(duration: reduceMotion ? 0.06 : 0.16))
         Group {
             if presence != .absent {
                 Button {
@@ -46,6 +51,7 @@ struct RepoSkillBadge: View {
                 .disabled(!canOpen)
                 .opacity(canOpen ? 1 : 0.6)
                 .help(store.errors[repo.id] ?? String.l10n("repo.skills.preview.title"))
+                .transition(.asymmetric(insertion: .identity, removal: removalTransition))
             }
         }
         .background(WorkspaceSceneWindowReader(reference: workspaceWindow, minimumContentSize: nil))
