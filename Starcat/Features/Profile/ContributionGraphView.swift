@@ -194,12 +194,12 @@ struct ContributionGraphView: View {
                             cell: isGridVisible && day != nil ? hoveredPosition.map(geometry.rect(at:)) : nil
                         ) {
                             if let day {
+                                let palette = ContributionPalette.palette(for: colorScheme, style: style)
                                 ContributionTooltipCard(
                                     metrics: ContributionTooltipMetrics(
                                         day: day, weeks: payload?.weeks, grid: grid, locale: locale
                                     ),
-                                    color: ContributionPalette.palette(for: colorScheme, style: style)
-                                        .color(for: day.contributionLevel),
+                                    color: palette.tooltipColor(for: day.contributionLevel, scheme: colorScheme),
                                     detail: dayDetail
                                 )
                             }
@@ -815,11 +815,7 @@ private struct SnakeFrameImageView: View {
 
 /// 贡献草坪颜色调色板（5 档 × 2 主题）。
 ///
-/// 严格按照 GitHub 主页色值：
-/// - light: `#ebedf0` (none) / `#9be9a8` / `#40c463` / `#30a14e` / `#216e39`
-/// - dark : `#161b22` (none) / `#0e4429` / `#006d32` / `#26a641` / `#39d353`
-///
-/// 拆成独立结构而非散落 hex 字符串：①便于单测；②未来用户自定义主题时只换这一处。
+/// 亮色沿用 GitHub 色板。暗色提亮低档绿，使小方块在侧栏与悬浮卡上都能辨识。
 struct ContributionPalette {
     let none: Color
     let noneBorder: Color?
@@ -855,6 +851,10 @@ struct ContributionPalette {
         }
     }
 
+    func tooltipColor(for level: ContributionLevel, scheme: ColorScheme) -> Color {
+        scheme == .dark && level == .none ? .secondary : color(for: level)
+    }
+
     static let light = ContributionPalette(
         none: Color(hex6: 0xebedf0),
         noneBorder: nil,
@@ -865,22 +865,22 @@ struct ContributionPalette {
     )
 
     static let dark = ContributionPalette(
-        none: Color(hex6: 0x161b22),
+        none: Color(hex6: 0x373e47),
         noneBorder: nil,
-        l1:   Color(hex6: 0x0e4429),
-        l2:   Color(hex6: 0x006d32),
-        l3:   Color(hex6: 0x26a641),
-        l4:   Color(hex6: 0x39d353)
+        l1:   Color(hex6: 0x369e62),
+        l2:   Color(hex6: 0x43b875),
+        l3:   Color(hex6: 0x5cd485),
+        l4:   Color(hex6: 0x88e9a6)
     )
 
-    /// Owner Dark 的空格子比卡片底色亮一档，并带轻描边；绿色等级沿用 GitHub 深色调色板。
+    /// Owner Dark 的空格子有描边，便于从卡片底色里区分独立方格。
     static let ownerCardDark = ContributionPalette(
-        none: Color(hex6: 0x2b3139),
-        noneBorder: Color(hex6: 0x3b4550),
-        l1: Color(hex6: 0x0e4429),
-        l2: Color(hex6: 0x006d32),
-        l3: Color(hex6: 0x26a641),
-        l4: Color(hex6: 0x39d353)
+        none: dark.none,
+        noneBorder: Color(hex6: 0x4a535f),
+        l1: dark.l1,
+        l2: dark.l2,
+        l3: dark.l3,
+        l4: dark.l4
     )
 
     static func palette(

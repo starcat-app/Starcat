@@ -109,6 +109,27 @@ struct ContributionGridTests {
         #expect(ContributionGrid(weeks: nil, range: .recent30).isPlaceholder)
     }
 
+    @Test("暗色低档色块与空格和卡片底分离，四档贡献逐级提亮")
+    func darkContributionContrast() {
+        var environment = EnvironmentValues()
+        environment.colorScheme = .dark
+        func luminance(_ color: Color) -> Double {
+            let resolved = color.resolve(in: environment)
+            return 0.2126 * Double(resolved.linearRed)
+                + 0.7152 * Double(resolved.linearGreen)
+                + 0.0722 * Double(resolved.linearBlue)
+        }
+
+        let palette = ContributionPalette.dark
+        let levels: [ContributionLevel] = [.none, .firstQuartile, .secondQuartile, .thirdQuartile, .fourthQuartile]
+        let ordered = levels.map { luminance(palette.color(for: $0)) }
+        let panel = luminance(StarcatSurface.panel(colorScheme: .dark))
+        let weakest = luminance(palette.tooltipColor(for: .firstQuartile, scheme: .dark))
+        #expect(zip(ordered, ordered.dropFirst()).allSatisfy { $0 < $1 })
+        #expect((ordered[1] + 0.05) / (ordered[0] + 0.05) >= 3)
+        #expect((weakest + 0.05) / (panel + 0.05) >= 3)
+    }
+
     @Test("缩放后日期命中准确，间隙与居中留白不命中", arguments: ContributionGraphRange.allCases)
     func scaledHitTesting(range: ContributionGraphRange) {
         for width: CGFloat in [212, 292, 440] {
