@@ -45,7 +45,6 @@ Search Center 内容过滤、误杀控制、来源胶囊筛选、主题适配与
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `codex/http-only-bridge` | 本地 `../Starcat-http-only-bridge`；CLI、用户手册各在其 `supports/` 下使用同名独立 worktree | 将 Starcat 的 CLI、MCP、决策 REST 服务统一为 HTTP，并迁移旧 CLI 连接地址。 | `开发中`；2026-11-22 从本地 `dev` 创建，App `b443df3a`、CLI `4e0d274`、手册 `14d991f`。 | 验证本机及局域网调用，验收后分别合回各仓 `dev`。 |
 | `dong4j/docs-app-wide-performance` | 本地 Orca worktree：`/Users/dong4j/orca/workspaces/Starcat/bonnethead` | 发版前全仓性能审查与审查 Skill。 | `已合并`；2026-11-22 从 `d436acf6` 快进同步本地 `dev`，审查 Skill 合回本地 `dev`。 | 保留分支与 worktree；性能审查报告落盘及后续清理按 dong4j 授权处理。 |
 | `codex/skill-evaluator` | 本地 `../Starcat-skill-evaluator`；无远端专项分支 | 基于 `origin/dev@d436acf6`，为 Direct 的仓库 Skills 面板和本机管理窗口加入静态及 AI 评估、批量报告与 CLI/MCP 能力。 | `已合并`；2026-11-22 两次将 `dev` 合入本分支（`388f3bf8` / `4a49731e`），解决能力覆盖清单 CAP 编号、`StarcatMCPPublicFacade` init 与 `BRANCH.md` 冲突，并以 `eee16eea` 修复 `tasks` 初始化编译错误；在合并树上通过 121 项定向测试及双渠道构建，再经 `dab386de` 以 merge commit 合回本地 `dev`（未 push）。仍待 dong4j 功能与 UI 验收。 | 保留本地分支与 worktree 供验收；如需删除或推送远端，等待 dong4j 单独授权。 |
 | `codex/repo-list-loading-motion` | 本地，`../Starcat-repo-list-loading-motion` | 从 `dev@df9db309` 统一星标、探索与活动中栏的列表切换及加载衔接。按[专题清单](docs/4-工程进度/中栏列表加载动效专题/实施Checklist.md)执行。 | `已合并`；2026-11-22 将 `dev` 合入本分支并解决 `HomeView` / `RepoListView` 两处冲突（保留 dev 洞察全窗口覆盖与专题 `MiddleListPageFade` 动效），再 fast-forward 合回 `dev`。 | 保留本地分支与 worktree；如需删除，等待 dong4j 单独授权。 |
@@ -114,6 +113,7 @@ worktree 干净且无独有本地数据，以非强制方式删除后端专项 w
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
+| 主仓及 CLI、用户手册的 `codex/http-only-bridge` | 已合入各自本地 `dev`；三个专项分支及 `../Starcat-http-only-bridge` 下的 worktree 保留。 | 2026-11-22 按 dong4j 授权合并 HTTP 服务改造：主仓合并提交 `9c3a3169`，CLI `9669693`，用户手册 `95cab9f`。主仓并行改动已保留，未推送；跨设备配对、设置页及真实 Laya 请求待实机验收。 |
 | `dong4j/check-dev-branch-base` | 已合入本地 `dev` 并推送远端；分支保留，待 dong4j 授权后删除。 | 2026-11-22 按 dong4j 授权修复 Skill 工作台原生分栏测试的宿主环境崩溃（补齐 AppSettings / AuthSession / StarcatCommandRouter 注入）；测试提交 `f4c0b32e` 经 fast-forward 合入本地 `dev` 并推送远端。定向 6 项与全量 4766 项、520 Suite 测试通过，顺带解决 `dong4j/feat-tag-graph-detail` 行遗留的 3 项 Skill 工作台测试失败。 |
 | `dong4j/feat-tag-graph-detail` | 已合入本地 `dev`；分支及 worktree 保留。 | 2026-11-22 按 dong4j 授权合并标签图谱仓库卡片独立详情窗口入口；功能提交 `02873c1`。全量测试有 3 项 Skill 工作台测试因宿主进程崩溃失败，定向复跑被中断；人工界面及译文审核待完成。 |
 | `codex/knowledge-profile` | 已合入本地 `dev` 并删除 `../Starcat-knowledge-profile` 和本地分支。 | 2026-11-21 按 dong4j 授权，专项分支头 `9690682d` 经 `e9af0e3f` 合入，包含 #210 的个人知识画像、洞察双栏布局和年报共享统计。151 项定向测试和双渠道 Debug 构建通过。确认独有提交为 0、专项 worktree 干净、Secrets 与主工作区一致后，经 `git worktree remove` 和 `git branch -d` 清理。后续在主工作区 `dev` 开发。 |
