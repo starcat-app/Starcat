@@ -45,15 +45,28 @@ struct ReleaseWorkspaceTests {
         #expect(builds.filter(ReleaseArtifactFilter(platform: .windows, architecture: .intel).matches).isEmpty)
     }
 
-    @Test("下载文件区区分安装包、压缩包、签名和普通文件")
+    @Test("下载文件区区分平台安装包、压缩包、签名、校验文件和普通文件")
     func assetIconsUseFileTypes() {
-        let jsonSource = RepoFileTypeIcon.iconSource(forFileName: "latest.json")
-        #expect(ReleaseAssetIcon.workspaceSource(for: "app-arm64.dmg") == .business(.storage))
-        #expect(ReleaseAssetIcon.workspaceSource(for: "app-arm64.rpm") == .business(.terminal))
-        #expect(ReleaseAssetIcon.workspaceSource(for: "app.tar.gz") == .business(.fileArchive))
-        #expect(ReleaseAssetIcon.workspaceSource(for: "app.rpm.SIG") == .system("checkmark.seal"))
-        #expect(ReleaseAssetIcon.workspaceSource(for: "latest.json") == jsonSource)
-        #expect(ReleaseAssetIcon.workspaceSource(for: "data.unknownext") == .business(.file))
+        let cases: [(filename: String, source: BusinessIcon.Source)] = [
+            ("app-arm64.DMG", .asset("apple")),
+            ("app-universal.pkg", .asset("apple")),
+            ("app-x64.exe", .asset("windows11")),
+            ("app-x64.msi", .asset("windows11")),
+            ("app-arm64.rpm", .asset("linux")),
+            ("app-x64.deb", .asset("linux")),
+            ("app-x64.AppImage", .asset("linux")),
+            ("app-arm64.apk", .asset("android")),
+            ("app.tar.gz", .business(.fileArchive)),
+            ("app.rpm.SIG", .system("checkmark.seal")),
+            ("app.zip.sha256", .system("number")),
+            ("latest.json", .system("curlybraces")),
+            ("data.unknownext", .business(.file)),
+        ]
+        for (filename, source) in cases {
+            #expect(ReleaseAssetIcon.workspaceStyle(for: filename).source == source)
+        }
+        #expect(ReleaseAssetIcon.workspaceStyle(for: "app.exe").keepsOriginalColors)
+        #expect(ReleaseAssetIcon.workspaceStyle(for: "app.rpm").keepsOriginalColors)
         #expect(ReleaseAssetIcon.iconSource(for: "latest.json") == .business(.file))
     }
 

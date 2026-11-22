@@ -12,6 +12,7 @@ import SwiftUI
 struct RepoFileIcon: View {
     private let source: BusinessIcon.Source
     private let size: CGFloat
+    private let templateTint: Color?
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
@@ -19,14 +20,16 @@ struct RepoFileIcon: View {
         self.init(source: RepoFileTypeIcon.iconSource(forFileName: name), size: size)
     }
 
-    init(source: BusinessIcon.Source, size: CGFloat) {
+    init(source: BusinessIcon.Source, size: CGFloat, templateTint: Color? = nil) {
         self.source = source
         self.size = size
+        self.templateTint = templateTint
     }
 
     var body: some View {
         Group {
-            if case .asset(let asset) = source, !asset.hasPrefix("Business"), NSImage(named: asset) != nil {
+            if templateTint == nil, case .asset(let asset) = source,
+               !asset.hasPrefix("Business"), NSImage(named: asset) != nil {
                 Image(asset)
                     .renderingMode(.original)
                     .resizable()
@@ -40,7 +43,7 @@ struct RepoFileIcon: View {
                     source: source.isAsset && NSImage(named: assetName(source)) == nil ? .business(.file) : source,
                     pointSize: interfaceScale.scaled(size)
                 )
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(templateTint ?? Color.secondary)
             }
         }
         .frame(width: interfaceScale.scaled(size), height: interfaceScale.scaled(size))
