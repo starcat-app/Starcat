@@ -126,10 +126,13 @@ final class DiskChatHistoryStore {
     var sessionCount: Int { backend.sessionCount }
     var repoCount: Int { backend.repoCount }
 
+    /// - Parameter sqliteMaxTotalBytes: 仅测试注入：SQLite 后端 LRU 配额覆盖；
+    ///   生产保持默认 100 MiB，普通调用点不需要也不应该传。
     init(
         fileManager: FileManager = .default,
         rootOverride: URL? = nil,
-        storageKind: ChatHistoryStorageKind = .jsonFiles
+        storageKind: ChatHistoryStorageKind = .jsonFiles,
+        sqliteMaxTotalBytes: Int64? = nil
     ) {
         self.fileManager = fileManager
         self.rootOverride = rootOverride
@@ -144,7 +147,11 @@ final class DiskChatHistoryStore {
         case .jsonFiles:
             self.backend = JSONChatHistoryStorageBackend(fileManager: fileManager, rootOverride: rootOverride)
         case .sqlite:
-            self.backend = SQLiteChatHistoryStorageBackend(fileManager: fileManager, rootOverride: rootOverride)
+            self.backend = SQLiteChatHistoryStorageBackend(
+                fileManager: fileManager,
+                rootOverride: rootOverride,
+                maxTotalBytes: sqliteMaxTotalBytes ?? SQLiteChatHistoryStorageBackend.defaultMaxTotalBytes
+            )
         }
         backend.reload()
     }
@@ -983,7 +990,10 @@ private final class JSONChatHistoryStorageBackend: ChatHistoryStorageBackend {
 @MainActor
 private final class SQLiteChatHistoryStorageBackend: ChatHistoryStorageBackend {
 
-    private let maxTotalBytes: Int64 = 100 * 1024 * 1024
+    /// 聊天历史配额（逻辑字节）。生产默认 100 MiB；测试经 facade 注入小配额驱动淘汰路径。
+    /// 不加 private：facade 需要读取默认值（类本身 private，可见性已限制在文件内）。
+    nonisolated static let defaultMaxTotalBytes: Int64 = 100 * 1024 * 1024
+    private let maxTotalBytes: Int64
     var suspendsRetention = false
 
     private(set) var totalBytes: Int64 = 0
@@ -995,7 +1005,12 @@ private final class SQLiteChatHistoryStorageBackend: ChatHistoryStorageBackend {
     private let dbQueue: DatabaseQueue?
     private let dbURL: URL?
 
-    init(fileManager: FileManager = .default, rootOverride: URL? = nil) {
+    init(
+        fileManager: FileManager = .default,
+        rootOverride: URL? = nil,
+        maxTotalBytes: Int64 = SQLiteChatHistoryStorageBackend.defaultMaxTotalBytes
+    ) {
+        self.maxTotalBytes = maxTotalBytes
         self.fileManager = fileManager
         self.rootOverride = rootOverride
 
@@ -1153,25 +1168,41 @@ private final class SQLiteChatHistoryStorageBackend: ChatHistoryStorageBackend {
         reload()
     }
 
+    /// 按配额淘汰最旧会话。计量用「逻辑字节」（会话文本的 UTF-8 字节数）而非 db 文件物理大小：
+    /// SQLite 事务内的 DELETE 只把页标记为空闲、不缩文件（WAL 甚至先变大），
+    /// 用物理大小做 while 停止条件会恒真，最坏把全部会话删光。
+    /// 淘汰语义与 JSON 后端对齐：updated_at 最旧优先、逐条扣减、删到达标即停。
     func lruSweep() throws {
         guard !suspendsRetention, totalBytes > maxTotalBytes, let dbQueue else { return }
-        let dbURL = dbURL
-        _ = try dbQueue.write { db in
-            while Self.databaseFileSize(dbURL: dbURL) > maxTotalBytes {
+        // 门禁上的 totalBytes 是物理大小，可能因碎片 / WAL 虚高；用逻辑字节复核，
+        // 未超配额直接返回，避免无意义的空扫和 VACUUM。
+        var remainingBytes = try dbQueue.read { db in
+            try Self.logicalTotalBytes(db: db)
+        }
+        guard remainingBytes > maxTotalBytes else { return }
+        var deletedAny = false
+        try dbQueue.write { db in
+            while remainingBytes > maxTotalBytes {
                 guard let oldest = try ChatSessionSQLRow
                     .order(Column("updated_at").asc)
                     .fetchOne(db) else {
                     break
                 }
+                remainingBytes -= try Self.logicalSessionBytes(db: db, sessionId: oldest.id)
+                // FK cascade 会级联删除该会话的 chat_messages 行。
                 try ChatSessionSQLRow
                     .filter(Column("id") == oldest.id)
                     .deleteAll(db)
+                deletedAny = true
             }
         }
-        try dbQueue.writeWithoutTransaction { db in
-            try db.execute(sql: "VACUUM")
+        // VACUUM 不能在事务内执行，且只在确有删除时才值得付出整库重写的代价。
+        if deletedAny {
+            try dbQueue.writeWithoutTransaction { db in
+                try db.execute(sql: "VACUUM")
+            }
+            reload()
         }
-        reload()
     }
 
     func closeForMigration() throws {
@@ -1312,6 +1343,30 @@ private final class SQLiteChatHistoryStorageBackend: ChatHistoryStorageBackend {
         return urls.reduce(Int64(0)) { partial, url in
             partial + Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
         }
+    }
+
+    /// 单会话逻辑字节 SQL 片段（依赖外层 `FROM chat_sessions s` 别名）。
+    /// LENGTH(CAST(x AS BLOB)) 取 UTF-8 字节数；可空列用 COALESCE 归零，空串计 0。
+    /// 逻辑字节是配额近似值：不含行头 / 索引 / WAL 等物理开销，但与 JSON 后端的
+    /// 计量口径（内容字节数）一致，足够做淘汰决策。
+    private nonisolated static let sessionLogicalBytesSQL = """
+        LENGTH(CAST(s.title AS BLOB))
+        + LENGTH(CAST(COALESCE(s.carried_over_summary, '') AS BLOB))
+        + COALESCE((
+            SELECT SUM(LENGTH(CAST(m.content AS BLOB)) + LENGTH(CAST(COALESCE(m.reasoning, '') AS BLOB)))
+            FROM chat_messages m
+            WHERE m.session_id = s.id
+        ), 0)
+        """
+
+    /// 全库逻辑字节总和，用于配额门禁复核。
+    nonisolated private static func logicalTotalBytes(db: Database) throws -> Int64 {
+        try Int64.fetchOne(db, sql: "SELECT COALESCE(SUM(\(sessionLogicalBytesSQL)), 0) FROM chat_sessions s") ?? 0
+    }
+
+    /// 单会话逻辑字节，用于淘汰时逐条扣减剩余量。
+    nonisolated private static func logicalSessionBytes(db: Database, sessionId: String) throws -> Int64 {
+        try Int64.fetchOne(db, sql: "SELECT \(sessionLogicalBytesSQL) FROM chat_sessions s WHERE s.id = ?", arguments: [sessionId]) ?? 0
     }
 }
 
