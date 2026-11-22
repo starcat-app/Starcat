@@ -112,7 +112,6 @@ struct ContributionGraphView: View {
     /// 旧位图淡出后才交接布局，防止年度图片先被压进两行网格。
     @State private var renderedRange: ContributionGraphRange = .recent90
     @State private var hoveredPosition: GridPosition?
-    @State private var failedDay: ContributionDayKey?
     @State private var isInspecting = false
     @State private var isRangeHovered = false
 
@@ -149,8 +148,7 @@ struct ContributionGraphView: View {
         // 一次视图更新共用日期映射，避免逐格辅助功能描述重复解析整年的日期。
         let grid = ContributionGrid(weeks: payload?.weeks, range: displayedRange)
         let day = hoveredPosition.flatMap { grid.day(at: $0) }
-        let dayKey = detailKey(for: day)
-        let dayDetail: ContributionTooltipDetail = day?.contributionCount == 0 ? .loaded(.empty) : detail(for: dayKey)
+        let dayDetail = detail(for: day)
         VStack(alignment: .leading, spacing: 6) {
             headerRow
 
@@ -174,7 +172,6 @@ struct ContributionGraphView: View {
                             )
                             if position != hoveredPosition {
                                 hoveredPosition = position
-                                failedDay = nil
                             }
                         case .ended:
                             hoveredPosition = nil
@@ -219,11 +216,16 @@ struct ContributionGraphView: View {
                 )
         }
         .opacity(isLoading && payload == nil ? 0.6 : 1.0)
-        .task(id: dayKey) { await loadDetail(for: dayKey) }
+        .task(id: login) {
+            if let login { detailService?.load(login: login, activityRange: selectedRange) }
+        }
         // v4 HOM-SNAKE-MODES：根据玩法 / 数据变化重建 animator
         .onAppear { rebuildAnimator() }
         .onChange(of: settings.snakeStyle) { _, _ in transitionToSelectedStyle() }
-        .onChange(of: selectedRange) { _, _ in transitionToSelectedStyle() }
+        .onChange(of: selectedRange) { _, range in
+            if let login { detailService?.load(login: login, activityRange: range) }
+            transitionToSelectedStyle()
+        }
         .onChange(of: isInspecting) { _, _ in rebuildAnimator() }
         .onChange(of: continuousAnimationsPaused) { _, _ in rebuildAnimator() }
         .onChange(of: renderService.readyRevision) { _, _ in
@@ -244,7 +246,6 @@ struct ContributionGraphView: View {
             hoveredPosition = nil
             rebuildAnimator()
         }
-        .onChange(of: lastFetchedAt) { _, _ in hoveredPosition = nil }
         .onChange(of: login) { _, _ in
             hoveredPosition = nil
             isInspecting = false
@@ -411,26 +412,12 @@ struct ContributionGraphView: View {
         }
     }
 
-    private func detailKey(for day: ContributionDay?) -> ContributionDayKey? {
-        guard isGridVisible, let login, let day, day.contributionCount > 0 else { return nil }
-        return ContributionDayKey(login: login, date: day.date)
-    }
-
-    private func detail(for key: ContributionDayKey?) -> ContributionTooltipDetail {
-        guard let key, let detailService else { return .unavailable }
-        if let activity = detailService.cachedDayActivity(for: key) { return .loaded(activity) }
-        return failedDay == key ? .unavailable : .loading
-    }
-
-    /// 概览即时展示。只在停在同一天时补查明细，让扫过草坪的动作保持纯本地。
-    private func loadDetail(for key: ContributionDayKey?) async {
-        guard let key, let detailService, detailService.cachedDayActivity(for: key) == nil else { return }
-        do {
-            try await Task.sleep(for: .milliseconds(240))
-            try await detailService.loadDayActivity(for: key)
-        } catch {
-            if !Task.isCancelled { failedDay = key }
-        }
+    private func detail(for day: ContributionDay?) -> ContributionTooltipDetail {
+        guard isGridVisible, let day else { return .unavailable }
+        if day.contributionCount == 0 { return .loaded(.empty) }
+        guard let login, let detailService else { return .unavailable }
+        if let activity = detailService.cachedDayActivity(login: login, day: day) { return .loaded(activity) }
+        return detailService.isPrefetchingDayActivity ? .loading : .unavailable
     }
 
     private func dayCountText(_ day: ContributionDay) -> String {
@@ -520,8 +507,9 @@ struct ContributionTooltipCard: View {
             breakdown
         }
         .lineLimit(1)
-        .padding(interfaceScale.scaled(12))
-        .frame(width: interfaceScale.scaled(276))
+        .padding(.horizontal, interfaceScale.scaled(10))
+        .padding(.vertical, interfaceScale.scaled(12))
+        .frame(width: interfaceScale.scaled(240))
         .fixedSize(horizontal: false, vertical: true)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -559,10 +547,10 @@ struct ContributionTooltipCard: View {
         .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: detail)
     }
 
-    private func activityRow(_ label: LocalizedStringKey, count: Int?) -> some View {
+    private func activityRow(_ label: LocalizedStringKey, count: Int32?) -> some View {
         let share = count.flatMap { detail.activity?.share(of: $0) }
         return VStack(alignment: .leading, spacing: interfaceScale.scaled(3)) {
-            HStack(alignment: .firstTextBaseline, spacing: interfaceScale.scaled(8)) {
+            HStack(alignment: .firstTextBaseline, spacing: interfaceScale.scaled(6)) {
                 Text(label)
                     .layoutPriority(1)
                 Spacer(minLength: 0)
@@ -570,7 +558,7 @@ struct ContributionTooltipCard: View {
                     .fontWeight(.semibold)
                 Text(verbatim: share?.formatted(.percent.precision(.fractionLength(0)).locale(locale)) ?? "—")
                     .foregroundStyle(.secondary)
-                    .frame(width: interfaceScale.scaled(42), alignment: .trailing)
+                    .frame(width: interfaceScale.scaled(36), alignment: .trailing)
             }
             .font(interfaceScale.font(.caption))
             .monospacedDigit()
@@ -959,9 +947,6 @@ struct SidebarContributionGraphSection: View {
             // 拆成 bottom 4 + top 8 = 12pt，对称收缩、视觉更聚拢。
             .padding(.bottom, 4)
             .task(id: user.login) {
-                // 用 user.login 作为 task id：账号切换时自动重新加载。
-                // ContributionService / UserProfileService 内部各自做 TTL 与 inflight 互斥，重复调用安全。
-                contributionService.load(login: user.login)
                 userProfileService.load(login: user.login)
             }
         }

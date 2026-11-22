@@ -31,6 +31,7 @@
 //  - **内存**：service 实例持有最新一份 `payload`；@Observable 让 SidebarView 自动重渲染。
 //  - **磁盘**（UserDefaults）：把 payload + 时间戳序列化为 JSON。下次启动先 `restore()`
 //    秒显（避免冷启动空白），再异步触发后台刷新。
+//  - **每日明细**：按当前显示范围批量预拉；仅把 UTC 日期与五个计数存入系统 Caches。
 //  - **TTL**：3 小时。`load(force: true)` 显式强刷（用户点刷新按钮等）。
 //  - **错误处理**：拉取失败保留旧数据 + 设 `lastError`，UI 仍能显示历史草坪 + 一个可选错误标记。
 //
@@ -83,16 +84,28 @@ final class ContributionService {
     /// TTL：3 小时（与 GitHub 草坪刷新粒度同量级，避免无意义高频请求）。
     private let ttl: TimeInterval = 3 * 60 * 60
 
-    /// 当前进行中的 Task；同 login 重复 load 时直接 await 已在飞的请求。
+    /// 同一账号的重复加载共用进行中的请求。
     private var inflightTask: Task<Void, Never>?
 
-    /// 单日明细只存内存，跟随草坪快照刷新或登出失效。
-    private var dayActivities: [ContributionDayKey: ContributionDayActivity] = [:]
+    private var activeLogin: String?
+    private var activityTask: Task<Void, Never>?
+    private var activityCache = ContributionActivityCache()
+    @ObservationIgnored private var activityRange: ContributionGraphRange = .recent90
+    private let activityCacheDirectory: URL
+    private let defaults: UserDefaults
+
+    var isPrefetchingDayActivity: Bool { inflightTask != nil || activityTask != nil }
 
     // MARK: - 初始化
 
-    init(apiClient: GitHubAPIClient) {
+    init(
+        apiClient: GitHubAPIClient,
+        defaults: UserDefaults = .standard,
+        activityCacheDirectory: URL = URL.cachesDirectory.appending(path: "com.starcat.app/contributions")
+    ) {
         self.apiClient = apiClient
+        self.defaults = defaults
+        self.activityCacheDirectory = activityCacheDirectory
     }
 
     // MARK: - 公开 API
@@ -101,50 +114,58 @@ final class ContributionService {
     ///
     /// - Parameters:
     ///   - login: GitHub 登录名（一般是当前登录用户）。
-    ///   - force: true = 跳过 TTL 强制刷新（用户点刷新按钮）；false = 命中 TTL 直接复用缓存。
+    ///   - force: 跳过概览的 TTL；明细保留仍匹配的历史数据。
+    ///   - activityRange: 侧栏提供当前范围，登录或手动刷新时沿用服务内已有范围。
     ///
     /// 行为：
     /// 1. 若内存中无 payload，先尝试从磁盘 restore（秒显历史草坪）。
-    /// 2. 若 !force && 缓存仍在 TTL 内 → 直接返回不发请求。
+    /// 2. 若 !force && 缓存仍在 TTL 内 → 复用概览，仅补预拉明细。
     /// 3. 否则发 GraphQL 请求，成功后更新内存 + 磁盘。
     /// 4. 失败保留旧数据 + 设 `lastError`。
-    func load(login: String, force: Bool = false) {
-        // 先尝试磁盘恢复（首次调用时把上次成功的 payload 秒显出来）
-        if payload == nil {
+    func load(login: String, force: Bool = false, activityRange: ContributionGraphRange? = nil) {
+        let login = login.lowercased()
+        if activeLogin != login {
+            reset(login: nil)
+            activeLogin = login
+            activityCache = .restore(from: activityFile(for: login))
             restoreFromDisk(login: login)
         }
+        if let activityRange { self.activityRange = activityRange }
+        guard inflightTask == nil else { return }
 
-        // TTL 命中且非强制 → 直接 no-op
         if !force, let last = lastFetchedAt, Date().timeIntervalSince(last) < ttl {
+            prefetchDayActivities()
             return
         }
 
-        // 已有 inflight 任务 → 不重复发起
-        if inflightTask != nil { return }
-
-        // 仅在没有缓存时显示 loading，避免后台刷新闪烁
-        if payload == nil {
-            isLoading = true
-        }
+        activityTask?.cancel()
+        activityTask = nil
+        isLoading = payload == nil
 
         inflightTask = Task { [weak self] in
             guard let self else { return }
             defer {
-                self.isLoading = false
-                self.inflightTask = nil
+                // 账号已切换时，新任务接管状态；旧任务不得清掉其句柄或恢复预拉。
+                if !Task.isCancelled {
+                    self.isLoading = false
+                    self.inflightTask = nil
+                    self.prefetchDayActivities()
+                }
             }
             do {
                 let fetched = try await self.apiClient.contributionCalendar(login: login)
+                try Task.checkCancellation()
+                let fetchedAt = Date()
                 self.payload = fetched
-                self.dayActivities.removeAll()
-                self.lastFetchedAt = Date()
+                self.lastFetchedAt = fetchedAt
                 self.lastError = nil
-                self.persistToDisk(login: login, payload: fetched, fetchedAt: Date())
+                self.persistToDisk(login: login, payload: fetched, fetchedAt: fetchedAt)
                 self.onPayloadDidChange?()
                 AppLog.network.info("Contribution calendar fetched: login=\(login, privacy: .public), total=\(fetched.totalContributions, privacy: .public)")
             } catch is CancellationError {
                 AppLog.network.info("Contribution fetch cancelled: login=\(login, privacy: .public)")
             } catch let err as LocalizedError {
+                guard !Task.isCancelled else { return }
                 self.lastError = err
                 AppLog.network.error("Contribution fetch failed: \(err.localizedDescription, privacy: .public)")
             } catch {
@@ -153,32 +174,106 @@ final class ContributionService {
         }
     }
 
-    func cachedDayActivity(for key: ContributionDayKey) -> ContributionDayActivity? {
-        dayActivities[key]
+    /// 悬停只读当前账号的内存计数，且必须与正在展示的草坪总数相符。
+    func cachedDayActivity(login: String, day: ContributionDay) -> ContributionDayActivity? {
+        guard activeLogin == login.lowercased(),
+              let index = ContributionActivityCache.dayIndex(day.date) else { return nil }
+        return activityCache.activity(on: index, matching: day.contributionCount)
     }
 
-    /// 悬停任务由视图取消，快照刷新期间返回的旧明细也不能写入新快照的缓存。
-    func loadDayActivity(for key: ContributionDayKey) async throws {
-        try Task.checkCancellation()
-        guard dayActivities[key] == nil else { return }
-        let snapshot = lastFetchedAt
-        let activity = try await apiClient.contributionDayActivity(for: key)
-        try Task.checkCancellation()
-        guard snapshot == lastFetchedAt else { return }
-        dayActivities[key] = activity
+    /// 最近日期优先。后台任务每批读取最新显示范围，扩展范围时沿用已完成的数据。
+    /// 明细与概览请求串行，刷新或切换账号会取消旧任务，避免旧快照的结果回写。
+    private func prefetchDayActivities() {
+        guard activityTask == nil, let login = activeLogin,
+              let payload, let snapshotAt = lastFetchedAt?.timeIntervalSince1970 else { return }
+        let datedDays = payload.weeks.flatMap(\.contributionDays).compactMap { day in
+            ContributionActivityCache.dayIndex(day.date).map { (index: $0, day: day) }
+        }.sorted { $0.index > $1.index }
+        guard let latestDay = datedDays.first?.index, let earliestDay = datedDays.last?.index else { return }
+        let cacheStart = max(earliestDay, firstDay(in: .year, endingAt: latestDay))
+        let file = activityFile(for: login)
+        var cache = activityCache
+        cache.align(to: cacheStart...latestDay)
+
+        let recentStart = latestDay - 2
+        let refreshRecent = cache.recentSnapshotAt != snapshotAt
+        let pending = datedDays.prefix { $0.index >= cacheStart }.filter { entry in
+            if entry.day.contributionCount == 0 {
+                cache[entry.index] = .empty
+                return false
+            }
+            if cache.activity(on: entry.index, matching: entry.day.contributionCount) == nil {
+                cache[entry.index] = nil
+                return true
+            }
+            return refreshRecent && entry.index >= recentStart
+        }
+        let recentPendingCount = pending.prefix { $0.index >= recentStart }.count
+        if recentPendingCount == 0 { cache.recentSnapshotAt = snapshotAt }
+        publishActivityCache(cache, to: file)
+        guard let first = pending.first, first.index >= firstDay(in: activityRange, endingAt: latestDay) else { return }
+
+        activityTask = Task(priority: .utility) { [weak self] in
+            guard let self else { return }
+            defer { if !Task.isCancelled { self.activityTask = nil } }
+            var remaining = pending[...]
+            do {
+                while !remaining.isEmpty {
+                    let rangeStart = self.firstDay(in: self.activityRange, endingAt: latestDay)
+                    let batch = remaining.prefix(GitHubAPIClient.contributionActivityBatchSize)
+                        .prefix { $0.index >= rangeStart }
+                    guard !batch.isEmpty else { break }
+                    let activities = try await self.apiClient.contributionDayActivities(
+                        login: login, dates: batch.map(\.day.date)
+                    )
+                    try Task.checkCancellation()
+                    var refreshedRecentCount = 0
+                    for entry in batch {
+                        guard let activity = activities[entry.day.date],
+                              activity.calendarCount == entry.day.contributionCount else { continue }
+                        cache[entry.index] = activity
+                        if entry.index >= recentStart { refreshedRecentCount += 1 }
+                    }
+                    if remaining.startIndex == pending.startIndex, refreshedRecentCount == recentPendingCount {
+                        cache.recentSnapshotAt = snapshotAt
+                    }
+                    self.publishActivityCache(cache, to: file)
+                    remaining = remaining.dropFirst(batch.count)
+                }
+            } catch {
+                // 失败停在当前批次，下次加载再补缺；保留已经写完的批次并避免限流时继续打请求。
+                guard !Task.isCancelled else { return }
+                AppLog.network.warning("Contribution activity prefetch failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    private func firstDay(in range: ContributionGraphRange, endingAt latestDay: Int) -> Int {
+        latestDay - (range.dayCount ?? ContributionActivityCache.maximumDayCount) + 1
+    }
+
+    private func publishActivityCache(_ cache: ContributionActivityCache, to file: URL) {
+        guard cache != activityCache else { return }
+        activityCache = cache
+        cache.save(to: file)
     }
 
     /// 清空内存数据（一般用于登出）。磁盘缓存按 login 分桶，登出时也清。
     func reset(login: String?) {
         inflightTask?.cancel()
         inflightTask = nil
+        activityTask?.cancel()
+        activityTask = nil
+        activeLogin = nil
         payload = nil
-        dayActivities.removeAll()
+        activityCache = ContributionActivityCache()
+        activityRange = .recent90
         isLoading = false
         lastError = nil
         lastFetchedAt = nil
         if let login {
-            UserDefaults.standard.removeObject(forKey: cacheKey(for: login))
+            defaults.removeObject(forKey: cacheKey(for: login))
+            try? FileManager.default.removeItem(at: activityFile(for: login))
         }
     }
 
@@ -186,6 +281,10 @@ final class ContributionService {
 
     private func cacheKey(for login: String) -> String {
         cacheKeyPrefix + login.lowercased()
+    }
+
+    private func activityFile(for login: String) -> URL {
+        activityCacheDirectory.appending(component: "\(login.lowercased()).json.zlib")
     }
 
     /// 落盘格式：`{ "fetchedAt": <epoch>, "payload": <jsonEncoded ContributionCalendarPayload> }`。
@@ -199,14 +298,14 @@ final class ContributionService {
         let envelope = DiskEnvelope(fetchedAt: fetchedAt.timeIntervalSince1970, payload: payload)
         do {
             let data = try JSONEncoder().encode(envelope)
-            UserDefaults.standard.set(data, forKey: cacheKey(for: login))
+            defaults.set(data, forKey: cacheKey(for: login))
         } catch {
             AppLog.network.warning("Contribution persist failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
     private func restoreFromDisk(login: String) {
-        guard let data = UserDefaults.standard.data(forKey: cacheKey(for: login)) else { return }
+        guard let data = defaults.data(forKey: cacheKey(for: login)) else { return }
         do {
             let envelope = try JSONDecoder().decode(DiskEnvelope.self, from: data)
             self.payload = envelope.payload
@@ -215,7 +314,7 @@ final class ContributionService {
             AppLog.network.debug("Contribution restored from disk: login=\(login, privacy: .public)")
         } catch {
             // 解码失败（schema 演进 / 损坏）→ 清掉脏数据
-            UserDefaults.standard.removeObject(forKey: cacheKey(for: login))
+            defaults.removeObject(forKey: cacheKey(for: login))
             AppLog.network.warning("Contribution disk decode failed, dropping cache: \(error.localizedDescription, privacy: .public)")
         }
     }

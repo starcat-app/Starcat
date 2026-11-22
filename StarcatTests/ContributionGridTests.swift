@@ -219,6 +219,39 @@ struct ContributionGridTests {
         #expect(ContributionDayActivity.empty.share(of: 0) == 0)
     }
 
+    @Test("压缩缓存区分未拉取和全零，跨年移动窗口保留重合日期")
+    func contributionActivityCacheRoundTrips() throws {
+        let file = URL.temporaryDirectory.appending(component: "\(UUID().uuidString).json.zlib")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let firstDay = try #require(ContributionActivityCache.dayIndex("2026-12-31"))
+        let nextYear = try #require(ContributionActivityCache.dayIndex("2027-01-01"))
+        #expect(nextYear == firstDay + 1)
+        #expect(MemoryLayout<ContributionDayActivity>.stride == 20)
+
+        var cache = ContributionActivityCache()
+        cache.align(to: firstDay...(firstDay + 89))
+        cache.recentSnapshotAt = 1_800_000_000
+        cache[firstDay] = .empty
+        let activity = ContributionDayActivity(calendarCount: 6, commits: 2, pullRequests: 1, reviews: 1, issues: 1)
+        cache[firstDay + 2] = activity
+        cache.save(to: file)
+
+        let compressed = try Data(contentsOf: file)
+        let data = try (compressed as NSData).decompressed(using: .zlib) as Data
+        #expect(compressed.count < data.count)
+        let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let records = try #require(json["days"] as? [Any])
+        #expect(records.first as? [Int] == [0, 0, 0, 0, 0])
+        #expect(records.dropFirst().first is NSNull)
+        #expect(records.dropFirst(2).first as? [Int] == [6, 2, 1, 1, 1])
+        var restored = ContributionActivityCache.restore(from: file)
+        #expect(restored == cache)
+        restored.align(to: nextYear...(nextYear + 89))
+        #expect(restored[firstDay] == nil)
+        #expect(restored[nextYear] == nil)
+        #expect(restored[nextYear + 1] == activity)
+    }
+
     @Test("数字占位按全年最高值变化，超过三位时包含千位分隔符", arguments: [
         (0, "0"), (9, "9"), (10, "10"), (99, "99"), (100, "100"),
         (999, "999"), (1_000, "1,000"), (1_250, "1,250"), (10_000, "10,000")
@@ -308,7 +341,9 @@ struct ContributionGridTests {
                     .environment(\.starcatInterfaceScale, scale))
                 // 只测离屏布局，不创建窗口或操作桌面；直接验证真正参与窗口定位的 fittingSize。
                 let size = host.fittingSize
-                #expect(size.width > 0 && size.height > 0)
+                // 放大后的宽度可能有小数，AppKit 的 fittingSize 会取整。
+                #expect(abs(size.width - scale.scaled(240)) < 1)
+                #expect(size.height > 0)
                 if let referenceSize {
                     #expect(abs(size.width - referenceSize.width) < 0.001)
                     #expect(abs(size.height - referenceSize.height) < 0.001)
@@ -342,12 +377,13 @@ struct ContributionGridTests {
                 .background(StarcatSurface.panel(colorScheme: .light)))
             renderer.scale = 2
             let bitmap = NSBitmapImageRep(cgImage: try #require(renderer.cgImage))
-            let inset = Int(scale.scaled(12) * renderer.scale)
+            let inset = Int(scale.scaled(10) * renderer.scale)
+            let top = Int(scale.scaled(12) * renderer.scale)
             let headerBottom = Int(scale.scaled(28) * renderer.scale)
             let contentRight = bitmap.pixelsWide - inset
             // 离屏检查日期行的真实文字边界；卡片总宽不变并不能证明星期已经右对齐。
             let textRight = try #require((inset..<contentRight).reversed().first { pixelX in
-                (inset..<headerBottom).contains { pixelY in
+                (top..<headerBottom).contains { pixelY in
                     guard let color = bitmap.colorAt(x: pixelX, y: pixelY)?.usingColorSpace(.deviceRGB) else {
                         return false
                     }

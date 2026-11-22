@@ -123,33 +123,48 @@ extension GitHubAPIClient {
         )
     }
 
-    /// 使用 GitHub 日历日期限定单日区间。`to` 包含端点，不能用次日零点。
-    func contributionDayActivity(for key: ContributionDayKey) async throws -> ContributionDayActivity {
+    static let contributionActivityBatchSize = 14
+
+    /// 每个别名只查一天。分小批串行查询，避免把整段日期压进同一请求触发 GitHub 的资源限制。
+    func contributionDayActivities(
+        login: String, dates: [String]
+    ) async throws -> [String: ContributionDayActivity] {
+        precondition((1...Self.contributionActivityBatchSize).contains(dates.count))
+        var variables = ["login": login]
+        var arguments = ["$login: String!"]
+        var selections: [String] = []
+        for (index, date) in dates.enumerated() {
+            arguments.append(contentsOf: ["$from\(index): DateTime!", "$to\(index): DateTime!"])
+            // `to` 包含端点，用次日零点会串入下一天的数据。
+            variables["from\(index)"] = "\(date)T00:00:00Z"
+            variables["to\(index)"] = "\(date)T23:59:59Z"
+            selections.append("""
+            day\(index): contributionsCollection(from: $from\(index), to: $to\(index)) { ...DailyActivity }
+            """)
+        }
         let query = """
-        query($login: String!, $from: DateTime!, $to: DateTime!) {
+        query(\(arguments.joined(separator: ", "))) {
           user(login: $login) {
-            contributionsCollection(from: $from, to: $to) {
-              totalCommitContributions
-              totalPullRequestContributions
-              totalPullRequestReviewContributions
-              totalIssueContributions
-              contributionCalendar {
-                weeks { contributionDays { date contributionCount } }
-              }
-            }
+            \(selections.joined(separator: "\n    "))
+          }
+        }
+        fragment DailyActivity on ContributionsCollection {
+          totalCommitContributions
+          totalPullRequestContributions
+          totalPullRequestReviewContributions
+          totalIssueContributions
+          contributionCalendar {
+            weeks { contributionDays { date contributionCount } }
           }
         }
         """
         struct Response: Decodable {
-            let user: UserNode?
-            struct UserNode: Decodable {
-                let contributionsCollection: Collection
-            }
+            let user: [String: Collection?]?
             struct Collection: Decodable {
-                let totalCommitContributions: Int
-                let totalPullRequestContributions: Int
-                let totalPullRequestReviewContributions: Int
-                let totalIssueContributions: Int
+                let totalCommitContributions: Int32
+                let totalPullRequestContributions: Int32
+                let totalPullRequestReviewContributions: Int32
+                let totalIssueContributions: Int32
                 let contributionCalendar: CalendarNode
             }
             struct CalendarNode: Decodable {
@@ -160,57 +175,47 @@ extension GitHubAPIClient {
             }
             struct Day: Decodable {
                 let date: String
-                let contributionCount: Int
+                let contributionCount: Int32
             }
         }
 
         let response = try await graphql(
-            query: query,
-            variables: ["login": key.login, "from": "\(key.date)T00:00:00Z", "to": "\(key.date)T23:59:59Z"],
-            as: Response.self
+            query: query, variables: variables, as: Response.self, allowPartialData: true
         )
-        guard let collection = response.user?.contributionsCollection else {
-            throw NetworkError.notFound
+        guard let collections = response.user else { throw NetworkError.notFound }
+        var activities: [String: ContributionDayActivity] = [:]
+        for (index, date) in dates.enumerated() {
+            guard let collection = collections["day\(index)"] ?? nil else { continue }
+            let days = collection.contributionCalendar.weeks.flatMap(\.contributionDays)
+            // 服务端部分失败或返回错日时，仍保留同批中能核对日期的结果。
+            guard days.count == 1, let day = days.first, day.date == date else { continue }
+            activities[date] = ContributionDayActivity(
+                calendarCount: day.contributionCount,
+                commits: collection.totalCommitContributions,
+                pullRequests: collection.totalPullRequestContributions,
+                reviews: collection.totalPullRequestReviewContributions,
+                issues: collection.totalIssueContributions
+            )
         }
-        let days = collection.contributionCalendar.weeks.flatMap(\.contributionDays)
-        guard days.count == 1, let day = days.first, day.date == key.date else {
-            throw NetworkError.invalidResponse
-        }
-        return ContributionDayActivity(
-            calendarCount: day.contributionCount,
-            commits: collection.totalCommitContributions,
-            pullRequests: collection.totalPullRequestContributions,
-            reviews: collection.totalPullRequestReviewContributions,
-            issues: collection.totalIssueContributions
-        )
+        guard !activities.isEmpty else { throw NetworkError.invalidResponse }
+        return activities
     }
 }
 
 // MARK: - DTO
 
-/// 同一方格的请求、缓存和失败状态共用此身份。日期沿用 GitHub 日历的 `YYYY-MM-DD`。
-struct ContributionDayKey: Hashable, Sendable {
-    let login: String
-    let date: String
-
-    init(login: String, date: String) {
-        self.login = login.lowercased()
-        self.date = date
-    }
-}
-
 /// 草坪总数可以包含不可见或不在四类内的活动，因此分类占比只使用四类合计。
 struct ContributionDayActivity: Equatable, Sendable {
-    let calendarCount: Int
-    let commits: Int
-    let pullRequests: Int
-    let reviews: Int
-    let issues: Int
+    let calendarCount: Int32
+    let commits: Int32
+    let pullRequests: Int32
+    let reviews: Int32
+    let issues: Int32
 
-    private var classifiedCount: Int { commits + pullRequests + reviews + issues }
-    var unclassifiedCount: Int { max(0, calendarCount - classifiedCount) }
+    private var classifiedCount: Int { Int(commits) + Int(pullRequests) + Int(reviews) + Int(issues) }
+    var unclassifiedCount: Int { max(0, Int(calendarCount) - classifiedCount) }
 
-    func share(of count: Int) -> Double {
+    func share(of count: Int32) -> Double {
         classifiedCount > 0 ? Double(count) / Double(classifiedCount) : 0
     }
 
