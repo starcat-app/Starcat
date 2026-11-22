@@ -33,7 +33,7 @@ Codex / Claude Code / 其它 Agent（macOS / Linux / Windows）
                         │
        ┌────────────────┴────────────────┐
        │                                 │
- loopback HTTP                  可信网络 HTTPS + pinning
+ 回环地址 HTTP                     网络地址 HTTP（按需开启）
        │                                 │
        └────────────────┬────────────────┘
                         ▼
@@ -43,6 +43,8 @@ Codex / Claude Code / 其它 Agent（macOS / Linux / Windows）
 ```
 
 外部进程禁止直接读取 SQLite、CloudKit、GitHub token、Local API Key 或 Starcat 加密凭据文件。
+
+决策 REST 客户端直接向同一端口发送 `POST /v1/systemone`，与 CLI 和 MCP 共用 App 的决策执行器。
 
 ## 3. Go CLI
 
@@ -81,38 +83,33 @@ starcat mcp
 - 写命令默认 `dry_run=true`，显式 `--apply` 才持久化。
 - 笔记正文只从 stdin 读取，不进入进程参数。
 - 长期设备 token 使用 macOS Keychain、Windows Credential Manager 或 Linux Secret Service。
-- 非敏感 profile 只保存 endpoint、设备 ID、协议版本、证书指纹和配对时间。
+- Profile 保存 endpoint、设备 ID、配对时的 App 版本、协议版本和配对时间。
 
 ## 4. 配对协议
 
 Starcat 设置页每次生成一个五分钟有效、只能使用一次的 URI：
 
 ```text
-starcat-pair://connect?v=1&endpoint=...&fingerprint=...&secret=...
+starcat-pair://connect?v=1&endpoint=...&secret=...
 ```
 
 流程：
 
-1. 用户在 Starcat 点击「复制配对命令」。
+1. 用户在 Starcat 复制终端配对命令，跨设备时选择「从其他设备配对」。
 2. 在目标设备终端粘贴 `starcat pair "<URI>"` 并按回车；也可运行 `starcat pair` 后粘贴 URI 并按回车。
-3. CLI 校验 endpoint：明文 HTTP 只允许 loopback；远程必须是 HTTPS。
-4. HTTPS 连接严格 pin URI 中的证书 SHA-256 指纹。
-5. CLI 向 `/pairing/exchange` 提交一次性 secret 与设备名、平台、架构、CLI 版本。
-6. Starcat 显示设备确认 sheet；用户确认后签发独立 device token。
-7. invitation 立即失效，CLI 把 token 写入系统安全存储。
+3. CLI 校验 HTTP endpoint 后向 `/pairing/exchange` 提交一次性 secret 与设备名、平台、架构、CLI 版本。
+4. Starcat 显示设备确认 sheet，用户确认后签发独立设备 token。
+5. 邀请失效，CLI 把 token 写入系统凭据存储。
 
-目标域名解析失败时，CLI 在请求发出前尝试同端口的 `127.0.0.1`，继续使用 HTTPS 和原指纹；配对成功后保存实际连接地址。两次连接均失败时报告两次失败原因。证书不匹配时提示核实 App 后生成新 URI 重新配对，不自动更新信任，也不重放已提交的配对或业务请求。
+读取旧 HTTPS profile 时，CLI 使用原设备 token 向同一主机和端口发送 HTTP 能力查询。确认读取成功后保存 HTTP 地址，遇到失败则保留原记录。用户可在 App 中重新复制配对命令以更换主机或端口。
 
-`/pairing/exchange` 是 MCP listener 上唯一的非 MCP 窄路由，只交换设备凭据，不承载任何 Starcat 业务数据。
+`/pairing/exchange` 只交换设备凭据。
 
-## 5. 网络与 TLS
+## 5. HTTP 监听
 
-- 默认关闭远程访问，只监听 `127.0.0.1`，使用 loopback HTTP。
-- 用户显式开启「允许可信网络设备连接」后，listener 才绑定网络接口并强制 TLS 1.3。
-- 可信网络默认地址来自 `SCDynamicStoreCopyLocalHostName` 的 Bonjour 名称加 `.local`，不使用可能来自公网 DNS 的 `ProcessInfo.hostName`。Bonjour 名称缺失时使用 HTTPS loopback；Host/Origin 白名单精确允许 Bonjour、本机地址和当前系统 DNS 名称。
-- Starcat 使用 Security.framework 为当前 Mac 生成独立 P-256 私钥和自签名 X.509 certificate。
-- CLI 不使用公共 CA/hostname 信任，而是 pin invitation 中的完整 certificate SHA-256。
-- 不允许远程 HTTP 降级。公网暴露不属于本方案；推荐可信 LAN 或 Tailscale/WireGuard。
+- 默认监听 `127.0.0.1`。「允许其他设备连接」打开后，监听范围扩大到网络接口。本机始终使用 `http://127.0.0.1:<port>`。
+- 跨设备邀请优先使用 `SCDynamicStoreCopyLocalHostName` 返回的 Bonjour 名称加 `.local`，缺失时使用已启用的非回环接口 IPv4。MCP 与决策 REST 共用 Host/Origin 列表，远程模式允许上述地址及系统主机名。
+- 服务启动时读取接口地址。若通过 IPv4 访问时遇到 IP 变化，重启服务以刷新地址列表。
 
 ## 6. 设备凭据
 
@@ -147,9 +144,9 @@ App 目录由 `StarcatMCPToolRegistry` 与 `StarcatMCPPublicCatalog` 维护，�
 ## 9. 验收
 
 - Go：`go test ./...`、`go vet ./...`、`go build ./cmd/starcat`。
-- Swift：pairing invitation、X.509 DER 解析、MCP runtime 与安装 prompt 定向测试。
+- Swift 定向验证配对邀请、MCP runtime、决策 REST 及安装 prompt。
 - 设置页普通安装文本不包含 endpoint、Local API Key 或 Bearer token；配对按钮只复制五分钟、单次有效且仍需人工确认的完整配对命令。
-- loopback、远程 TLS、一次性 secret、设备撤销和默认 dry-run 边界均有自动化或人工验证记录。
+- 验证默认回环、跨设备 HTTP、本机端口切换、旧配对地址迁移、一次性 secret 与设备撤销。
 - `supports/starcat-cli`、`supports/starcat-skill` 保持独立仓库，不进入父仓库提交。
 
 ## 10. 暂不做

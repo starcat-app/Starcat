@@ -202,7 +202,7 @@ struct RecommendationHistoryTests {
             + [entry(121, day: "2026-11-14"), entry(122, day: nil)]
         model.rebuild(entries: entries, starredIDs: [121])
         model.loadMore()
-        #expect(model.rows.count == 122)
+        #expect(model.rows.count == 40)
         let identity = model.paginationIdentity
         model.selectedID = 1
         model.dateScope = .day("2026-11-14")
@@ -211,7 +211,7 @@ struct RecommendationHistoryTests {
         model.rebuild(entries: entries, starredIDs: [121])
         #expect(model.rows.map(\.id) == [121])
         #expect(model.selectedID == nil)
-        #expect(model.visibleLimit == 100)
+        #expect(model.visibleLimit == 20)
         #expect(model.paginationIdentity != identity)
         model.dateScope = .unknown
         model.filter = .all

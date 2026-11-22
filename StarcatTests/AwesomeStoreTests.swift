@@ -180,7 +180,7 @@ struct AwesomeStoreTests {
         #expect(store.repositories.map(\.id) == [2])
     }
 
-    @Test("Awesome Store 首屏只加载四十条并在页尾预取下一页")
+    @Test("Awesome Store 首屏只加载二十条并在页尾预取下一页")
     @MainActor
     func repositoryListLoadsIncrementalPages() async {
         let source = Self.source(id: "large", isEnabled: true, githubRepoCount: 95)
@@ -195,15 +195,15 @@ struct AwesomeStoreTests {
         store.selectSource(source.id)
         try? await Task.sleep(for: .milliseconds(20))
 
-        #expect(store.repositories.count == 40)
+        #expect(store.repositories.count == 20)
         #expect(store.repositoryTotalCount == 95)
         #expect(store.hasMoreRepositories)
 
-        await store.loadMoreRepositoriesIfNeeded(currentRepositoryID: 20)
-        #expect(store.repositories.count == 40)
+        await store.loadMoreRepositoriesIfNeeded(currentRepositoryID: 9)
+        #expect(store.repositories.count == 20)
 
-        await store.loadMoreRepositoriesIfNeeded(currentRepositoryID: 31)
-        #expect(store.repositories.count == 80)
+        await store.loadMoreRepositoriesIfNeeded(currentRepositoryID: 10)
+        #expect(store.repositories.count == 40)
         #expect(store.hasMoreRepositories)
 
         await store.loadAllRepositoryPages()
@@ -286,7 +286,7 @@ struct AwesomeStoreTests {
         await store.enterAwesomeFromUserSelection()
         await model.update(identity: identity, repositories: store.repositories, resources: [])
         #expect(store.listModel === model)
-        #expect(model.rows.count == 80)
+        #expect(model.rows.count == 40)
         #expect(model.projectionRevision == revision)
         #expect(store.repositories.count == 95)
         #expect(!store.hasMoreRepositories)
@@ -298,7 +298,7 @@ struct AwesomeStoreTests {
         identity.query.search = ""
         await model.update(identity: identity, repositories: store.repositories, resources: [])
         #expect(model.total == 95)
-        #expect(model.rows.count == 40)
+        #expect(model.rows.count == 20)
         #expect(await repository.fullReadCount() == 1)
         #expect(await repository.pageReadCount() == 1)
         #expect(await repository.setupReadCount() == 1)
@@ -351,7 +351,7 @@ struct AwesomeStoreTests {
 
         await store.refresh()
         #expect(await repository.pageReadCount() == reads + 1)
-        #expect(store.repositories.count == 40)
+        #expect(store.repositories.count == 20)
         #expect(store.hasMoreRepositories)
         try await store.updateSourceSelection([])
         #expect(store.selectedSourceID == nil)
@@ -411,7 +411,7 @@ struct AwesomeStoreTests {
         #expect(await repository.setupReadCount() == 2)
     }
 
-    @Test("派生结果只展示四十项，分页不重新筛选，查询清空与排序正确")
+    @Test("派生结果只展示二十项，分页不重新筛选，查询清空与排序正确")
     @MainActor
     func projectionPaginatesAndResetsSearch() async {
         let source = Self.source()
@@ -420,14 +420,14 @@ struct AwesomeStoreTests {
         var identity = AwesomeListIdentity(revision: 1, sourceID: nil, query: AwesomeListQuery(sort: .stars))
         await model.update(identity: identity, repositories: items, resources: [Self.resourceItem(source: source)])
         #expect(model.total == 96)
-        #expect(model.rows.count == 40)
+        #expect(model.rows.count == 20)
         #expect(model.repositoryIDs.first == 95)
         model.loadMore()
-        #expect(model.rows.count == 80)
+        #expect(model.rows.count == 40)
         let revision = model.projectionRevision
         await model.update(identity: identity, repositories: items, resources: [])
         #expect(model.projectionRevision == revision)
-        #expect(model.rows.count == 80)
+        #expect(model.rows.count == 40)
         identity.query.search = "no matching project"
         await model.update(identity: identity, repositories: items, resources: [])
         #expect(model.total == 0)
@@ -435,8 +435,8 @@ struct AwesomeStoreTests {
         identity.query.sort = .original
         await model.update(identity: identity, repositories: items, resources: [])
         #expect(model.total == 95)
-        #expect(model.rows.count == 40)
-        #expect(Set(model.rowIndices.values) == Set(0..<40))
+        #expect(model.rows.count == 20)
+        #expect(Set(model.rowIndices.values) == Set(0..<20))
     }
 
     @Test("后台投影保留章节、资源和仓库事实筛选语义，取消不回填")

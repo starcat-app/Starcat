@@ -175,10 +175,11 @@ struct LinuxDoView: View {
 
     private var repoList: some View {
         let selection = dependencies.exploreMultiSelectionStore
+        let rows = model.rows
         // 不包含目录 revision 或结果 ID；后台刷新和分页不重播首屏，用户切换条件才重播。
         let snapshotID = "\(store.providerID):\(store.selectedLanguage ?? ""):\(search):\(recentPromotionFirst):\(settings.skillScanFilterIdentity):\(settings.interestedLanguages)".hashValue
         return List {
-            ForEach(Array(model.rows.enumerated()), id: \.element.repoID) { index, repo in
+            ForEach(Array(rows.enumerated()), id: \.element.repoID) { index, repo in
                 Button {
                     if selection.isActive { selection.toggle(SelectionSnapshot(ghRepoId: repo.repoID, owner: repo.owner, name: repo.name)) }
                     else { selectedRepoID = repo.repoID; selectedRepo = repo }
@@ -194,13 +195,22 @@ struct LinuxDoView: View {
                 .listRowReveal(index: index, snapshotID: snapshotID, replayAfterSnapshotCommit: true)
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
-                .automaticListPagination(appearingIndex: index, visibleItemCount: model.rows.count, loadedItemCount: model.rows.count, hasMore: model.hasMore, isLoading: false, identity: model.identity) { model.loadMore() }
+                .automaticListPagination(appearingIndex: index)
             }
         }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
         .scrollContentBackground(.hidden)
-        .automaticListPaginationFill(visibleItemCount: model.rows.count, loadedItemCount: model.rows.count, hasMore: model.hasMore, isLoading: false, identity: model.identity) { model.loadMore() }
+        .automaticListPagination(
+            visibleItemCount: rows.count,
+            loadedItemCount: rows.count,
+            hasMore: model.hasMore && model.presentationQuery == presentationQuery,
+            isLoading: false,
+            identity: model.identity
+        ) {
+            guard model.identity == queryIdentity else { return }
+            model.loadMore()
+        }
         .refreshable { await store.refreshCatalog(force: true) }
     }
 

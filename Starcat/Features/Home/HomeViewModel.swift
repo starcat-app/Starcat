@@ -223,7 +223,7 @@ final class HomeViewModel {
     private(set) var currentPage: Int = 1
 
     /// R-07：是否还有更多页可追加。
-    /// `RepoListView` 根据这个值决定是否 attach `.onAppear` 触发 `loadMoreIfNeeded()`。
+    /// `RepoListView` 按当前尾部可见位置决定是否请求下一页。
     private(set) var hasMore: Bool = false
 
     /// 自动分页统一观察的 busy 状态；数据库 append 也必须暴露，否则尾部 row 在该阶段出现后
@@ -232,18 +232,8 @@ final class HomeViewModel {
         isLoading || isRefreshing || isDatabasePageAppendInFlight
     }
 
-    /// 同步刷新扩张了一个用户已经滚到底的列表时，视图需要主动补一页。
-    ///
-    /// 这里必须区分“真实的深滚动恢复”和“首次首页从无数据变成有下一页”：后者如果也自动
-    /// load more，就会出现 40 条先上屏、紧接着 80 条再次发布的“双刷新”体感。
-    private(set) var shouldRecoverPaginationAfterRefresh = false
-
-    /// R-07：客户端分页页大小。
-    ///
-    /// R-07.5：Manage 已改成 DB `OFFSET + append` 后，单页查询和状态读取成本稳定；
-    /// 把 pageSize 从 20 提到 40，可以把 1800+ 仓库滚到底的 append 次数近似减半。
-    /// SwiftUI List 仍只渲染可见行，多保留 20 条模型数据属于明确的空间换时间。
-    static let pageSize: Int = 40
+    /// 数据库 OFFSET 和内存切片使用同一中栏页大小。
+    static let pageSize = ListPaginationPolicy.repoCardPageSize
 
     /// Manage 普通分类的数据库分页模式。
     ///
@@ -3194,13 +3184,6 @@ final class HomeViewModel {
             isRefreshing = true
         }
 
-        let wasDeepScrolledToEnd = reason == .refreshPreservingPage &&
-            !hasMore && items.count > Self.pageSize
-
-        if reason != .refreshPreservingPage {
-            shouldRecoverPaginationAfterRefresh = false
-        }
-
         if reason == .reset {
             currentPage = 1
         }
@@ -3362,7 +3345,6 @@ final class HomeViewModel {
                         self.visibleRepoTotalCount = queryTotalCount
                         self.items = visibleRows
                         self.hasMore = nextHasMore
-                        self.shouldRecoverPaginationAfterRefresh = wasDeepScrolledToEnd && nextHasMore
                         self.currentPage = max(1, Int(ceil(Double(visibleRows.count) / Double(Self.pageSize))))
                         if !idsIdentical {
                             self.itemsRevision &+= 1
@@ -3680,7 +3662,6 @@ final class HomeViewModel {
         resetPage: Bool = true,
         preservingSidebarLanguageCounts: Bool = false
     ) {
-        let wasDeepScrolledToEnd = !resetPage && !hasMore && items.count > Self.pageSize
         let newFilteredSorted = computeFilteredSorted()
         visibleRepoTotalCount = newFilteredSorted.count
 
@@ -3716,7 +3697,6 @@ final class HomeViewModel {
         }
 
         sliceToCurrentPage(reason: .recompute)
-        shouldRecoverPaginationAfterRefresh = wasDeepScrolledToEnd && hasMore
 
         // selection 清理始终要做：即便 items 没换，statusFilter / hideArchived 改了也可能让选中行隐身
         if let id = selectedRepoID, !filteredSorted.contains(where: { $0.id == id }) {
@@ -4083,16 +4063,6 @@ final class HomeViewModel {
             currentPage += 1
             sliceToCurrentPage(reason: .append)
         }
-    }
-
-    /// 只消费一次“刷新后恢复深滚动”的加载意图。
-    ///
-    /// `RepoListView` 仍监听 `hasMore` 的 false→true 边沿，但是否真的追加由 ViewModel 的
-    /// 刷新上下文决定。这样既保留同步期间滚到底后的恢复能力，也消除首次首页的自动第二页。
-    func recoverPaginationAfterRefreshIfNeeded() {
-        guard shouldRecoverPaginationAfterRefresh else { return }
-        shouldRecoverPaginationAfterRefresh = false
-        loadMoreIfNeeded()
     }
 
     /// 为 Search Center / Companion 等外部入口准备目标 repo 对应的中栏行。

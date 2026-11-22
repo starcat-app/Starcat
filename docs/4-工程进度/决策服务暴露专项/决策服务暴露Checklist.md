@@ -26,6 +26,7 @@
 - [x] C07 在 `supports/starcat-docs` 添加双语手册、导航和 CLI／MCP 入口链接（`abcf047`）。Node 22 下 `mint validate` 与 `mint broken-links` 通过。
 - [x] C08 完成定向测试、双渠道构建、公共能力静态检查与交付复核。
 - [x] C09 在双语手册中区分仅本机 HTTP 与开启「允许其他设备连接」后的 HTTPS，并补充可直接运行的回环示例（手册 `14d991f`）。两种语言的示例均已实测，`mint validate` 与 `mint broken-links` 通过。
+- [x] C10 将设置入口改为「决策引擎」，新增默认关闭的「启动 HTTP 服务」。`POST /v1/systemone` 使用现有 MCP 监听器并按请求读取开关。5 个套件的 122 项定向测试通过，双语手册已更新（`db3f244`）。
 
 ## 验证结果
 

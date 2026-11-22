@@ -18,7 +18,7 @@ import Observation
 @Observable
 final class ExploreDiscoveryViewModel {
 
-    private static let pageSize = 20
+    private static let pageSize = ListPaginationPolicy.repoCardPageSize
     /// 语言 / Topic / 平台组合使用有界近期工作集，避免查询快照无限增长。
     private static let preparedSnapshotCapacity = 12
     /// Discovery 服务端默认每 3 小时刷新一次 bulk；客户端复用同一窗口，

@@ -214,7 +214,9 @@ final class LinuxDoListModel {
         presentationQuery: String? = nil
     ) {
         guard self.identity != identity else { return }
-        let limit = presentationQuery != nil && self.presentationQuery == presentationQuery ? max(40, rows.count) : 40
+        let pageSize = ListPaginationPolicy.repoCardPageSize
+        let limit = presentationQuery != nil && self.presentationQuery == presentationQuery
+            ? max(pageSize, rows.count) : pageSize
         self.identity = identity
         self.presentationQuery = presentationQuery
         let term = search.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -232,6 +234,6 @@ final class LinuxDoListModel {
 
     func loadMore() {
         guard hasMore else { return }
-        rows.append(contentsOf: matching.dropFirst(rows.count).prefix(40))
+        rows.append(contentsOf: matching.dropFirst(rows.count).prefix(ListPaginationPolicy.repoCardPageSize))
     }
 }

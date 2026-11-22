@@ -132,18 +132,14 @@ struct RecommendationHistoryListView: View {
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .listRowReveal(index: index, snapshotID: model.revision)
-                .automaticListPagination(
-                    appearingIndex: index, visibleItemCount: rows.count,
-                    loadedItemCount: rows.count, hasMore: model.hasMore, isLoading: false,
-                    identity: model.paginationIdentity.uuidString
-                ) { model.loadMore() }
+                .automaticListPagination(appearingIndex: index)
             }
         }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
         .scrollContentBackground(.hidden)
         .id(model.paginationIdentity)
-        .automaticListPaginationFill(
+        .automaticListPagination(
             visibleItemCount: rows.count, loadedItemCount: rows.count,
             hasMore: model.hasMore, isLoading: false, identity: model.paginationIdentity.uuidString
         ) { model.loadMore() }

@@ -380,6 +380,62 @@ struct GitHubAPIClientTests {
         #expect(URLProtocolStub.receivedRequests.count == 3)
     }
 
+    @Test("单日贡献使用含端点的 UTC 区间，明细只缓存到对应账号和日期")
+    @MainActor
+    func contributionDayActivityUsesCalendarDate() async throws {
+        let service = ContributionService(apiClient: makeClient())
+        URLProtocolStub.requestHandler = { request in
+            let body = """
+            {"data":{"user":{"contributionsCollection":{
+                "totalCommitContributions":55,"totalPullRequestContributions":3,
+                "totalPullRequestReviewContributions":2,"totalIssueContributions":2,
+                "contributionCalendar":{"weeks":[{"contributionDays":[{"date":"2026-12-31","contributionCount":65}]}]}
+            }}}}
+            """
+            return (httpResponse(200, request.url!), Data(body.utf8))
+        }
+
+        let day = ContributionDayKey(login: "Alice", date: "2026-12-31")
+        try await service.loadDayActivity(for: day)
+        let activity = try #require(service.cachedDayActivity(for: day))
+        #expect(activity == ContributionDayActivity(calendarCount: 65, commits: 55, pullRequests: 3, reviews: 2, issues: 2))
+        #expect(activity.unclassifiedCount == 3)
+        #expect(service.cachedDayActivity(for: ContributionDayKey(login: "bob", date: day.date)) == nil)
+        #expect(service.cachedDayActivity(for: ContributionDayKey(login: "alice", date: "2027-01-01")) == nil)
+
+        try await service.loadDayActivity(for: ContributionDayKey(login: "alice", date: day.date))
+        let requests = URLProtocolStub.receivedRequests
+        #expect(requests.count == 1)
+        let request = try #require(requests.first)
+        #expect(request.httpMethod == "POST")
+        #expect(request.url?.path == "/graphql")
+        let body = try #require(request.httpBody)
+        let requestJSON = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(requestJSON["variables"] as? [String: String] == [
+            "login": "alice", "from": "2026-12-31T00:00:00Z", "to": "2026-12-31T23:59:59Z"
+        ])
+        service.reset(login: nil)
+        #expect(service.cachedDayActivity(for: day) == nil)
+    }
+
+    @Test("单日查询拒绝其它日期，避免显示错日明细")
+    func contributionDayActivityRejectsWrongDate() async throws {
+        let client = makeClient()
+        URLProtocolStub.requestHandler = { request in
+            let body = """
+            {"data":{"user":{"contributionsCollection":{
+                "totalCommitContributions":1,"totalPullRequestContributions":0,
+                "totalPullRequestReviewContributions":0,"totalIssueContributions":0,
+                "contributionCalendar":{"weeks":[{"contributionDays":[{"date":"2027-01-01","contributionCount":1}]}]}
+            }}}}
+            """
+            return (httpResponse(200, request.url!), Data(body.utf8))
+        }
+        await #expect(throws: NetworkError.self) {
+            try await client.contributionDayActivity(for: ContributionDayKey(login: "alice", date: "2026-12-31"))
+        }
+    }
+
     /// 网页抓取必须保持匿名，且把强制刷新策略传到 HTML 请求。
     @Test("成就网页不携带 API Token")
     func achievementsPageIsAnonymous() async throws {

@@ -2,40 +2,27 @@
 //  StarcatMCPPairingTests.swift
 //  StarcatTests
 //
-//  验证跨平台 CLI invitation 契约和自签名 TLS certificate 可被 Security.framework 解析。
+//  验证跨平台 CLI invitation 契约、设备签发和撤销。
 //
 
 import Foundation
-import Security
 import Testing
 @testable import Starcat
 
 @Suite("Starcat MCP Pairing")
 @MainActor
 struct StarcatMCPPairingTests {
-    @Test("连接地址区分本机与 Bonjour，缺失名称时保留 TLS 退回本机")
+    @Test("本机和 Bonjour 使用相同的 HTTP 协议")
     func connectionAddresses() {
-        #expect(StarcatMCPService.makeEndpointURL(
-            port: 5555, allowsRemoteConnections: false, localHostName: "starcat-mac"
-        ) == "http://127.0.0.1:5555/mcp")
-        #expect(StarcatMCPService.makeEndpointURL(
-            port: 5555, allowsRemoteConnections: true, localHostName: "starcat-mac"
-        ) == "https://starcat-mac.local:5555/mcp")
-        for missingName in [nil, ""] as [String?] {
-            #expect(StarcatMCPService.makeEndpointURL(
-                port: 5555, allowsRemoteConnections: true, localHostName: missingName
-            ) == "https://127.0.0.1:5555/mcp")
-        }
+        #expect(StarcatMCPService.makeEndpointURL(port: 5555) == "http://127.0.0.1:5555/mcp")
+        #expect(StarcatMCPService.makeEndpointURL(port: 5555, host: "starcat-mac.local") ==
+            "http://starcat-mac.local:5555/mcp")
     }
 
-    @Test("Invitation 包含协议、endpoint、fingerprint 和高熵 secret")
+    @Test("Invitation 包含协议、HTTP endpoint 和一次性 secret")
     func invitationContract() throws {
-        let store = StarcatMCPDeviceStore()
-        let fingerprint = String(repeating: "ab", count: 32)
-        let raw = try store.createInvitation(
-            endpoint: "https://starcat-mac.local:5551/mcp",
-            certificateFingerprint: fingerprint
-        )
+        let store = StarcatMCPDeviceStore(keychain: PairingKeychainStub())
+        let raw = try store.createInvitation(endpoint: "http://starcat-mac.local:5551/mcp")
         let components = try #require(URLComponents(string: raw))
         let values = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).compactMap { item in
             item.value.map { (item.name, $0) }
@@ -44,36 +31,16 @@ struct StarcatMCPPairingTests {
         #expect(components.scheme == "starcat-pair")
         #expect(components.host == "connect")
         #expect(values["v"] == StarcatMCPDeviceStore.protocolVersion)
-        #expect(values["endpoint"] == "https://starcat-mac.local:5551/mcp")
-        #expect(values["fingerprint"] == fingerprint)
+        #expect(values["endpoint"] == "http://starcat-mac.local:5551/mcp")
+        #expect(values["fingerprint"] == nil)
         #expect((values["secret"]?.count ?? 0) >= 40)
-    }
-
-    @Test("自签名 certificate DER 可被 Security.framework 解析")
-    func tlsCertificateIsParseable() throws {
-        let attributes: [CFString: Any] = [
-            kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
-            kSecAttrKeySizeInBits: 256
-        ]
-        var error: Unmanaged<CFError>?
-        let privateKey = try #require(SecKeyCreateRandomKey(attributes as CFDictionary, &error))
-        let publicKey = try #require(SecKeyCopyPublicKey(privateKey))
-        let data = try StarcatMCPTLSIdentityStore.makeCertificateDER(
-            privateKey: privateKey,
-            publicKey: publicKey
-        )
-
-        #expect(SecCertificateCreateWithData(nil, data as CFData) != nil)
     }
 
     @Test("设备确认后签发独立 token，撤销后立即失效")
     func deviceApprovalAndRevocation() async throws {
         let keychain = PairingKeychainStub()
         let store = StarcatMCPDeviceStore(keychain: keychain)
-        let invitation = try store.createInvitation(
-            endpoint: "http://127.0.0.1:5551/mcp",
-            certificateFingerprint: nil
-        )
+        let invitation = try store.createInvitation(endpoint: "http://127.0.0.1:5551/mcp")
         let components = try #require(URLComponents(string: invitation))
         let secret = try #require(components.queryItems?.first(where: { $0.name == "secret" })?.value)
         let request = StarcatMCPPairingExchangeRequest(

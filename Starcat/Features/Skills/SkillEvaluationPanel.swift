@@ -21,9 +21,16 @@ struct SkillEvaluationPanelItem: Identifiable {
 
 /// 保留原选区与上次任务的联系，筛选后的批次也能在关窗完成后找回。
 struct SkillEvaluationPanelTaskLink {
+    struct AIConfiguration {
+        let providerName: String
+        let model: SkillEvaluationSelection
+    }
+
     let id: String
     let mode: SkillEvaluationMode
     let selection: Set<SkillEvaluationSubject>
+    let runSubjects: Set<SkillEvaluationSubject>
+    let configuration: AIConfiguration?
 }
 
 /// 使用固定的入口选择，避免其他窗口改变选择时扩大已经展示的发送范围。
@@ -33,6 +40,7 @@ struct SkillEvaluationPanel: View {
     let rememberedTask: Binding<SkillEvaluationPanelTaskLink?>
     let close: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var mode: SkillEvaluationMode = .quick
@@ -46,9 +54,10 @@ struct SkillEvaluationPanel: View {
     @State private var chatName: String?
     @State private var embeddingName: String?
     @State private var hasRestoredTask = false
-    @State private var observedTask: (id: String, mode: SkillEvaluationMode)?
+    @State private var observedTask: SkillEvaluationPanelTaskLink?
     @State private var taskID: String?
     @State private var taskStatus: TaskStatus?
+    @State private var showsRunResults = false
     @State private var failures: [String] = []
     @State private var showsCancelConfirmation = false
     @State private var actionError: ActionError?
@@ -56,8 +65,7 @@ struct SkillEvaluationPanel: View {
 
     private struct Confirmation {
         let mode: SkillEvaluationMode
-        let providerName: String
-        let model: SkillEvaluationSelection
+        let configuration: SkillEvaluationPanelTaskLink.AIConfiguration
         let items: [SkillEvaluationPanelItem]
     }
 
@@ -77,6 +85,15 @@ struct SkillEvaluationPanel: View {
             case .cancelled: "skills.evaluation.task.cancelled"
             case .failed: "skills.evaluation.task.failed"
             case .completed: "skills.evaluation.task.completed"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .working: "hourglass"
+            case .cancelling, .cancelled: "stop.circle"
+            case .failed: "exclamationmark.circle"
+            case .completed: "checkmark.circle"
             }
         }
     }
@@ -102,14 +119,18 @@ struct SkillEvaluationPanel: View {
             ZStack(alignment: .topLeading) {
                 if let confirmation {
                     ScrollView { consentContent(confirmation).padding(20) }
+                        .background(canvas)
                         .detailContentTransition()
                 } else if let report = selectedReport {
                     let sources = Dictionary(uniqueKeysWithValues: items.compactMap { item in item.source.map { (item.id, $0) } })
                     ScrollView { SkillEvaluationReportDetail(cached: report, sources: sources).padding(20) }
+                        .background(canvas)
                         .id(report.report.id)
                         .detailContentTransition()
                 } else {
                     ScrollView { overview.padding(20) }
+                        .background(canvas)
+                        .id(showsRunResults)
                         .detailContentTransition()
                 }
             }
@@ -117,10 +138,11 @@ struct SkillEvaluationPanel: View {
             .clipped()
             .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: confirmation != nil)
             .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: selectedReportID)
+            .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: showsRunResults)
             Divider()
             footer
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(RepoSkillPanelStyle.panelColor(colorScheme))
         .task { service.refreshTool() }
         .task(id: query) {
             guard !Task.isCancelled else { return }
@@ -158,14 +180,26 @@ struct SkillEvaluationPanel: View {
         }
     }
 
+    private var canvas: Color {
+        colorScheme == .dark ? Color.fromHex6(0x1C1C1E) : Color(nsColor: .windowBackgroundColor)
+    }
+
     private var header: some View {
         HStack(spacing: 12) {
             if confirmation != nil || selectedReport != nil {
-                Button("skills.evaluation.back") {
+                Button {
                     confirmation = nil
                     selectedReportID = nil
+                } label: {
+                    Label("skills.evaluation.back", systemImage: "chevron.backward")
+                        .labelStyle(.iconOnly)
                 }
+                .help("skills.evaluation.back")
                 .keyboardShortcut(.cancelAction)
+            } else {
+                Image(systemName: mode.panelSymbol)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
             Group {
                 if confirmation != nil {
@@ -176,7 +210,8 @@ struct SkillEvaluationPanel: View {
                     Text("skills.evaluation.title")
                 }
             }
-            .font(interfaceScale.font(.panelTitle))
+            .font(interfaceScale.font(.workspaceTitle))
+            .lineLimit(1)
             .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
             SheetCloseButton(action: close, helpKey: "skills.evaluation.dismiss")
@@ -187,17 +222,35 @@ struct SkillEvaluationPanel: View {
     }
 
     private var overview: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            toolSetup
-            if let log = service.toolInstallLog {
-                SkillEvaluationInstallLogView(log: log)
-                    .id(log.id)
+        VStack(alignment: .leading, spacing: 20) {
+            if showsRunResults {
+                taskFeedback
+                if taskID != nil, let observedTask {
+                    subjectSection(resultItems)
+                    if let configuration = observedTask.configuration {
+                        VStack(alignment: .leading, spacing: 8) {
+                            sectionTitle("skills.evaluation.configuration.section")
+                            configurationSummary(configuration)
+                                .padding(14)
+                                .skillEvaluationCard(colorScheme)
+                        }
+                    }
+                }
+            } else {
+                toolSetup
+                if let log = service.toolInstallLog {
+                    SkillEvaluationInstallLogView(log: log)
+                        .id(log.id)
+                }
+                controls
             }
-            controls
-            taskFeedback
-            if mode != .similarity || items.count >= 2 {
-                Divider()
-                reportResults
+            if (mode != .similarity || items.count >= 2) && (taskID == nil || loadFailed || records[mode]?.isEmpty == false) {
+                VStack(alignment: .leading, spacing: 8) {
+                    resultsHeader
+                    reportResults
+                        .padding(4)
+                        .skillEvaluationCard(colorScheme)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -278,38 +331,36 @@ struct SkillEvaluationPanel: View {
     }
 
     private var controls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Picker("skills.evaluation.mode.title", selection: $mode) {
-                ForEach(SkillEvaluationMode.allCases, id: \.self) { option in
-                    Text(option.panelTitle).tag(option)
-                }
-            }
-            .fixedSize()
-            .disabled(taskID != nil)
-
-            switch mode {
-            case .quick:
-                Text("skills.evaluation.mode.quickNote").foregroundStyle(.secondary)
-            case .security:
-                Text("skills.evaluation.mode.securityNote").foregroundStyle(.secondary)
-            case .similarity where items.count < 2:
-                Text("skills.evaluation.mode.similarityNote").foregroundStyle(.secondary)
-            default:
-                modelControls
-                    .disabled(taskID != nil || !service.canUseTool)
-            }
-
-            if items.count > 1 {
-                Picker("skills.evaluation.filter.title", selection: $filter) {
-                    ForEach(SkillEvaluationPanelStatus.allCases, id: \.self) { status in
-                        Text(status.title).tag(status)
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("skills.evaluation.configuration.section")
+            VStack(alignment: .leading, spacing: 12) {
+                selectionMenu("skills.evaluation.mode.title", selection: $mode) {
+                    ForEach(SkillEvaluationMode.allCases, id: \.self) { option in
+                        Label(option.panelTitle, systemImage: option.panelSymbol).tag(option)
                     }
                 }
-                .fixedSize()
-                .disabled(records[mode] == nil)
+                Text(configurationNote)
+                    .font(interfaceScale.font(.caption))
+                    .foregroundStyle(.secondary)
+                    .contentTransition(.opacity)
+                if mode.requiresAI && (mode != .similarity || items.count >= 2) {
+                    Divider()
+                    modelControls.disabled(!service.canUseTool)
+                }
             }
+            .padding(14)
+            .skillEvaluationCard(colorScheme)
         }
         .font(interfaceScale.font(.body))
+    }
+
+    private var configurationNote: LocalizedStringKey {
+        switch mode {
+        case .quick: "skills.evaluation.mode.quickNote"
+        case .security: "skills.evaluation.mode.securityNote"
+        case .similarity where items.count < 2: "skills.evaluation.mode.similarityNote"
+        default: mode.consentScope
+        }
     }
 
     private var modelControls: some View {
@@ -317,25 +368,29 @@ struct SkillEvaluationPanel: View {
             if eligibleProfiles.isEmpty {
                 Text("skills.evaluation.configuration.empty").foregroundStyle(.secondary)
             } else {
-                Picker("skills.evaluation.configuration.title", selection: $providerID) {
-                    Text("skills.evaluation.configuration.select").tag(nil as String?)
-                    ForEach(eligibleProfiles) { profile in
-                        Text(verbatim: profile.displayName).tag(Optional(profile.id))
+                let profile = selectedProfile
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 176 * interfaceScale.multiplier), spacing: 12,
+                                             alignment: .topLeading)], alignment: .leading, spacing: 8) {
+                    selectionMenu("skills.evaluation.configuration.title", selection: $providerID) {
+                        Text("skills.evaluation.configuration.select").tag(nil as String?)
+                        ForEach(eligibleProfiles) { profile in
+                            Text(verbatim: profile.displayName).tag(Optional(profile.id))
+                        }
                     }
-                }
-                if let profile = selectedProfile {
-                    LabeledContent("skills.evaluation.configuration.endpoint") {
-                        Text(verbatim: profile.baseURL).lineLimit(1).truncationMode(.middle).help(profile.baseURL)
-                    }
-                    if mode.needsChat {
+                    .help(profile?.displayName ?? "")
+                    if let profile, mode.needsChat {
                         modelPicker("skills.evaluation.configuration.chat", placeholder: "skills.evaluation.configuration.chooseChat",
                                     models: enabledModels(in: profile, capability: .chat), selection: $chatName)
                     }
-                    if mode.needsEmbedding {
+                    if let profile, mode.needsEmbedding {
                         modelPicker("skills.evaluation.configuration.embedding",
                                     placeholder: "skills.evaluation.configuration.chooseEmbedding",
                                     models: enabledModels(in: profile, capability: .embedding), selection: $embeddingName)
                     }
+                }
+                if let profile {
+                    SkillEvaluationConnectionDetails(modelEndpoint: profile.baseURL)
+                        .id(profile.id)
                 }
             }
         }
@@ -345,26 +400,78 @@ struct SkillEvaluationPanel: View {
         _ title: LocalizedStringKey, placeholder: LocalizedStringKey,
         models: [AIModelDescriptor], selection: Binding<String?>
     ) -> some View {
-        Picker(title, selection: selection) {
+        selectionMenu(title, selection: selection) {
             Text(placeholder).tag(nil as String?)
             ForEach(models) { model in Text(verbatim: model.name).tag(Optional(model.name)) }
+        }
+        .help(selection.wrappedValue ?? "")
+    }
+
+    private func selectionMenu<Value: Hashable, Options: View>(
+        _ title: LocalizedStringKey, selection: Binding<Value>, @ViewBuilder options: () -> Options
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(interfaceScale.font(.caption, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Picker(title, selection: selection, content: options)
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func sectionTitle(_ title: LocalizedStringKey) -> some View {
+        Text(title)
+            .font(interfaceScale.font(.rowTitle, weight: .semibold))
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private var resultsHeader: some View {
+        HStack(spacing: 8) {
+            sectionTitle(showsRunResults ? "skills.evaluation.report.results" : "skills.evaluation.report.comparison")
+            Spacer(minLength: 0)
+            if resultItems.count > 1 && taskID == nil {
+                Picker("skills.evaluation.filter.title", selection: $filter) {
+                    ForEach(SkillEvaluationPanelStatus.allCases, id: \.self) { status in
+                        Text(status.title).tag(status)
+                    }
+                }
+                .labelsHidden()
+                .help("skills.evaluation.filter.title")
+                .controlSize(.small)
+                .disabled(records[mode] == nil)
+            }
         }
     }
 
     @ViewBuilder
     private var taskFeedback: some View {
         if let taskStatus {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    if taskID != nil {
-                        ProgressView()
-                            .controlSize(.small)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
+                    if taskID != nil && !reduceMotion {
+                        ProgressView().controlSize(.small).accessibilityHidden(true)
+                    } else {
+                        Image(systemName: taskStatus.symbol)
+                            .font(interfaceScale.font(.rowTitle))
+                            .foregroundStyle(.secondary)
                             .accessibilityHidden(true)
                     }
-                    Text(taskStatus.title).font(interfaceScale.font(.body))
+                    VStack(alignment: .leading, spacing: 4) {
+                        sectionTitle(taskStatus.title)
+                            .contentTransition(.opacity)
+                        Text(mode.panelTitle)
+                            .font(interfaceScale.font(.caption))
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 if taskID != nil {
-                    Text("skills.evaluation.task.background").foregroundStyle(.secondary)
+                    Text("skills.evaluation.task.background")
+                        .font(interfaceScale.font(.caption))
+                        .foregroundStyle(.secondary)
                 }
                 if !failures.isEmpty {
                     Text("skills.evaluation.task.failures")
@@ -375,6 +482,9 @@ struct SkillEvaluationPanel: View {
                     }
                 }
             }
+            .padding(14)
+            .skillEvaluationCard(colorScheme)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: taskStatus)
         }
     }
 
@@ -385,22 +495,28 @@ struct SkillEvaluationPanel: View {
                 Text("skills.evaluation.error.load").foregroundStyle(.secondary)
                 Button("skills.evaluation.retry") { reloadRevision += 1 }
             }
+            .padding(8)
         }
         if records[mode] == nil && !loadFailed {
             Text("skills.evaluation.loading")
                 .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
-            ListLoadingSkeleton(rowCount: min(items.count, 4), showsIcon: false)
+                .padding(8)
+            ListLoadingSkeleton(rowCount: min(items.count, 4), rowHeight: 48)
                 .transition(.opacity)
         } else if records[mode] != nil {
-            if filteredItems.isEmpty {
-                Text("skills.evaluation.filter.empty").foregroundStyle(.secondary)
+            let reports = reportBySubject
+            let rows = taskID == nil || comparisonReport != nil ? filteredItems : filteredItems.filter { reports[$0.id] != nil }
+            if rows.isEmpty {
+                Text("skills.evaluation.filter.empty").foregroundStyle(.secondary).padding(8)
             } else if mode == .similarity, let comparisonReport {
-                resultRow(name: Text("skills.evaluation.report.comparison"), cached: comparisonReport, index: 0)
+                resultRow(
+                    name: Text(mode.panelTitle), cached: comparisonReport, index: 0,
+                    source: comparisonReport.report.names.joined(separator: " · ")
+                )
             } else {
-                let reports = reportBySubject
                 LazyVStack(spacing: 2) {
-                    ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, item in
                         resultRow(name: Text(verbatim: item.name), cached: reports[item.id], index: index, source: item.source)
                     }
                 }
@@ -416,9 +532,13 @@ struct SkillEvaluationPanel: View {
             } label: {
                 HStack {
                     resultRowLabel(name: name, status: SkillEvaluationPanelStatus(cached), source: source)
-                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                    Image(systemName: "chevron.forward")
+                        .font(interfaceScale.font(.caption))
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                 }
-                .padding(8)
+                .padding(.horizontal, 8)
+                .frame(minHeight: 48)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -426,15 +546,21 @@ struct SkillEvaluationPanel: View {
             .listRowSurface(index: index)
         } else {
             resultRowLabel(name: name, status: .notRun, source: source)
-                .padding(8)
+                .padding(.horizontal, 8)
+                .frame(minHeight: 48)
                 .listRowSurface(index: index)
+                .accessibilityElement(children: .combine)
         }
     }
 
     private func resultRowLabel(name: Text, status: SkillEvaluationPanelStatus, source: String?) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
+            Image(systemName: mode == .similarity && status != .notRun ? "square.stack" : "doc.text")
+                .foregroundStyle(.secondary)
+                .frame(width: 24)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                name.lineLimit(1)
+                name.font(interfaceScale.font(.body, weight: .semibold)).lineLimit(1)
                 if let source {
                     Text(verbatim: source)
                         .font(interfaceScale.font(.caption))
@@ -443,49 +569,87 @@ struct SkillEvaluationPanel: View {
                 }
             }
             Spacer(minLength: 8)
-            Text(status.title)
-                .font(interfaceScale.font(.caption))
-                .foregroundStyle(.secondary)
+            SkillEvaluationStatusBadge(status: status)
+        }
+    }
+
+    private func consentContent(_ consent: Confirmation) -> some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 8) {
+                sectionTitle("skills.evaluation.consent.content")
+                Text(consent.mode.consentScope)
+                Text("skills.evaluation.consent.notice")
+                    .font(interfaceScale.font(.caption))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(14)
+            .skillEvaluationCard(colorScheme)
+
+            VStack(alignment: .leading, spacing: 8) {
+                sectionTitle("skills.evaluation.configuration.section")
+                VStack(alignment: .leading, spacing: 8) {
+                    configurationField("skills.evaluation.mode.title", Text(consent.mode.panelTitle))
+                    configurationSummary(consent.configuration)
+                }
+                .padding(14)
+                .skillEvaluationCard(colorScheme)
+            }
+            subjectSection(consent.items)
+        }
+        .font(interfaceScale.font(.body))
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func configurationSummary(_ configuration: SkillEvaluationPanelTaskLink.AIConfiguration) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            configurationField("skills.evaluation.configuration.title", Text(verbatim: configuration.providerName))
+            if !configuration.model.chat.isEmpty {
+                configurationField("skills.evaluation.configuration.chat",
+                                   Text(verbatim: configuration.model.chat).font(interfaceScale.font(.code)))
+            }
+            if let embedding = configuration.model.embedding {
+                configurationField("skills.evaluation.configuration.embedding",
+                                   Text(verbatim: embedding).font(interfaceScale.font(.code)))
+            }
+            Divider()
+            SkillEvaluationConnectionDetails(modelEndpoint: configuration.model.endpoint)
         }
         .font(interfaceScale.font(.body))
     }
 
-    private func consentContent(_ consent: Confirmation) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("skills.evaluation.consent.scope")
-            Text(consent.mode.consentScope)
-            Divider()
-            LabeledContent("skills.evaluation.mode.title") { Text(consent.mode.panelTitle) }
-            LabeledContent("skills.evaluation.configuration.title") { Text(verbatim: consent.providerName) }
-            LabeledContent("skills.evaluation.configuration.endpoint") {
-                Text(verbatim: consent.model.endpoint).textSelection(.enabled)
-            }
-            if !consent.model.chat.isEmpty {
-                LabeledContent("skills.evaluation.configuration.chat") { Text(verbatim: consent.model.chat) }
-            }
-            if let embedding = consent.model.embedding {
-                LabeledContent("skills.evaluation.configuration.embedding") { Text(verbatim: embedding) }
-            }
-            Divider()
+    private func subjectSection(_ includedItems: [SkillEvaluationPanelItem]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("skills.evaluation.report.comparison")
             LazyVStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(consent.items.enumerated()), id: \.element.id) { index, item in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(verbatim: item.name)
-                        if let source = item.source {
-                            Text(verbatim: source)
-                                .font(interfaceScale.font(.caption))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1).truncationMode(.middle).help(source)
+                ForEach(Array(includedItems.enumerated()), id: \.element.id) { index, item in
+                    HStack(spacing: 8) {
+                        Image(systemName: "doc.text")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 24)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(verbatim: item.name).font(interfaceScale.font(.body, weight: .semibold))
+                            if let source = item.source {
+                                Text(verbatim: source)
+                                    .font(interfaceScale.font(.code))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1).truncationMode(.middle).help(source)
+                            }
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
+                    .padding(.horizontal, 8)
+                    .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
                     .listRowSurface(index: index)
+                    .accessibilityElement(children: .combine)
                 }
             }
+            .padding(4)
+            .skillEvaluationCard(colorScheme)
         }
-        .font(interfaceScale.font(.body))
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func configurationField(_ label: LocalizedStringKey, _ value: Text) -> some View {
+        SkillEvaluationDetailField(label: Text(label).foregroundStyle(.secondary), value: value)
     }
 
     private var footer: some View {
@@ -494,7 +658,7 @@ struct SkillEvaluationPanel: View {
                 Spacer()
                 Button("skills.evaluation.consent.send") {
                     self.confirmation = nil
-                    start(items: confirmation.items, mode: confirmation.mode, model: confirmation.model, consent: true)
+                    start(items: confirmation.items, mode: confirmation.mode, confirmedConfiguration: confirmation.configuration)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!service.canUseTool || filePanel != nil)
@@ -524,6 +688,8 @@ struct SkillEvaluationPanel: View {
                 if taskID != nil {
                     Button("skills.evaluation.task.cancel") { showsCancelConfirmation = true }
                         .disabled(taskStatus == .cancelling)
+                } else if showsRunResults {
+                    Button("skills.evaluation.configuration.section") { showsRunResults = false }
                 } else {
                     Button("skills.evaluation.action", action: requestEvaluation)
                         .buttonStyle(.borderedProminent)
@@ -546,11 +712,16 @@ struct SkillEvaluationPanel: View {
         }, uniquingKeysWith: { first, _ in first })
     }
 
+    private var resultItems: [SkillEvaluationPanelItem] {
+        guard showsRunResults, let observedTask else { return items }
+        return items.filter { observedTask.runSubjects.contains($0.id) }
+    }
+
     private var filteredItems: [SkillEvaluationPanelItem] {
-        guard filter != .all else { return items }
+        guard filter != .all else { return resultItems }
         let reports = reportBySubject
         let comparison = comparisonReport
-        return items.filter { SkillEvaluationPanelStatus(comparison ?? reports[$0.id]) == filter }
+        return resultItems.filter { SkillEvaluationPanelStatus(comparison ?? reports[$0.id]) == filter }
     }
 
     private var visibleReports: [SkillEvaluationCached] {
@@ -604,6 +775,7 @@ struct SkillEvaluationPanel: View {
             observedTask = nil
             taskStatus = nil
             failures = []
+            showsRunResults = false
         }
         loadFailed = false
     }
@@ -624,7 +796,7 @@ struct SkillEvaluationPanel: View {
             return
         }
         mode = link.mode
-        observeTask(link.id, mode: link.mode)
+        observeTask(link.id, mode: link.mode, runSubjects: link.runSubjects)
     }
 
     /// 服务 revision 同时覆盖别处触发的评估。新的缓存批次可用前继续显示本模式的上一份报告。
@@ -657,22 +829,25 @@ struct SkillEvaluationPanel: View {
         let selected = filteredItems
         if mode.requiresAI {
             guard let selectedModel, let profile = selectedProfile else { return }
-            confirmation = Confirmation(mode: mode, providerName: profile.displayName, model: selectedModel, items: selected)
+            confirmation = Confirmation(mode: mode, configuration: .init(providerName: profile.displayName, model: selectedModel),
+                                        items: selected)
         } else {
-            start(items: selected, mode: mode, model: nil, consent: false)
+            start(items: selected, mode: mode)
         }
     }
 
     private func start(
-        items: [SkillEvaluationPanelItem], mode: SkillEvaluationMode, model: SkillEvaluationSelection?, consent: Bool
+        items: [SkillEvaluationPanelItem], mode: SkillEvaluationMode,
+        confirmedConfiguration: SkillEvaluationPanelTaskLink.AIConfiguration? = nil
     ) {
         guard taskID == nil, service.canUseTool else { return }
         let targets = items.map(\.target)
         attachIfRunning(targets: targets, mode: mode)
         guard taskID == nil else { return }
         do {
-            let id = try service.start(targets: targets, mode: mode, model: model, consent: consent)
-            observeTask(id, mode: mode)
+            let id = try service.start(targets: targets, mode: mode, model: confirmedConfiguration?.model,
+                                       consent: confirmedConfiguration != nil)
+            observeTask(id, mode: mode, runSubjects: Set(items.map(\.id)), configuration: confirmedConfiguration)
         } catch {
             actionError = serviceError(error, fallback: .service(String.l10n("skills.evaluation.task.failed")))
         }
@@ -680,19 +855,30 @@ struct SkillEvaluationPanel: View {
 
     private func attachIfRunning(targets: [SkillEvaluationTarget], mode: SkillEvaluationMode) {
         guard taskID == nil, let activeID = service.activeTask(targets: targets, mode: mode) else { return }
-        observeTask(activeID, mode: mode)
+        observeTask(activeID, mode: mode, runSubjects: Set(targets.map(\.identity)))
     }
 
-    private func observeTask(_ id: String, mode: SkillEvaluationMode) {
+    /// 只显示当前任务确认时的配置。另一个入口发起的任务可能没有可用的面板快照。
+    private func observeTask(
+        _ id: String, mode: SkillEvaluationMode, runSubjects: Set<SkillEvaluationSubject>? = nil,
+        configuration: SkillEvaluationPanelTaskLink.AIConfiguration? = nil
+    ) {
         guard observedTask?.id != id else { return }
-        observedTask = (id, mode)
+        let selection = Set(items.map(\.id))
+        let previous = rememberedTask.wrappedValue
+        let rememberedConfiguration = previous?.id == id ? previous?.configuration : nil
+        let link = SkillEvaluationPanelTaskLink(id: id, mode: mode, selection: selection, runSubjects: runSubjects ?? selection,
+                                               configuration: configuration ?? rememberedConfiguration)
+        observedTask = link
         failures = []
         taskID = id
         updateTaskStatus(id)
+        showsRunResults = true
+        filter = .all
         if taskID != nil {
             // 正在运行的任务已有冻结的输入，回接只观察，关闭可能已打开的发送确认。
             confirmation = nil
-            rememberedTask.wrappedValue = SkillEvaluationPanelTaskLink(id: id, mode: mode, selection: Set(items.map(\.id)))
+            rememberedTask.wrappedValue = link
         }
     }
 

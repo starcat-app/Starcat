@@ -122,9 +122,100 @@ extension GitHubAPIClient {
             )
         )
     }
+
+    /// 使用 GitHub 日历日期限定单日区间。`to` 包含端点，不能用次日零点。
+    func contributionDayActivity(for key: ContributionDayKey) async throws -> ContributionDayActivity {
+        let query = """
+        query($login: String!, $from: DateTime!, $to: DateTime!) {
+          user(login: $login) {
+            contributionsCollection(from: $from, to: $to) {
+              totalCommitContributions
+              totalPullRequestContributions
+              totalPullRequestReviewContributions
+              totalIssueContributions
+              contributionCalendar {
+                weeks { contributionDays { date contributionCount } }
+              }
+            }
+          }
+        }
+        """
+        struct Response: Decodable {
+            let user: UserNode?
+            struct UserNode: Decodable {
+                let contributionsCollection: Collection
+            }
+            struct Collection: Decodable {
+                let totalCommitContributions: Int
+                let totalPullRequestContributions: Int
+                let totalPullRequestReviewContributions: Int
+                let totalIssueContributions: Int
+                let contributionCalendar: CalendarNode
+            }
+            struct CalendarNode: Decodable {
+                let weeks: [Week]
+            }
+            struct Week: Decodable {
+                let contributionDays: [Day]
+            }
+            struct Day: Decodable {
+                let date: String
+                let contributionCount: Int
+            }
+        }
+
+        let response = try await graphql(
+            query: query,
+            variables: ["login": key.login, "from": "\(key.date)T00:00:00Z", "to": "\(key.date)T23:59:59Z"],
+            as: Response.self
+        )
+        guard let collection = response.user?.contributionsCollection else {
+            throw NetworkError.notFound
+        }
+        let days = collection.contributionCalendar.weeks.flatMap(\.contributionDays)
+        guard days.count == 1, let day = days.first, day.date == key.date else {
+            throw NetworkError.invalidResponse
+        }
+        return ContributionDayActivity(
+            calendarCount: day.contributionCount,
+            commits: collection.totalCommitContributions,
+            pullRequests: collection.totalPullRequestContributions,
+            reviews: collection.totalPullRequestReviewContributions,
+            issues: collection.totalIssueContributions
+        )
+    }
 }
 
 // MARK: - DTO
+
+/// 同一方格的请求、缓存和失败状态共用此身份。日期沿用 GitHub 日历的 `YYYY-MM-DD`。
+struct ContributionDayKey: Hashable, Sendable {
+    let login: String
+    let date: String
+
+    init(login: String, date: String) {
+        self.login = login.lowercased()
+        self.date = date
+    }
+}
+
+/// 草坪总数可以包含不可见或不在四类内的活动，因此分类占比只使用四类合计。
+struct ContributionDayActivity: Equatable, Sendable {
+    let calendarCount: Int
+    let commits: Int
+    let pullRequests: Int
+    let reviews: Int
+    let issues: Int
+
+    private var classifiedCount: Int { commits + pullRequests + reviews + issues }
+    var unclassifiedCount: Int { max(0, calendarCount - classifiedCount) }
+
+    func share(of count: Int) -> Double {
+        classifiedCount > 0 ? Double(count) / Double(classifiedCount) : 0
+    }
+
+    static let empty = Self(calendarCount: 0, commits: 0, pullRequests: 0, reviews: 0, issues: 0)
+}
 
 /// 贡献草坪根节点（GraphQL `ContributionCalendar` 类型）。
 ///
@@ -215,7 +306,7 @@ struct ContributionWeek: Codable, Equatable, Sendable {
 struct ContributionDay: Codable, Equatable, Sendable {
     /// ISO8601 日期（`YYYY-MM-DD`），用于 tooltip 显示。
     let date: String
-    /// 当天贡献数（commit + PR + Issue + Review）。
+    /// 日历总数可能包含权限受限或不在四类明细内的贡献。
     let contributionCount: Int
     /// GitHub 官方分级（5 档），UI 按此映射颜色深浅。
     let contributionLevel: ContributionLevel

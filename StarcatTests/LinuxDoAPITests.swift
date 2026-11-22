@@ -97,9 +97,16 @@ struct LinuxDoAPITests {
         }
         let model = LinuxDoListModel()
         model.reset(repositories: repos, promotionDates: ["1": "2026-10-15T00:00:00Z"], search: "", recentPromotionFirst: true, identity: "one")
-        #expect(model.rows.count == 40)
+        #expect(model.rows.count == 20)
         #expect(model.rows.first?.repoID == 1)
-        model.loadMore(); model.loadMore(); model.loadMore()
+        let gate = RepoCardPaginationGate()
+        let page = RepoCardPaginationPage(identity: model.identity, visibleItemCount: 20, loadedItemCount: 20, hasMore: true)
+        gate.update(page, isLoading: false)
+        for index in 9..<20 where gate.claim(page, appearingIndex: index) {
+            model.loadMore()
+        }
+        #expect(model.rows.count == 40, "同一批 11 个尾行只推进一页")
+        for _ in 0..<3 { model.loadMore() }
         #expect(model.rows.count == 95)
         #expect(!model.hasMore)
         #expect(Set(model.rows.map(\.repoID)).count == 95)

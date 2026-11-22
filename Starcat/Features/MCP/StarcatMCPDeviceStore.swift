@@ -114,9 +114,8 @@ final class StarcatMCPDeviceStore {
         records.map(\.device).sorted { $0.pairedAt > $1.pairedAt }
     }
 
-    /// 创建可复制给外部 Agent 的 opaque URI。endpoint 和证书指纹属于连接元数据，
-    /// 一次性 secret 才是短期敏感值，因此不得写日志或持久化。
-    func createInvitation(endpoint: String, certificateFingerprint: String?) throws -> String {
+    /// 一次性 secret 只用于当前配对流程，因此不得写日志或持久化。
+    func createInvitation(endpoint: String) throws -> String {
         cleanupExpiredInvitations()
         let secret = try Self.randomToken(byteCount: 32)
         invitations[secret] = Invitation(expiresAt: Date().addingTimeInterval(Self.invitationLifetime))
@@ -129,9 +128,6 @@ final class StarcatMCPDeviceStore {
             URLQueryItem(name: "endpoint", value: endpoint),
             URLQueryItem(name: "secret", value: secret)
         ]
-        if let certificateFingerprint, !certificateFingerprint.isEmpty {
-            components.queryItems?.append(URLQueryItem(name: "fingerprint", value: certificateFingerprint))
-        }
         guard let value = components.string else {
             throw StarcatMCPPairingError.invalidInvitation
         }

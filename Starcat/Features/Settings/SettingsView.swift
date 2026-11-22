@@ -136,8 +136,7 @@ struct SettingsView: View {
         case ragRetrieval
         case storage
         case diagnostics
-        /// 实验性功能(Labs):TypeSafe Jev 决策引擎 POC 等未定型能力的统一开关入口,
-        /// 与稳定功能隔离,便于后续整体下线。
+        /// 决策引擎设置沿用 `labs` 导航标识，供模型下载任务跳回配置页。
         case labs
 
         var id: String { rawValue }
@@ -162,7 +161,7 @@ struct SettingsView: View {
             case .ragRetrieval: return "rag.workspace.settings.section.retrieval"
             case .storage:      return "settings.navigation.item.dataStorage"
             case .diagnostics:  return "settings.navigation.item.diagnosticsSupport"
-            case .labs:         return "settings.navigation.item.labs"
+            case .labs:         return "settings.labs.decision.section"
             }
         }
 
@@ -190,7 +189,7 @@ struct SettingsView: View {
             case .ragRetrieval: return RAGSettingsSection.retrieval.businessIcon
             case .storage:      return .storage
             case .diagnostics:  return .diagnostics
-            case .labs:         return .labs
+            case .labs:         return .inference
             }
         }
 
@@ -283,7 +282,6 @@ struct SettingsView: View {
         // 提示词继续通过推理页的编辑弹窗进入，不新增侧栏分类。
         ("RAG", [.ragInference, .ragRetrieval]),
         ("settings.navigation.group.extensionsConnections", [.browserExtensions, .mcp, .localTools, .services]),
-        // Labs 仍位于末尾，与稳定功能分组。
         ("settings.navigation.group.support", [.storage, .diagnostics, .labs])
     ]
 
@@ -717,8 +715,8 @@ struct SettingsView: View {
                                keywords: ["浏览器", "chrome", "safari", "extension", "plugin"]),
             SettingsSearchItem("localTools", titleKey: "settings.navigation.item.codeAndLocalTools", tab: .localTools,
                                keywords: ["本地工具", "代码上下文", "仓库上下文", "context", "agent runtime", "codeflow", "codebase memory"]),
-            SettingsSearchItem("labs", titleKey: "settings.navigation.item.labs", tab: .labs,
-                               keywords: ["实验性", "实验室", "labs", "typesafe", "jev", "决策"]),
+            SettingsSearchItem("labs", titleKey: SettingsTab.labs.titleKeyString, tab: .labs,
+                               keywords: ["实验性", "labs", "typesafe", "jev", "laya", "决策", "http", "system one"]),
             SettingsSearchItem("integrations.codebaseMemory", titleKey: "settings.navigation.item.codeAndLocalTools",
                                tab: .localTools, target: "integrations.codebaseMemory",
                                keywords: ["codebase memory", "codebasememory", "代码索引"]),

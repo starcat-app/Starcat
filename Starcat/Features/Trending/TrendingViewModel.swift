@@ -305,7 +305,7 @@ final class TrendingViewModel {
     private var currentReloadIdentity: TrendingQueryIdentity?
     private var currentReloadPolicy: TrendingCachePolicy?
 
-    private static let pageSize = 20
+    private static let pageSize = ListPaginationPolicy.repoCardPageSize
 
     private var currentQueryIdentity: TrendingQueryIdentity {
         TrendingQueryIdentity(period: selectedPeriod)

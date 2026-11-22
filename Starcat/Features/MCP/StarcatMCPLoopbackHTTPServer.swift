@@ -9,7 +9,7 @@
 //  端口引入 NIO/Vapor，因此这里用 Network.framework 写一层极薄 adapter。
 //
 //  关键约束：
-//  - 默认只监听 `127.0.0.1`；可信网络模式必须传入独立 TLS identity 才能绑定所有接口；
+//  - 默认只监听 `127.0.0.1`；允许其他设备连接时扩大监听范围，两个模式都使用 HTTP；
 //  - P0 使用 stateless HTTP，一次连接处理一个请求，不支持 SSE/server push；
 //  - MCP 请求体上限 8 MiB，System One 图片请求体上限 32 MiB。
 //
@@ -17,13 +17,12 @@
 import Foundation
 import MCP
 import Network
-import Security
 
 @MainActor
 final class StarcatMCPLoopbackHTTPServer {
     private let port: Int
     private let runtime: any StarcatMCPHTTPRuntime
-    private let tlsIdentity: SecIdentity?
+    private let allowsRemoteConnections: Bool
     private let requestValidator: @MainActor (StarcatHTTPServerRequest) -> StarcatHTTPServerError?
     private let routeHandler: @MainActor (StarcatHTTPServerRequest) async -> StarcatHTTPServerRouteResponse?
     private let publicRouteHandler: @MainActor (StarcatHTTPServerRequest) async -> StarcatHTTPServerRouteResponse?
@@ -35,14 +34,14 @@ final class StarcatMCPLoopbackHTTPServer {
     init(
         port: Int,
         runtime: any StarcatMCPHTTPRuntime,
-        tlsIdentity: SecIdentity? = nil,
+        allowsRemoteConnections: Bool = false,
         requestValidator: @escaping @MainActor (StarcatHTTPServerRequest) -> StarcatHTTPServerError?,
         routeHandler: @escaping @MainActor (StarcatHTTPServerRequest) async -> StarcatHTTPServerRouteResponse? = { _ in nil },
         publicRouteHandler: @escaping @MainActor (StarcatHTTPServerRequest) async -> StarcatHTTPServerRouteResponse? = { _ in nil }
     ) {
         self.port = port
         self.runtime = runtime
-        self.tlsIdentity = tlsIdentity
+        self.allowsRemoteConnections = allowsRemoteConnections
         self.requestValidator = requestValidator
         self.routeHandler = routeHandler
         self.publicRouteHandler = publicRouteHandler
@@ -61,19 +60,11 @@ final class StarcatMCPLoopbackHTTPServer {
         // 修复：显式要求 IPv4 loopback + 端口放 requiredLocalEndpoint，on: .any
         // 规避 commit 579bc46 提到的「requiredLocalEndpoint 与 on: 同时指定同端口
         // 触发 EINVAL」。
+        let parameters = NWParameters.tcp
         let listener: NWListener
-        if let tlsIdentity {
-            let tlsOptions = NWProtocolTLS.Options()
-            guard let networkIdentity = sec_identity_create(tlsIdentity) else {
-                throw StarcatMCPError.invalidArguments("Unable to create MCP TLS identity")
-            }
-            sec_protocol_options_set_local_identity(tlsOptions.securityProtocolOptions, networkIdentity)
-            sec_protocol_options_set_min_tls_protocol_version(tlsOptions.securityProtocolOptions, .TLSv13)
-            let parameters = NWParameters(tls: tlsOptions, tcp: NWProtocolTCP.Options())
-            // 远程模式显式绑定 wildcard；只有配置完成 TLS identity 后才会走到这里。
+        if allowsRemoteConnections {
             listener = try NWListener(using: parameters, on: nwPort)
         } else {
-            let parameters = NWParameters.tcp
             parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(IPv4Address.loopback), port: nwPort)
             listener = try NWListener(using: parameters, on: .any)
         }
@@ -92,8 +83,7 @@ final class StarcatMCPLoopbackHTTPServer {
         self.listener = listener
     }
 
-    /// 临时 Runtime Bridge 必须等 listener 真正进入 ready 才能启动 Harness；否则
-    /// MCP client 的首次严格同步可能先于 socket bind，导致本轮模型拿不到任何工具。
+    /// 在公布地址或启动 Harness 之前等待 socket bind，避免客户端首次请求撞上启动过程。
     func startAndWaitUntilReady() async throws -> Int {
         if let listener, let boundPort = listener.port?.rawValue, boundPort != 0 {
             return Int(boundPort)
