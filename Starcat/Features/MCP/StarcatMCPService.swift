@@ -5,11 +5,12 @@
 //  Starcat 本机 MCP Service 协调器。
 //
 //  生命周期由 Settings 与 AppDependencies 驱动：
-//  - 用户开启后，只在 Pro 权益有效时监听 `127.0.0.1:{port}/mcp`；
+//  - 用户开启后，只在 Pro 权益有效时监听 HTTP；默认回环，可扩展到网络接口；
 //  - Bearer token 来自全局 Starcat Local API Key，设置页集中在「集成」管理；
 //  - 每个 HTTP 请求都会重新检查开关 / Pro / token，防止订阅状态变化后旧连接继续放行。
 //
 
+import Darwin
 import Foundation
 import MCP
 import Observation
@@ -32,17 +33,14 @@ final class StarcatMCPService {
     private let writeFacade: StarcatMCPWriteFacade
     private let notificationService: ReleaseNotificationService?
     private let decisionSystemOneService: DecisionSystemOneService?
-    // 固定本次 service 的 Bonjour 名称，确保配对地址和 Host/Origin 白名单一致。
-    // ProcessInfo.hostName 可能是网络提供的公网名称，不能当成本地可解析地址。
-    private let localHostName = SCDynamicStoreCopyLocalHostName(nil) as String?
     private var runtime: StarcatMCPRuntime?
     private var httpServer: StarcatMCPLoopbackHTTPServer?
-    private var activeTLSIdentity: StarcatMCPTLSIdentity?
     private var activeRemoteConnections = false
     private var startupTask: Task<Void, Never>?
     private var lifecycleGeneration = 0
 
     private(set) var state: State = .stopped
+    private(set) var remoteEndpointURL: String?
     var bearerToken: String { localAPIKeyStore.apiKey }
 
     /// 为一个外部 Agent Run 创建独立的只读 MCP Server。
@@ -95,7 +93,7 @@ final class StarcatMCPService {
         toolSet: ExternalAgentMCPToolSet,
         port: Int
     ) throws -> any StarcatMCPHTTPRuntime {
-        let originValidator = makeOriginValidator(port: port, allowsRemoteConnections: false)
+        let originValidator = makeOriginValidator(port: port)
         switch toolSet {
         case .starcatReadOnly(let allowedToolNames):
             guard !allowedToolNames.isEmpty else {
@@ -151,29 +149,31 @@ final class StarcatMCPService {
         self.decisionSystemOneService = decisionSystemOneService
     }
 
-    var endpointURL: String {
-        Self.makeEndpointURL(
-            port: settings.mcpServicePort,
-            allowsRemoteConnections: settings.mcpAllowRemoteConnections,
-            localHostName: localHostName
-        )
+    var endpointURL: String? {
+        guard case .running(let port) = state else { return nil }
+        return Self.makeEndpointURL(port: port)
     }
 
-    /// 本机连接不依赖 DNS；远程连接使用系统的 Bonjour 名称，缺失时退到本机。
-    /// TLS 由 listener 模式决定，即使地址退到 loopback 也不能降级为 HTTP。
-    static func makeEndpointURL(
-        port: Int,
-        allowsRemoteConnections: Bool,
-        localHostName: String?
-    ) -> String {
-        let scheme = allowsRemoteConnections ? "https" : "http"
-        let host: String
-        if allowsRemoteConnections, let localHostName, !localHostName.isEmpty {
-            host = "\(localHostName).local"
-        } else {
-            host = "127.0.0.1"
+    static func makeEndpointURL(port: Int, host: String = "127.0.0.1") -> String {
+        "http://\(host):\(port)/mcp"
+    }
+
+    /// 记录 listener 启动时的网络地址。允许 IP 直连，同时保留稳定的 Bonjour 配对地址。
+    static func localIPv4Hosts() -> [String] {
+        var addresses: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&addresses) == 0, let addresses else { return [] }
+        defer { freeifaddrs(addresses) }
+        return sequence(first: addresses, next: { $0.pointee.ifa_next }).compactMap { entry in
+            let interface = entry.pointee
+            guard interface.ifa_flags & UInt32(IFF_UP) != 0,
+                  interface.ifa_flags & UInt32(IFF_LOOPBACK) == 0,
+                  let address = interface.ifa_addr,
+                  address.pointee.sa_family == AF_INET else { return nil }
+            var host = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+            guard getnameinfo(address, socklen_t(address.pointee.sa_len), &host, socklen_t(host.count),
+                              nil, 0, NI_NUMERICHOST) == 0 else { return nil }
+            return String(decoding: host.prefix { $0 != 0 }.map(UInt8.init(bitPattern:)), as: UTF8.self)
         }
-        return "\(scheme)://\(host):\(port)/mcp"
     }
 
     var cliInstallCommand: String {
@@ -214,6 +214,14 @@ final class StarcatMCPService {
         MCPAgentSetupPrompt.pairingCommand(invitationURI: try createPairingInvitationURI())
     }
 
+    /// 单独生成跨设备邀请，本机邀请始终可在关闭远程连接后继续使用。
+    func createRemotePairingCommand() throws -> String {
+        guard let remoteEndpointURL else { throw StarcatMCPError.disabled }
+        return MCPAgentSetupPrompt.pairingCommand(
+            invitationURI: try deviceStore.createInvitation(endpoint: remoteEndpointURL)
+        )
+    }
+
     /// 每次点击都创建新的五分钟 invitation，避免手工配对与 Agent 配对复用 secret。
     func createPairingAgentInstruction() throws -> String {
         MCPAgentSetupPrompt.pairAgent(invitationURI: try createPairingInvitationURI())
@@ -227,13 +235,10 @@ final class StarcatMCPService {
 
     /// invitation 只用于兑换逐设备 token，不能直接调用 MCP。
     private func createPairingInvitationURI() throws -> String {
-        guard case .running = state else {
+        guard let endpointURL else {
             throw StarcatMCPError.disabled
         }
-        return try deviceStore.createInvitation(
-            endpoint: endpointURL,
-            certificateFingerprint: activeTLSIdentity?.certificateFingerprint
-        )
+        return try deviceStore.createInvitation(endpoint: endpointURL)
     }
 
     func refreshForCurrentSettings() {
@@ -286,12 +291,19 @@ final class StarcatMCPService {
         lifecycleGeneration += 1
         let generation = lifecycleGeneration
         let allowsRemoteConnections = settings.mcpAllowRemoteConnections
-        // HTTP 决策接口和 MCP Runtime 必须使用同一个 Host/Origin 白名单；
-        // 否则远程模式下会出现 MCP 允许、HTTP 拒绝（或反过来）的安全分叉。
-        let originValidator = makeOriginValidator(
-            port: port,
-            allowsRemoteConnections: allowsRemoteConnections
-        )
+        var remoteHosts: [String] = []
+        if allowsRemoteConnections {
+            if let name = SCDynamicStoreCopyLocalHostName(nil) as String?, !name.isEmpty {
+                remoteHosts.append("\(name).local")
+            }
+            remoteHosts.append(contentsOf: Self.localIPv4Hosts())
+        }
+        let remoteHost = remoteHosts.first
+        if allowsRemoteConnections {
+            // 兼顾旧 profile 保存的系统 DNS 名称，但新邀请优先使用本机公布的地址。
+            remoteHosts.append(ProcessInfo.processInfo.hostName)
+        }
+        let originValidator = makeOriginValidator(port: port, remoteHosts: remoteHosts)
         let runtime = StarcatMCPRuntime(
             facade: facade,
             writeFacade: writeFacade,
@@ -309,17 +321,11 @@ final class StarcatMCPService {
                 try Task.checkCancellation()
 
                 try await runtime.start()
-                // 只有用户显式开启可信网络后才读取/生成系统 TLS identity。默认 loopback
-                // 路径完全不触碰系统 Keychain，避免启动期授权弹窗和测试 host hang。
-                let tlsIdentity = settings.mcpAllowRemoteConnections
-                    ? try await Task.detached(priority: .userInitiated) {
-                        try StarcatMCPTLSIdentityStore().loadOrCreate()
-                    }.value
-                    : nil
+                try Task.checkCancellation()
                 let httpServer = StarcatMCPLoopbackHTTPServer(
                     port: port,
                     runtime: runtime,
-                    tlsIdentity: tlsIdentity?.identity,
+                    allowsRemoteConnections: allowsRemoteConnections,
                     requestValidator: { [weak self] request in
                         self?.validate(request)
                     },
@@ -330,7 +336,8 @@ final class StarcatMCPService {
                         await self?.handlePublicRoute(request, originValidator: originValidator)
                     }
                 )
-                try httpServer.start()
+                self.httpServer = httpServer
+                let boundPort = try await httpServer.startAndWaitUntilReady()
 
                 guard !Task.isCancelled, generation == self.lifecycleGeneration else {
                     httpServer.stop()
@@ -339,16 +346,17 @@ final class StarcatMCPService {
                 }
 
                 self.runtime = runtime
-                self.httpServer = httpServer
-                self.activeTLSIdentity = tlsIdentity
-                self.activeRemoteConnections = self.settings.mcpAllowRemoteConnections
-                self.state = .running(port: port)
+                self.activeRemoteConnections = allowsRemoteConnections
+                self.remoteEndpointURL = remoteHost.map { Self.makeEndpointURL(port: boundPort, host: $0) }
+                self.state = .running(port: boundPort)
                 AppLog.network.info("MCP Service started (remote=\(self.activeRemoteConnections, privacy: .public), port=\(port, privacy: .public))")
             } catch is CancellationError {
                 await runtime.shutdown()
             } catch {
                 await runtime.shutdown()
                 guard generation == self.lifecycleGeneration else { return }
+                self.httpServer?.stop()
+                self.httpServer = nil
                 self.state = .failed(error.localizedDescription)
                 AppLog.network.error("MCP Service failed: \(error.localizedDescription, privacy: .public)")
                 if let mcpError = error as? StarcatMCPError,
@@ -379,7 +387,7 @@ final class StarcatMCPService {
         startupTask = nil
         httpServer?.stop()
         httpServer = nil
-        activeTLSIdentity = nil
+        remoteEndpointURL = nil
         activeRemoteConnections = false
         let runtime = runtime
         self.runtime = nil
@@ -413,41 +421,13 @@ final class StarcatMCPService {
         }
     }
 
-    /// MCP SDK 自带 DNS rebinding 防护，默认只认识 localhost；可信网络 endpoint
-    /// 使用当前 Mac 的 Bonjour hostname，必须把同一个 hostname 精确加入 Host/Origin
-    /// allowlist。这里不使用通配 hostname，也不关闭校验，避免任意 Host 借 listener
-    /// 访问本机 MCP 服务。
+    /// MCP 与决策 REST 共用同一组 Host/Origin，公布的 Bonjour 和 IP 都能直接调用。
     private func makeOriginValidator(
         port: Int,
-        allowsRemoteConnections: Bool
+        remoteHosts: [String] = []
     ) -> OriginValidator {
-        let loopbackHosts = [
-            "127.0.0.1:\(port)",
-            "localhost:\(port)",
-            "[::1]:\(port)"
-        ]
-        let scheme = allowsRemoteConnections ? "https" : "http"
-        var allowedHosts = loopbackHosts
-        var allowedOrigins = loopbackHosts.map { "\(scheme)://\($0)" }
-
-        if allowsRemoteConnections {
-            let remoteEndpoint = Self.makeEndpointURL(
-                port: port,
-                allowsRemoteConnections: true,
-                localHostName: localHostName
-            )
-            if let host = URLComponents(string: remoteEndpoint)?.host {
-                let remoteHost = "\(host):\(port)"
-                allowedHosts.append(remoteHost)
-                allowedOrigins.append("https://\(remoteHost)")
-            }
-            // 系统 DNS 名称仍是这台 Mac 的合法访问名；已有远程 profile 可能保存它。
-            // 精确允许该名字，但新配对不再把它当作默认地址。
-            let systemHost = "\(ProcessInfo.processInfo.hostName):\(port)"
-            allowedHosts.append(systemHost)
-            allowedOrigins.append("https://\(systemHost)")
-        }
-        return OriginValidator(allowedHosts: allowedHosts, allowedOrigins: allowedOrigins)
+        let allowedHosts = (["127.0.0.1", "localhost", "[::1]"] + remoteHosts).map { "\($0):\(port)" }
+        return OriginValidator(allowedHosts: allowedHosts, allowedOrigins: allowedHosts.map { "http://\($0)" })
     }
 
     private func validate(_ request: StarcatHTTPServerRequest) -> StarcatHTTPServerError? {
@@ -550,8 +530,7 @@ final class StarcatMCPService {
         return StarcatHTTPServerRouteResponse(statusCode: statusCode, body: body)
     }
 
-    /// 一次性配对是 MCP listener 上唯一的非 MCP route。它不接受业务参数，也不读取用户数据；
-    /// 成功响应只有当前设备自己的 token，且必须先经过 `deviceStore` 的 App 内确认。
+    /// 一次性配对需经过 `deviceStore` 的 App 内确认，再签发当前设备自己的 token。
     private func handlePairingRoute(_ request: StarcatHTTPServerRequest) async -> StarcatHTTPServerRouteResponse? {
         guard request.path == "/pairing/exchange" else { return nil }
         guard request.method.uppercased() == "POST" else {

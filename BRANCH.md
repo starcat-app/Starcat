@@ -45,6 +45,7 @@ Search Center 内容过滤、误杀控制、来源胶囊筛选、主题适配与
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
+| `codex/http-only-bridge` | 本地 `../Starcat-http-only-bridge`；CLI、用户手册各在其 `supports/` 下使用同名独立 worktree | 将 Starcat 的 CLI、MCP、决策 REST 服务统一为 HTTP，并迁移旧 CLI 连接地址。 | `开发中`；2026-11-22 从本地 `dev` 创建，App `b443df3a`、CLI `4e0d274`、手册 `14d991f`。 | 验证本机及局域网调用，验收后分别合回各仓 `dev`。 |
 | `dong4j/docs-app-wide-performance` | 本地 Orca worktree：`/Users/dong4j/orca/workspaces/Starcat/bonnethead` | 发版前全仓性能审查与审查 Skill。 | `已合并`；2026-11-22 从 `d436acf6` 快进同步本地 `dev`，审查 Skill 合回本地 `dev`。 | 保留分支与 worktree；性能审查报告落盘及后续清理按 dong4j 授权处理。 |
 | `codex/skill-evaluator` | 本地 `../Starcat-skill-evaluator`；无远端专项分支 | 基于 `origin/dev@d436acf6`，为 Direct 的仓库 Skills 面板和本机管理窗口加入静态及 AI 评估、批量报告与 CLI/MCP 能力。 | `已合并`；2026-11-22 两次将 `dev` 合入本分支（`388f3bf8` / `4a49731e`），解决能力覆盖清单 CAP 编号、`StarcatMCPPublicFacade` init 与 `BRANCH.md` 冲突，并以 `eee16eea` 修复 `tasks` 初始化编译错误；在合并树上通过 121 项定向测试及双渠道构建，再经 `dab386de` 以 merge commit 合回本地 `dev`（未 push）。仍待 dong4j 功能与 UI 验收。 | 保留本地分支与 worktree 供验收；如需删除或推送远端，等待 dong4j 单独授权。 |
 | `codex/repo-list-loading-motion` | 本地，`../Starcat-repo-list-loading-motion` | 从 `dev@df9db309` 统一星标、探索与活动中栏的列表切换及加载衔接。按[专题清单](docs/4-工程进度/中栏列表加载动效专题/实施Checklist.md)执行。 | `已合并`；2026-11-22 将 `dev` 合入本分支并解决 `HomeView` / `RepoListView` 两处冲突（保留 dev 洞察全窗口覆盖与专题 `MiddleListPageFade` 动效），再 fast-forward 合回 `dev`。 | 保留本地分支与 worktree；如需删除，等待 dong4j 单独授权。 |

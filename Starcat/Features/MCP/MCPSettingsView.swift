@@ -75,6 +75,17 @@ struct MCPSettingsTab: View {
                     Text(statusText(for: mcpService.state))
                         .foregroundStyle(statusColor(for: mcpService.state))
                 }
+
+                if let endpoint = mcpService.endpointURL {
+                    LabeledContent("settings.mcp.endpoint") {
+                        VStack(alignment: .trailing, spacing: 4) {
+                            endpointRow(endpoint)
+                            if let remoteEndpoint = mcpService.remoteEndpointURL {
+                                endpointRow(remoteEndpoint)
+                            }
+                        }
+                    }
+                }
             } header: {
                 SettingsSectionHeader(
                     "settings.mcp.section.service",
@@ -173,6 +184,19 @@ struct MCPSettingsTab: View {
                         tooltip: "settings.mcp.agentSetup.pair.manual.copy",
                         isEnabled: isRunning(mcpService.state)
                     )
+                }
+
+                if mcpService.remoteEndpointURL != nil {
+                    setupActionRow(
+                        title: "settings.mcp.content.pair.remoteTitle",
+                        help: "settings.mcp.content.pair.manualHelp"
+                    ) {
+                        pairingCopyButton(
+                            providesContent: { try mcpService.createRemotePairingCommand() },
+                            tooltip: "settings.mcp.content.pair.remoteTitle",
+                            isEnabled: isRunning(mcpService.state)
+                        )
+                    }
                 }
 
                 setupActionRow(
@@ -394,6 +418,15 @@ struct MCPSettingsTab: View {
     ) -> some View {
         CopyFeedbackButton(providesContent: content, tooltip: tooltip) { didCopy in
             setupCopyLabel(didCopy: didCopy, key: tooltip)
+        }
+    }
+
+    private func endpointRow(_ endpoint: String) -> some View {
+        HStack(spacing: 8) {
+            Text(verbatim: endpoint)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+            setupCopyButton(content: { endpoint }, tooltip: "settings.mcp.endpoint")
         }
     }
 
