@@ -473,16 +473,17 @@ struct SmartCollectionsOverviewView: View {
 
     private func loadUserCounts(for collections: [UserSmartCollection]) async -> [String: Int] {
         var nextUser: [String: Int] = [:]
-        for collection in collections {
-            guard let rule = collection.rule else {
-                nextUser[collection.id] = 0
-                continue
-            }
-            if let count = try? await viewModel.countRepos(matching: rule) {
-                nextUser[collection.id] = count
-            } else {
-                nextUser[collection.id] = 0
-            }
+        // 一次批量求值：同一批内的规则无关查询、同 scope 候选与 FTS / 语义搜索
+        // 共享取数，不再逐规则重复（全仓性能专项 P1-6）。单条失败在批量入口内
+        // 记 0，兜底语义与旧版逐条 try? 对等。
+        let counted = collections.filter { $0.rule != nil }
+        let rules = counted.compactMap(\.rule)
+        let counts = await viewModel.countRepos(matching: rules)
+        for (collection, count) in zip(counted, counts) {
+            nextUser[collection.id] = count
+        }
+        for collection in collections where collection.rule == nil {
+            nextUser[collection.id] = 0
         }
         return nextUser
     }
