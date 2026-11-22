@@ -138,9 +138,10 @@ struct MyInsightsView: View {
                 .padding(.bottom, 24)
                 .frame(maxWidth: .infinity, alignment: .top)
             }
-            .nativeDetailTransition(value: topic)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // 页头与正文同步交接，外层背景遮住下方的分栏内容。
+        .nativeDetailTransition(value: topic)
         .background(Color(nsColor: .windowBackgroundColor))
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in profileDay = Date() }
         .onAppear { profileDay = Date() }
