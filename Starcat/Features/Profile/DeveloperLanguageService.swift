@@ -137,10 +137,12 @@ final class DeveloperLanguageService {
                 // 只有自己仍是最新一代时才清登记：换号 / reset 取消旧任务后，旧
                 // defer 可能在新任务已登记 in-flight 之后才恢复执行，无条件清理会
                 // 弄丢新任务的同 login 去重登记并提前复位 isLoading。
-                guard generation == self.inflightGeneration else { return }
-                self.isLoading = false
-                self.inflightTask = nil
-                self.inflightLogin = nil
+                // defer 闭包内禁止 return（编译器禁止控制流逸出），用条件块等价表达守卫。
+                if generation == self.inflightGeneration {
+                    self.isLoading = false
+                    self.inflightTask = nil
+                    self.inflightLogin = nil
+                }
             }
 
             do {
