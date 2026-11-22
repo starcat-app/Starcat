@@ -814,6 +814,7 @@ struct DailyRecommendationTests {
         )
         await store.load(
             accountID: 42, scopeRevision: 1, serviceScope: "test",
+            fetchStarredIDs: { [1, 100] },
             fetchStars: { [repo(1), repo(100)] }, fetchCandidates: { _, _ in
                 throw URLError(.notConnectedToInternet)
             }

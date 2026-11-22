@@ -214,6 +214,8 @@ struct DailyRecommendationHost: ViewModifier {
             let prepared = await dependencies.dailyRecommendationStore.load(
                 accountID: accountID, scopeRevision: revision, serviceScope: scope,
                 replacingCurrentBatch: replacingCurrentBatch,
+                // 读 1 用轻量 ID 集：当日缓存命中路径不再拉完整 Stars 列表。
+                fetchStarredIDs: { Set(try await dependencies.repoRepository.fetchStarredRepoIDs()) },
                 fetchStars: { try await dependencies.repoRepository.fetchAllStarred() },
                 fetchCandidates: { try await dependencies.recommendAPI.fetchDailyCandidates(seedIDs: $0, cursor: $1) },
                 prepareItems: { items in

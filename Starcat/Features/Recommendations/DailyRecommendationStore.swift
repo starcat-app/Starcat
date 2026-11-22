@@ -114,6 +114,7 @@ final class DailyRecommendationStore {
         date: Date = Date(),
         serviceScope: String,
         replacingCurrentBatch: Bool = false,
+        fetchStarredIDs: () async throws -> Set<Int64> = { [] },
         fetchStars: () async throws -> [Repo],
         fetchCandidates: ([Int64], String?) async throws -> DailyRecommendationResponse,
         prepareItems: ([RepoRecommendationItem]) async -> Void = { _ in }
@@ -133,9 +134,10 @@ final class DailyRecommendationStore {
         var pool = state.candidatePool
         do {
             // 昨日快照不伪装成今日推荐；离线时错误态仍可保留上一批及其真实日期。
-            let repos = try await fetchStars()
+            // 读 1 只取 Star ID 集（轻量）：当日缓存命中路径在早退前就能排除新 Star，
+            // 不必为了一次重看拉完整 Stars 列表。
+            var starred = try await fetchStarredIDs()
             guard token == generation, !Task.isCancelled else { return false }
-            let starred = Set(repos.map(\.id))
             await excludeStarred(starred.union(observedStarredIDs))
             guard token == generation, !Task.isCancelled else { return false }
             let excluded = starred.union(observedStarredIDs).union(state.dismissedIDs)
@@ -159,6 +161,11 @@ final class DailyRecommendationStore {
                 await persist()
                 return token == generation && !Task.isCancelled
             }
+            // 读 2 拉完整 Stars：只有真正需要种子或补页的路径才承担完整列表成本；
+            // 两读之间新 Star 的 ID 并入排除集，既有卡片留待下一轮排除（毫秒级窗口可接受）。
+            let repos = try await fetchStars()
+            guard token == generation, !Task.isCancelled else { return false }
+            starred.formUnion(repos.map(\.id))
             let seeds = DailyRecommendationState.seeds(from: repos).sorted()
             guard !seeds.isEmpty else {
                 emptyKey = "recommendations.daily.coldStart"
