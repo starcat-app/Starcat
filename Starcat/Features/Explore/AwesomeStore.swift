@@ -14,8 +14,8 @@ import Observation
 @MainActor
 @Observable
 final class AwesomeStore {
-    /// 与主 Repo List 保持一致，首屏只读取 40 条；距离页尾 10 行时预取下一页。
-    static let repositoryPageSize = 40
+    /// 与主 Repo List 共用页大小，默认浏览按页读取 SQLite。
+    static let repositoryPageSize = ListPaginationPolicy.repoCardPageSize
     /// 页面销毁不等于数据失效；派生快照跟随账户会话，重入时按查询身份复用。
     let listModel = AwesomeListModel()
 
@@ -239,7 +239,7 @@ final class AwesomeStore {
         await loadRepositoryPage(append: true)
     }
 
-    /// 搜索、非原始排序和需要全局事实的筛选必须在完整结果集上执行，不能把当前 40 条
+    /// 搜索、非原始排序和需要全局事实的筛选必须在完整结果集上执行，不能把当前页
     /// 当成全部数据。完整读取只查一次本地库、只发布一次，不逐页重复 COUNT / 解码 / 刷新 UI。
     func loadAllRepositoryPages() async {
         await selectionLoadTask?.value

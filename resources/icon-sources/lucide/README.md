@@ -16,6 +16,7 @@ Fork 身份与次数另用 dong4j 确认的定制素材，来源与绘制约束�
 - `BusinessEmbedding`：`icons/axis-3d.svg`
 - `BusinessRecommendations`：`icons/scan-search.svg`
 - `BusinessInsightsOverview`：`icons/chart-no-axes-column.svg`
+- `BusinessKnowledgeProfile`：`icons/user-round.svg`
 - 上述清单均不在固定提交的 Feather 衍生图标列表内，适用 ISC；随 App 保留完整声明于 `Starcat/Resources/Licenses/Lucide.txt`，并在 About 开源致谢登记。
 
 SVG 保留上游路径、24×24 设计网格与圆角描边，默认线宽 2px；`BusinessInsightsOverview` 的三条独立直线视觉偏轻，单独加粗至 3px，与相邻主导航图标做光学匹配。Asset Catalog 将其作为单色矢量模板编译，不把 24px 设计网格当作显示尺寸。
@@ -31,6 +32,7 @@ SVG 保留上游路径、24×24 设计网格与圆角描边，默认线宽 2px�
 | 许可证 | Lucide `scale` | 不再用空间坐标或认证徽章；详情、筛选、洞察导航和分布区块同源 |
 | Embedding | Lucide `axis-3d` | 用坐标维度区分 MCP 连线；模型能力、本地模型分类与用量统计同源 |
 | 相似仓库推荐 | Lucide `scan-search` | 用匹配检索区分 MCP；详情入口、推荐弹层与推荐服务设置同源 |
+| 个人知识画像 | Lucide `user-round` | 单人轮廓表达个人画像，沿用洞察侧栏图标规格 |
 | CodeFlow | SF `flowchart` | 用流程节点区分 MCP；外链菜单、主推入口与面板标题同源 |
 | Fork 身份 / 派生来源 | 定制 Y 形三节点 | 卡片标题、来源说明与隐藏 Fork 筛选一致，不与数量共用 |
 | 被 Fork 次数 | 定制双箭头节点 | 卡片、详情、搜索与活动统计一致，保留既有语义色 |

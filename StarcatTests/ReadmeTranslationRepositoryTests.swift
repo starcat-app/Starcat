@@ -344,6 +344,27 @@ struct ReadmeTranslationRepositoryTests {
         #expect(!FileManager.default.fileExists(atPath: html.path))
     }
 
+    @Test("旧版分段译文仍能启动恢复，首次读取后压缩并刷新字节统计")
+    func migratesUncompressedSegmentedTranslation() async throws {
+        let (cache, root) = try makeIsolatedCache()
+        defer { cleanup(root) }
+        let translation = makeTranslation(lang: "zh-Hans")
+        try await cache.upsert(translation, owner: "octo", repo: "demo")
+        let file = root.appendingPathComponent("octo/demo/zh-Hans.json")
+        let legacy = try CacheJSONCodec.unpack(Data(contentsOf: file))
+        try legacy.write(to: file)
+
+        let restored = DiskReadmeTranslationCache(rootOverride: root)
+        #expect(restored.itemCount == 1)
+        #expect(restored.totalBytes == legacy.count)
+        #expect(try await restored.find(owner: "octo", repo: "demo", targetLanguage: "zh-Hans") == translation)
+        let migrated = try Data(contentsOf: file)
+        #expect(CacheJSONCodec.isCompressed(migrated))
+        #expect(restored.totalBytes == migrated.count)
+        #expect(try CacheJSONCodec.unpack(migrated) == legacy)
+        #expect(DiskReadmeTranslationCache(rootOverride: root).itemCount == 1)
+    }
+
     // MARK: - LRU sweep
 
     @Test("LRU sweep：60 天未访问条目被删")

@@ -712,7 +712,7 @@ struct RepoSkillTests {
             let row = try #require(try Row.fetchOne(db, sql: "SELECT * FROM repo_skill_scans WHERE repo_id = 1"))
             #expect(row["skill_count"] as Int == 1)
             #expect(row["is_complete"] as Bool)
-            #expect(row["payload"] as Data == payload)
+            #expect(try CacheJSONCodec.unpack(row["payload"] as Data) == payload)
             #expect(try Int.fetchOne(db, sql: "SELECT skill_count FROM repo_skill_scans WHERE repo_id = 2") == 0)
         }
     }

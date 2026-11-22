@@ -628,6 +628,25 @@ struct FollowGraphStoreTests {
         #expect(await cache.load(account: "1") == nil)
     }
 
+    @Test("关注与粉丝快照首读自动压缩旧 JSON", arguments: [FollowGraphRelation.following, .followers])
+    func upgradesLegacyGraph(relation: FollowGraphRelation) async throws {
+        let (root, cache) = try temporaryCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let graph = FollowGraphSnapshot(root: node(1), relation: relation)
+        let name = relation == .following ? "snapshot.json" : "followers-snapshot.json"
+        let directory = root.appendingPathComponent("1", isDirectory: true)
+        let file = directory.appendingPathComponent(name)
+        let oldJSON = try JSONEncoder().encode(graph)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try oldJSON.write(to: file)
+
+        #expect(await cache.load(account: "1", relation: relation) == graph)
+        let migrated = try Data(contentsOf: file)
+        #expect(CacheJSONCodec.isCompressed(migrated))
+        #expect(try CacheJSONCodec.unpack(migrated) == oldJSON)
+        #expect(await cache.load(account: "1", relation: relation) == graph)
+    }
+
     @Test("单页追加保持 cursor，末页才标记完整")
     func pagination() async throws {
         let (root, cache) = try temporaryCache()

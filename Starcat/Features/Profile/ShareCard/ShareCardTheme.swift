@@ -293,7 +293,7 @@ extension ShareCardPalette {
     /// 配色逻辑：
     /// - 背景：#0D1117（GitHub dark mode 底色）→ #161B22（GitHub canvas-default
     ///   sidebar 色），让用过 GitHub 的人一眼觉得熟悉。
-    /// - 草坪：直接复用 ContributionPalette.dark 的官方 5 档色——
+    /// - 草坪：导出主题固定使用 GitHub 的经典 5 档色——
     ///   #161b22 / #0e4429 / #006d32 / #26a641 / #39d353。
     /// - 强调色：#39D353（GitHub 草坪 l4 的最亮绿）。"分享到 X"按钮也用这个色，
     ///   配 onAccent=深绿黑（#0D1117）保证可读。

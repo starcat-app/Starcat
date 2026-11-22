@@ -5,6 +5,7 @@
 //  验证旧报告模板与兼容矩阵的展示转换，无需启动界面或评估进程。
 //
 
+import Foundation
 import Testing
 @testable import Starcat
 
@@ -76,5 +77,41 @@ struct SkillEvaluationReportPresentationTests {
         for (checkID, raw) in cases {
             #expect(Line(checkID: checkID, raw: raw) == .original(raw), "\(raw)")
         }
+    }
+
+    @Test func reportHeadlineUsesTotalFindingsAndKeepsUnknownCoverageDistinctFromZero() {
+        let cases: [(SkillEvaluationState, [String], String?)] = [
+            (.passed, ["Findings 0"], "0"),
+            (.findings, ["Findings 42", "Security finding (medium)"], "42"),
+            (.incomplete, ["Check coverage incomplete", "Findings 0"], nil),
+            (.incomplete, ["SkillSpector static scan"], nil),
+        ]
+        for (state, details, expected) in cases {
+            let report = makeReport(mode: .security, state: state,
+                                    check: .init(id: "security", state: state, score: nil, details: details))
+            #expect(SkillEvaluationHeadlineMetric(report)?.value == expected)
+        }
+    }
+
+    @Test func reportHeadlineUsesModeSpecificScaleAndAvailableScore() {
+        let cases: [(SkillEvaluationMode, String, SkillEvaluationState, Double?, String?)] = [
+            (.rubric, "rubric", .passed, 83.6, "83.6/100"),
+            (.rubric, "rubric", .incomplete, nil, nil),
+            (.similarity, "similarity", .findings, 0.87654321, "0.87654321"),
+            (.similarity, "similarity", .passed, nil, nil),
+            (.quick, "quality", .passed, 86, nil),
+        ]
+        for (mode, checkID, state, score, expected) in cases {
+            let report = makeReport(mode: mode, state: state,
+                                    check: .init(id: checkID, state: state, score: score, details: []))
+            #expect(SkillEvaluationHeadlineMetric(report)?.value == expected)
+        }
+    }
+
+    private func makeReport(mode: SkillEvaluationMode, state: SkillEvaluationState, check: SkillEvaluationCheck) -> SkillEvaluationRecord {
+        SkillEvaluationRecord(
+            id: UUID(), mode: mode, subjects: [], names: [], versions: [], model: nil,
+            createdAt: Date(timeIntervalSince1970: 0), state: state, checks: [check], toolVersion: "1.0.1"
+        )
     }
 }

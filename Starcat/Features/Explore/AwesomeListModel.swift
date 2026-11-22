@@ -2,7 +2,7 @@
 //  AwesomeListModel.swift
 //  Starcat
 //
-//  Awesome 列表的派生快照。后台筛选排序一次，主线程只发布结果与四十项展示窗口。
+//  Awesome 列表的派生快照。后台筛选排序一次，主线程只发布当前分页窗口。
 //
 
 import Foundation

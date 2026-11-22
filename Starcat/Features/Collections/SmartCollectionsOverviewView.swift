@@ -341,28 +341,23 @@ struct SmartCollectionsOverviewView: View {
         .pressableHover()
     }
 
-    /// 数字槽位：`nil` 表示计数尚未就绪，显示静态骨架占位；就绪后在发布处的
-    /// `withAnimation` 内做 ~180ms 淡化交接。已有数字的重算保持旧值，
-    /// 新结果落地时走 `numericText` 过渡。缓存命中时首帧直出数字，不闪骨架。
+    /// 缓存或实时计数就绪后使用详情同款数字过渡，未知值保留静态骨架。
     private func collectionCountLabel(_ count: Int?, tint: Color) -> some View {
         Group {
             if let count {
-                Text(verbatim: "\(count)")
+                RollingCountText(count: count, format: .number.grouping(.never))
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                    .monospacedDigit()
                     .foregroundStyle(tint)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
                     .fixedSize(horizontal: true, vertical: false)
-                    .contentTransition(.numericText())
-                    .animation(.easeInOut(duration: 0.18), value: count)
             } else {
                 CountSlotPlaceholder()
                     .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.18), value: count == nil)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: count == nil)
     }
 
     /// 用户集合卡片操作：编辑规则 / 删除（重命名在规则编辑器内一并完成）。
@@ -413,9 +408,7 @@ struct SmartCollectionsOverviewView: View {
             guard !Task.isCancelled else { return }
             let nextSystem = await SmartCollectionSystemCountsLoader.counts(from: snapshot)
             guard !Task.isCancelled else { return }
-            withAnimation(.easeInOut(duration: 0.18)) {
-                systemCounts = nextSystem
-            }
+            systemCounts = nextSystem
             storeCountSnapshot()
         } catch {
             // SWR 失败保留已有快照；清空会让短暂数据库故障退化成整页 0。
@@ -430,12 +423,10 @@ struct SmartCollectionsOverviewView: View {
         let nextUser = await loadUserCounts(for: collections)
         guard !Task.isCancelled else { return }
         let validIDs = Set(viewModel.userSmartCollections.map(\.id))
-        withAnimation(.easeInOut(duration: 0.18)) {
-            for (id, count) in nextUser {
-                userCounts[id] = count
-            }
-            userCounts = userCounts.filter { validIDs.contains($0.key) }
+        for (id, count) in nextUser {
+            userCounts[id] = count
         }
+        userCounts = userCounts.filter { validIDs.contains($0.key) }
         countedUserCollections = viewModel.userSmartCollections
         storeCountSnapshot()
     }
@@ -450,9 +441,7 @@ struct SmartCollectionsOverviewView: View {
             let validIDs = Set(viewModel.userSmartCollections.map(\.id))
             let pruned = userCounts.filter { validIDs.contains($0.key) }
             if pruned.count != userCounts.count {
-                withAnimation(.easeInOut(duration: 0.18)) {
-                    userCounts = pruned
-                }
+                userCounts = pruned
                 storeCountSnapshot()
             }
             return

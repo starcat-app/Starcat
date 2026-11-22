@@ -12,6 +12,7 @@ import Testing
 struct ListPaginationPolicyTests {
     @Test("剩余 10 行时开始预取")
     func prefetchesWithTenRowsRemaining() {
+        #expect(ListPaginationPolicy.repoCardPageSize == 20)
         #expect(ListPaginationPolicy.shouldPrefetch(
             appearingIndex: 29,
             itemCount: 40,
@@ -22,6 +23,59 @@ struct ListPaginationPolicyTests {
             itemCount: 40,
             hasMore: true
         ))
+    }
+
+    @Test("可滚动的首批停在顶部时不追加，筛选补页保留预算")
+    func prefetchRequiresScrollOrAFullUnscrollableWindow() {
+        #expect(!ListPaginationPolicy.canPrefetchFromViewport(
+            offsetFromTop: 0, documentHeight: 1_400, viewportHeight: 1_000, visibleItemCount: 20
+        ))
+        #expect(ListPaginationPolicy.canPrefetchFromViewport(
+            offsetFromTop: 20, documentHeight: 1_400, viewportHeight: 1_000, visibleItemCount: 20
+        ))
+        #expect(ListPaginationPolicy.canPrefetchFromViewport(
+            offsetFromTop: 0, documentHeight: 1_400, viewportHeight: 1_500, visibleItemCount: 20
+        ))
+        #expect(!ListPaginationPolicy.canPrefetchFromViewport(
+            offsetFromTop: 0, documentHeight: 280, viewportHeight: 1_000, visibleItemCount: 3
+        ))
+    }
+
+    @Test("同一页的尾行只追加一次，追加后按新尾部判断")
+    @MainActor
+    func claimsOneRequestPerPage() {
+        let gate = RepoCardPaginationGate()
+        let first = RepoCardPaginationPage(identity: "query", visibleItemCount: 20, loadedItemCount: 20, hasMore: true)
+        let second = RepoCardPaginationPage(identity: "query", visibleItemCount: 40, loadedItemCount: 40, hasMore: true)
+        gate.update(first, isLoading: false)
+        #expect(!gate.claim(first, appearingIndex: 8))
+        #expect(gate.claim(first, appearingIndex: 9))
+        #expect(!gate.claim(first, appearingIndex: 19))
+
+        gate.update(second, isLoading: true)
+        #expect(!gate.claim(second, appearingIndex: 39))
+        gate.update(second, isLoading: false)
+        #expect(!gate.claim(first, appearingIndex: 19))
+        #expect(!gate.claim(second, appearingIndex: 19))
+        #expect(gate.claim(second, appearingIndex: 39))
+    }
+
+    @Test("过滤补页消费同一页，失败后忙闲切换不会自动重试")
+    @MainActor
+    func fillAndVisibleRowShareAttempt() {
+        let gate = RepoCardPaginationGate()
+        let first = RepoCardPaginationPage(identity: "filter", visibleItemCount: 3, loadedItemCount: 20, hasMore: true)
+        gate.update(first, isLoading: false)
+        #expect(gate.claim(first, appearingIndex: nil))
+        #expect(!gate.claim(first, appearingIndex: 2))
+        gate.update(first, isLoading: true)
+        gate.update(first, isLoading: false)
+        #expect(!gate.claim(first, appearingIndex: nil))
+
+        let changedQuery = RepoCardPaginationPage(identity: "new", visibleItemCount: 3, loadedItemCount: 20, hasMore: true)
+        gate.update(changedQuery, isLoading: false)
+        #expect(!gate.claim(first, appearingIndex: 2))
+        #expect(gate.claim(changedQuery, appearingIndex: nil))
     }
 
     @Test("短列表和边界索引保持安全")

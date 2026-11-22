@@ -38,6 +38,62 @@ struct DatabaseMigrationsV1Tests {
         return mgr.writer
     }
 
+    @Test("v31 分批升级旧向量和 Skill 快照，保留向量、筛选字段和原始内容")
+    func compressesLegacyLocalSnapshots() throws {
+        let queue = try DatabaseQueue()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(queue, upTo: "v30-knowledge-activity")
+
+        let json = "{\"body\":\"\(String(repeating: "Old snapshot body. ", count: 600))\"}"
+        let oldPayload = Data(json.utf8)
+        let vector = Data([0, 0, 128, 63])
+        try queue.write { db in
+            try db.execute(sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url)
+                VALUES (1, 'cat', 'repo', 'cat/repo', 'https://github.com/cat/repo')
+                """)
+            try db.execute(sql: """
+                INSERT INTO repo_embeddings (repo_id, model, dimensions, embedding, snapshot_json, updated_at)
+                VALUES (1, 'p/test', 1, ?, ?, '2026-11-01T00:00:00Z')
+                """, arguments: [vector, json])
+            for repoID in 1...34 {
+                try db.execute(sql: """
+                    INSERT INTO repo_skill_scans
+                    (repo_id, commit_sha, rules_version, expires_at, presence, payload, skill_count, is_complete)
+                    VALUES (?, 'commit', 3, 4000000000, 'contains', ?, 2, 1)
+                    """, arguments: [repoID, oldPayload])
+            }
+        }
+        try migrator.migrate(queue)
+        try migrator.migrate(queue)
+
+        try queue.read { db in
+            #expect(try db.columns(in: "repo_embeddings").contains { $0.name == "snapshot_payload" })
+            #expect(try !db.columns(in: "repo_embeddings").contains { $0.name == "snapshot_json" })
+            let embedding = try #require(try RepoEmbedding.fetchOne(db))
+            #expect(embedding.embedding == vector)
+            #expect(embedding.model == "p/test")
+            #expect(CacheJSONCodec.isCompressed(embedding.snapshotPayload))
+            #expect(try CacheJSONCodec.unpack(embedding.snapshotPayload) == oldPayload)
+            let skills = try Row.fetchAll(db, sql: """
+                SELECT payload, commit_sha, rules_version, expires_at, presence, skill_count, is_complete
+                FROM repo_skill_scans WHERE presence = 'contains' ORDER BY repo_id
+                """)
+            #expect(skills.count == 34)
+            for row in skills {
+                let packed: Data = row["payload"]
+                #expect(CacheJSONCodec.isCompressed(packed))
+                #expect(try CacheJSONCodec.unpack(packed) == oldPayload)
+                #expect(row["commit_sha"] as String == "commit")
+                #expect(row["rules_version"] as Int == 3)
+                #expect(row["expires_at"] as Double == 4_000_000_000)
+                #expect(row["skill_count"] as Int == 2)
+                #expect(row["is_complete"] as Bool)
+            }
+        }
+    }
+
     /// 复现 1.5.0 封版前的迁移账本，供每个开发期步骤的行为测试使用。
     private func makeRelease150DevelopmentDB(
         upTo boundary: String

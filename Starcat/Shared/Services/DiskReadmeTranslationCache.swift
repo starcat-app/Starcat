@@ -163,7 +163,7 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
 
         let stored: ReadmeTranslation
         do {
-            stored = try decoder.decode(ReadmeTranslation.self, from: data)
+            stored = try decoder.decode(ReadmeTranslation.self, from: CacheJSONCodec.unpack(data))
         } catch {
             // 旧整页 HTML metadata 和损坏 JSON 都走一次性清理；下次点击只翻缺失段落。
             AppLog.ai.warning("Translation disk cache: unsupported or corrupt entry, removing owner=\(owner, privacy: .public) repo=\(repo, privacy: .public) lang=\(targetLanguage, privacy: .public)")
@@ -182,11 +182,14 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
             return nil
         }
 
+        if let savedBytes = CacheJSONCodec.migrateFileIfSmaller(data, at: metadataURL) {
+            totalBytes = max(0, totalBytes - savedBytes)
+        }
         try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: metadataURL.path)
         return stored
     }
 
-    /// 原子写入单个 v2 JSON，并删除同名旧 `.html` 残留。
+    /// 原子写入 v2 译文缓存，并删除同名旧 `.html` 残留。
     func upsert(
         _ translation: ReadmeTranslation,
         owner: String,
@@ -199,7 +202,7 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
 
         let cacheName = translation.targetLanguage + mode.cacheFileSuffix + engine.cacheFileInfix
         let metadataURL = dir.appendingPathComponent("\(cacheName).json")
-        let metadataData = try encoder.encode(translation)
+        let metadataData = try CacheJSONCodec.pack(encoder.encode(translation))
         try metadataData.write(to: metadataURL, options: .atomic)
         try? fileManager.removeItem(
             at: dir.appendingPathComponent("\(cacheName).html")
@@ -344,7 +347,7 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
                 let files = (try? fileManager.contentsOfDirectory(at: repoDir, includingPropertiesForKeys: [.fileSizeKey])) ?? []
                 for file in files where file.pathExtension == "json" {
                     if let data = try? Data(contentsOf: file),
-                       let stored = try? decoder.decode(ReadmeTranslation.self, from: data),
+                       let stored = try? decoder.decode(ReadmeTranslation.self, from: CacheJSONCodec.unpack(data)),
                        stored.formatVersion == ReadmeTranslation.currentFormatVersion {
                         itemCount += 1
                         let fileSize = Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
@@ -432,7 +435,7 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
         while let file = enumerator?.nextObject() as? URL {
             guard file.pathExtension == "json" else { continue }
             let stored = (try? Data(contentsOf: file))
-                .flatMap { try? decoder.decode(ReadmeTranslation.self, from: $0) }
+                .flatMap { try? decoder.decode(ReadmeTranslation.self, from: CacheJSONCodec.unpack($0)) }
             guard stored?.formatVersion != ReadmeTranslation.currentFormatVersion else { continue }
             try? fileManager.removeItem(at: file)
             try? fileManager.removeItem(

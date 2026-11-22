@@ -644,16 +644,7 @@ struct TrendingView: View {
                 )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
-                .automaticListPagination(
-                    appearingIndex: index,
-                    visibleItemCount: visibleRepos.count,
-                    loadedItemCount: viewModel.visibleLimit,
-                    hasMore: viewModel.hasMore,
-                    isLoading: viewModel.isLoading,
-                    identity: "trending-\(viewModel.reposRevision)"
-                ) {
-                    await viewModel.loadMoreIfNeeded()
-                }
+                .automaticListPagination(appearingIndex: index)
                 // HOM-201 P1-1（2026-06-14）：hover 500ms 后预拉 trending README，
                 // softTtl 短路在 API 层做（命中 6h 内 trending 缓存不打 GitHub；
                 // P1-4 让详情页 loadTrending 也用 softTtl,整条路径闭环）。
@@ -664,12 +655,14 @@ struct TrendingView: View {
         }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
-        .automaticListPaginationFill(
+        .linuxDoSourceBadges(for: visibleRepos.map { $0.element.ghRepoId })
+        .automaticListPagination(
             visibleItemCount: visibleRepos.count,
             loadedItemCount: viewModel.visibleLimit,
             hasMore: viewModel.hasMore,
             isLoading: viewModel.isLoading,
-            identity: "trending-\(viewModel.reposRevision)"
+            identity: "trending-\(viewModel.reposRevision)",
+            fillsFilteredWindow: true
         ) {
             await viewModel.loadMoreIfNeeded()
         }

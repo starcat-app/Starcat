@@ -113,6 +113,8 @@ worktree 干净且无独有本地数据，以非强制方式删除后端专项 w
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
+| `dong4j/ui-insights-subscription-polish` | 已合入本地 `dev` 并删除本地分支；Orca worktree 保留为 detached HEAD。 | 2026-11-22 按 dong4j 授权合并洞察页面与订阅发布窗口的图标、布局优化；专项分支先经 `f6ec813d` 合入，后续提交 `f40a8cc4`、`918c847f` 经 `20b4c3a7` 合入。确认分支为 `dev` 祖先后删除本地分支；主工作区其他未提交改动保留，界面效果待验收，未推送。 |
+| 主仓及 CLI、用户手册的 `codex/http-only-bridge` | 已删除三个本地专项分支及 `../Starcat-http-only-bridge` 下对应的三个 worktree。 | 2026-11-22 按 dong4j 授权清理。主仓 `9c3a3169`、CLI `9669693`、手册 `95cab9f` 均已合入各自 `dev`。删除前逐仓确认独有提交为 0、工作区干净，主仓 Secrets 配置与主工作区一致。跨设备配对、设置页和真实 Laya 请求后续在 `dev` 实机验收。 |
 | `dong4j/check-dev-branch-base` | 已合入本地 `dev` 并推送远端；分支保留，待 dong4j 授权后删除。 | 2026-11-22 按 dong4j 授权修复 Skill 工作台原生分栏测试的宿主环境崩溃（补齐 AppSettings / AuthSession / StarcatCommandRouter 注入）；测试提交 `f4c0b32e` 经 fast-forward 合入本地 `dev` 并推送远端。定向 6 项与全量 4766 项、520 Suite 测试通过，顺带解决 `dong4j/feat-tag-graph-detail` 行遗留的 3 项 Skill 工作台测试失败。 |
 | `dong4j/feat-tag-graph-detail` | 已合入本地 `dev`；分支及 worktree 保留。 | 2026-11-22 按 dong4j 授权合并标签图谱仓库卡片独立详情窗口入口；功能提交 `02873c1`。全量测试有 3 项 Skill 工作台测试因宿主进程崩溃失败，定向复跑被中断；人工界面及译文审核待完成。 |
 | `codex/knowledge-profile` | 已合入本地 `dev` 并删除 `../Starcat-knowledge-profile` 和本地分支。 | 2026-11-21 按 dong4j 授权，专项分支头 `9690682d` 经 `e9af0e3f` 合入，包含 #210 的个人知识画像、洞察双栏布局和年报共享统计。151 项定向测试和双渠道 Debug 构建通过。确认独有提交为 0、专项 worktree 干净、Secrets 与主工作区一致后，经 `git worktree remove` 和 `git branch -d` 清理。后续在主工作区 `dev` 开发。 |

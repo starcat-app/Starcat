@@ -111,12 +111,12 @@ struct BusinessIconTests {
     }
 
     /// 导航与内容区用同一语义，避免之后只修正详情、遗漏洞察的入口图标。
-    @Test("洞察许可证、健康度、语言与未打标签复用主窗口图标")
+    @Test("洞察分类复用业务图标，个人画像使用单人资产")
     func insightsMappingsStayConsistent() {
         #expect(InsightsActionID.untagged.iconSource == .business(.untagged))
         #expect(InsightsTopic.health.iconSource == .business(.repositoryHealth))
         #expect(InsightsActionID.healthPending.iconSource == .business(.repositoryHealth))
-        #expect(InsightsTopic.knowledgeProfile.iconSource == .system("books.vertical"))
+        #expect(InsightsTopic.knowledgeProfile.iconSource == .business(.knowledgeProfile))
     }
 
     @Test("向量模型与推荐服务在不同配置入口保持同源")

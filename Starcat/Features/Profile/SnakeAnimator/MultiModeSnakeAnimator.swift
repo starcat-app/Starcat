@@ -36,7 +36,7 @@ final class MultiModeSnakeAnimator: SnakeAnimator, Sendable {
 
     let totalSteps: Int
 
-    init(cols: Int, rows: Int, weeks: [ContributionWeek]?) {
+    init(cols: Int, rows: Int) {
         // 4 种子玩法：zigzag / spiral / diagonal / Gilbert
         // 不放 greedy / foodChase / multiSnake——避免本玩法变成"all 玩法套娃"
         let zigzag = ZigzagSnakeAnimator(cols: cols, rows: rows)
@@ -65,9 +65,6 @@ final class MultiModeSnakeAnimator: SnakeAnimator, Sendable {
         }
         self.cumulativeStarts = starts
         self.totalSteps = acc
-
-        // weeks 在本玩法未使用——刻意保留参数签名以便未来加入 greedy 变体
-        _ = weeks
     }
 
     func frame(at step: Int) -> AnimationFrame {

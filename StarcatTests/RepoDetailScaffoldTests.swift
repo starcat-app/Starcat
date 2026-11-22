@@ -2,7 +2,7 @@
 //  RepoDetailScaffoldTests.swift
 //  StarcatTests
 //
-//  详情页 Hero 折叠门控与 progress 映射的单元测试。
+//  详情页计数展示、Hero 折叠门控与 progress 映射的单元测试。
 //
 
 import SwiftUI
@@ -12,25 +12,31 @@ import XCTest
 @MainActor
 final class RepoDetailScaffoldTests: XCTestCase {
 
-    func testStatCountReopensAtCurrentValueAcrossDetailSources() {
-        var history = RepoStatCountHistory()
-        let stars = RepoStatCountKey("Example/Repo", .stars)
-        let sameStars = RepoStatCountKey("example/repo", .stars)
-        XCTAssertEqual(history.initialValue(for: stars, count: 2_745), 0)
-        XCTAssertTrue(history.claimIntroduction(for: stars))
-        XCTAssertFalse(history.claimIntroduction(for: sameStars))
-        XCTAssertEqual(history.initialValue(for: sameStars, count: 2_746), 2_746)
-        XCTAssertEqual(history.initialValue(for: RepoStatCountKey("other/repo", .stars), count: 81), 0)
+    func testCountStartsAtZeroAndRetainsDisplayedValueDuringRefresh() {
+        let entering = RollingCountText.Presentation.entering.display(for: 2_745, reduceMotion: false)
+        XCTAssertEqual(entering.value, 0)
+        XCTAssertEqual(entering.opacity, 1)
+
+        let refreshing = RollingCountText.Presentation.showing(2_745).display(for: 2_746, reduceMotion: false)
+        XCTAssertEqual(refreshing.value, 2_745)
+        XCTAssertEqual(refreshing.opacity, 1)
     }
 
-    func testStatCountIntroductionsAreIndependentIncludingConfirmedZero() {
-        var history = RepoStatCountHistory()
-        for metric in [RepoStatCountKey.Metric.stars, .forks, .subscribers] {
-            let key = RepoStatCountKey("example/repo", metric)
-            XCTAssertEqual(history.initialValue(for: key, count: 0), 0)
-            XCTAssertTrue(history.claimIntroduction(for: key))
-            XCTAssertFalse(history.claimIntroduction(for: key))
-            XCTAssertEqual(history.initialValue(for: key, count: 7), 7)
+    func testConfirmedZeroFadesInOnEntry() {
+        let entering = RollingCountText.Presentation.entering.display(for: 0, reduceMotion: false)
+        XCTAssertEqual(entering.value, 0)
+        XCTAssertEqual(entering.opacity, 0)
+
+        let showing = RollingCountText.Presentation.showing(0).display(for: 0, reduceMotion: false)
+        XCTAssertEqual(showing.value, 0)
+        XCTAssertEqual(showing.opacity, 1)
+    }
+
+    func testCountShowsTargetImmediatelyWithReduceMotion() {
+        for count in [0, 2_745] {
+            let display = RollingCountText.Presentation.entering.display(for: count, reduceMotion: true)
+            XCTAssertEqual(display.value, count)
+            XCTAssertEqual(display.opacity, 1)
         }
     }
 

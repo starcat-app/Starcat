@@ -240,7 +240,7 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
             // Linux.do 是独立目录，不能沿用普通 Discover 的 total，否则标题会显示
             // 与当前列表无关的全站发现数量。
             if linuxDoStore.selectedSource == .linuxDo {
-                return (metrics.linuxDoRepoCount, linuxDoStore.repositories.count)
+                return (metrics.linuxDoRepoCount, linuxDoStore.total)
             }
             let total = exploreCatalogStore.total(for: .discover)
             let current: Int
@@ -620,6 +620,12 @@ struct RepoListView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
+        .task {
+            for await _ in NotificationCenter.default.notifications(named: .repoLibraryStateDidChange) {
+                guard !Task.isCancelled else { return }
+                linuxDoListModel.invalidateLibrary()
+            }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if selectedPage != .insights,
                !(selectedPage == .trending && selectedExploreMode == .recommendations),
@@ -2074,21 +2080,20 @@ struct RepoListView: View {
                     .contextMenu {
                         repoContextMenu(for: repo)
                     }
-                    // 快速滚动时，尾部 row 可能在刷新或上一页 append 期间一次性出现。
-                    // 统一触发器会在 busy 结束后按最新 items.count 重新评估，不丢掉这次需求。
-                    .automaticListPagination(
-                        appearingIndex: item.index,
-                        visibleItemCount: viewModel.items.count,
-                        loadedItemCount: viewModel.items.count,
-                        hasMore: viewModel.hasMore,
-                        isLoading: viewModel.isAutomaticPaginationLoading,
-                        identity: "manage-\(viewModel.itemsRevision)"
-                    ) {
-                        viewModel.loadMoreIfNeeded()
-                    }
+                    .automaticListPagination(appearingIndex: item.index)
                 }
             }
             .id(viewModel.listSnapshotIdentity)
+            .linuxDoSourceBadges(for: indexedItems.map { $0.repo.id } + [viewModel.temporaryPinnedRepo?.id].compactMap { $0 })
+            .automaticListPagination(
+                visibleItemCount: indexedItems.count,
+                loadedItemCount: indexedItems.count,
+                hasMore: viewModel.hasMore,
+                isLoading: viewModel.isAutomaticPaginationLoading,
+                identity: "manage-\(viewModel.selection.id)-\(viewModel.itemsRevision)"
+            ) {
+                viewModel.loadMoreIfNeeded()
+            }
             .listStyle(.inset)
             // 透出底层 `DetailHeroTintBackground`；系统 List 默认实色底会盖住顶栏光晕。
             .scrollContentBackground(.hidden)
@@ -2179,37 +2184,6 @@ struct RepoListView: View {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         proxy.scrollTo(id, anchor: .center)
                     }
-                }
-            }
-            // R-07.1 follow-up（2026-06-16 dong4j）：hasMore false → true 时主动 push 一次 loadMoreIfNeeded。
-            //
-            // 场景（dong4j 真机回归发现）：sync 还在跑期间用户已手动滚动到 items 尾部触发 loadMoreIfNeeded × N,
-            // items 从 20 一路涨到 currentPage * 20,hasMore 在抵达 filteredSorted.count 那一刻翻 false。
-            // 等 sync 完成（state = .completed）,HomeView 调 reloadItems(forceRefresh: true)：
-            //   - filteredSorted 从快照 100 → 1800
-            //   - currentPage 保留（preserveScrollPosition,R-07 既有设计）
-            //   - sliceToCurrentPage 算出 newItems 与现有 items 前 N 条同 ID 同序 → itemsIdentical
-            //     short-circuit → items 不变 / itemsRevision 不 bump
-            //   - 但 hasMore 被无条件设置为 true（1800 > items.count）
-            //
-            // 后果：列表 UI 看似数据未变,但 hasMore 状态翻转后,已显示行的 .onAppear **不会** 重触发
-            // （SwiftUI 只在 row 首次进入视口时调 onAppear）；用户被困在原 items 尾部,往下滚是橡皮筋
-            // 回弹,无法触发后续 loadMore,"卡在 100 条尾部"无法看到完整 1800 条列表。
-            //
-            // 修复：监听 hasMore 边沿 false → true,主动调一次 loadMoreIfNeeded 让 items 增长一页。
-            // sliceToCurrentPage(reason: .append) 不 bump itemsRevision,滚动位置自然保留；用户继续
-            // 向下滚动时,新行的倒数第 3 个 .onAppear 会触发后续 loadMore,自然推进到 filteredSorted.count。
-            //
-            // 用 Task { @MainActor in } 包一层：避免在 SwiftUI body 更新期间同步写 viewModel 状态
-            // 触发"Modifying state during view update"警告。loadMoreIfNeeded 内部 guard hasMore
-            // 天然幂等,多次触发不会引发 currentPage 失控。
-            //
-            // 2026-07-18 性能专项：首次首页的 false→true 不再自动追加第二页。只有 ViewModel
-            // 明确认定“刷新前用户已深滚动到末尾”时才消费恢复意图，避免一次点击连续发布两批数据。
-            .onChange(of: viewModel.hasMore) { wasMore, hasMore in
-                guard !wasMore, hasMore else { return }
-                Task { @MainActor in
-                    viewModel.recoverPaginationAfterRefreshIfNeeded()
                 }
             }
         }

@@ -219,7 +219,7 @@ struct SemanticSearchTests {
                 repoId: repo.id,
                 model: model,
                 vector: [1],
-                snapshotJson: "{}",
+                snapshotPayload: Data("{}".utf8),
                 updatedAt: "2026-11-12T00:00:00Z"
             )
         ])
@@ -281,11 +281,11 @@ struct SemanticSearchTests {
                 continue // 缺向量：库里根本没有这条
             }
             if index % 13 == 0 {
-                stored.append(RepoEmbedding(repoId: id, model: model, vector: seededVector(seed: UInt64(index), dimension: 3), snapshotJson: "{}", updatedAt: "2026-01-01T00:00:00Z"))
+                stored.append(RepoEmbedding(repoId: id, model: model, vector: seededVector(seed: UInt64(index), dimension: 3), snapshotPayload: Data("{}".utf8), updatedAt: "2026-01-01T00:00:00Z"))
             } else if index % 17 == 0 {
-                stored.append(RepoEmbedding(repoId: id, model: model, vector: [Float](repeating: 0, count: dimension), snapshotJson: "{}", updatedAt: "2026-01-01T00:00:00Z"))
+                stored.append(RepoEmbedding(repoId: id, model: model, vector: [Float](repeating: 0, count: dimension), snapshotPayload: Data("{}".utf8), updatedAt: "2026-01-01T00:00:00Z"))
             } else {
-                stored.append(RepoEmbedding(repoId: id, model: model, vector: seededVector(seed: UInt64(index), dimension: dimension), snapshotJson: "{}", updatedAt: "2026-01-01T00:00:00Z"))
+                stored.append(RepoEmbedding(repoId: id, model: model, vector: seededVector(seed: UInt64(index), dimension: dimension), snapshotPayload: Data("{}".utf8), updatedAt: "2026-01-01T00:00:00Z"))
             }
         }
         await repository.store(stored)
@@ -296,7 +296,7 @@ struct SemanticSearchTests {
 
         // 独立重算期望排名：经由 internal 纯函数原语（cosineSimilarity / hasLiteralMatch /
         // normalizeDisplayScore / tier / reason）逐位重放同一公式，不镜像任何实现代码。
-        // snapshotJson 固定 "{}"（解码失败 → snapshot == nil），与实现内字面两分支结果一致。
+        // snapshotPayload 固定 "{}"（解码失败 → snapshot == nil），与实现内字面两分支结果一致。
         var expected: [(hit: SemanticSearchHit, sortScore: Double)] = []
         expected.reserveCapacity(candidateCount)
         var storedById: [Int64: RepoEmbedding] = [:]
@@ -358,7 +358,7 @@ struct SemanticSearchTests {
         }
         let sharedVector = seededVector(seed: 42, dimension: 8)
         await repository.store(repos.map { repo in
-            RepoEmbedding(repoId: repo.id, model: model, vector: sharedVector, snapshotJson: "{}", updatedAt: "2026-01-01T00:00:00Z")
+            RepoEmbedding(repoId: repo.id, model: model, vector: sharedVector, snapshotPayload: Data("{}".utf8), updatedAt: "2026-01-01T00:00:00Z")
         })
 
         let ties = try await service.search(query: "needle", candidates: repos, ftsHitIDs: [], limit: 10)
@@ -389,10 +389,10 @@ struct SemanticSearchTests {
             makeRepo(fullName: "owner/repo-\(index)", description: nil, topics: nil, id: Int64(index))
         }
         await repository.store([
-            RepoEmbedding(repoId: 2, model: model, vector: [], snapshotJson: "{}", updatedAt: "2026-01-01T00:00:00Z"),
-            RepoEmbedding(repoId: 3, model: model, vector: seededVector(seed: 9, dimension: 3), snapshotJson: "{}", updatedAt: "2026-01-01T00:00:00Z"),
-            RepoEmbedding(repoId: 4, model: model, vector: [Float](repeating: 0, count: dimension), snapshotJson: "{}", updatedAt: "2026-01-01T00:00:00Z"),
-            RepoEmbedding(repoId: 5, model: model, vector: seededVector(seed: 8, dimension: dimension), snapshotJson: "{}", updatedAt: "2026-01-01T00:00:00Z"),
+            RepoEmbedding(repoId: 2, model: model, vector: [], snapshotPayload: Data("{}".utf8), updatedAt: "2026-01-01T00:00:00Z"),
+            RepoEmbedding(repoId: 3, model: model, vector: seededVector(seed: 9, dimension: 3), snapshotPayload: Data("{}".utf8), updatedAt: "2026-01-01T00:00:00Z"),
+            RepoEmbedding(repoId: 4, model: model, vector: [Float](repeating: 0, count: dimension), snapshotPayload: Data("{}".utf8), updatedAt: "2026-01-01T00:00:00Z"),
+            RepoEmbedding(repoId: 5, model: model, vector: seededVector(seed: 8, dimension: dimension), snapshotPayload: Data("{}".utf8), updatedAt: "2026-01-01T00:00:00Z"),
         ])
 
         // id 4 即便有 FTS 加权也不能把无效向量捞回结果。
@@ -418,7 +418,7 @@ struct SemanticSearchTests {
             makeRepo(fullName: "owner/repo-\(index)", description: nil, topics: nil, id: Int64(index))
         }
         await repository.store(repos.map { repo in
-            RepoEmbedding(repoId: repo.id, model: model, vector: seededVector(seed: UInt64(repo.id), dimension: 8), snapshotJson: "{}", updatedAt: "2026-01-01T00:00:00Z")
+            RepoEmbedding(repoId: repo.id, model: model, vector: seededVector(seed: UInt64(repo.id), dimension: 8), snapshotPayload: Data("{}".utf8), updatedAt: "2026-01-01T00:00:00Z")
         })
 
         // 主 actor 测试内创建的 Task 继承主 actor；同步 cancel 保证 body 启动前已标记取消，
@@ -1034,21 +1034,21 @@ struct SemanticIndexProgressSinkTests {
             repoId: 1,
             model: "text-embedding-3-small",
             vector: [0.1, 0.2],
-            snapshotJson: "{}",
+            snapshotPayload: Data("{}".utf8),
             updatedAt: "2026-01-01T00:00:00Z"
         )
         let otherModel = RepoEmbedding(
             repoId: 2,
             model: "other-model",
             vector: [0.3, 0.4],
-            snapshotJson: "{}",
+            snapshotPayload: Data("{}".utf8),
             updatedAt: "2026-01-01T00:00:00Z"
         )
         let outsideCandidate = RepoEmbedding(
             repoId: 99,
             model: "text-embedding-3-small",
             vector: [0.5, 0.6],
-            snapshotJson: "{}",
+            snapshotPayload: Data("{}".utf8),
             updatedAt: "2026-01-01T00:00:00Z"
         )
         try await repository.upsert([current, otherModel, outsideCandidate])
@@ -1075,7 +1075,7 @@ struct SemanticIndexProgressSinkTests {
                 repoId: Int64(id),
                 model: "text-embedding-3-small",
                 vector: [Float(id), 0.5],
-                snapshotJson: "{}",
+                snapshotPayload: Data("{}".utf8),
                 updatedAt: "2026-01-01T00:00:00Z"
             )
         })

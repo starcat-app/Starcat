@@ -178,7 +178,7 @@ actor DiscoveryAPI {
         // 来源撤回依赖完整语义，不能沿用通用解码器“未知 schema 仅警告”的宽松策略。
         guard envelope.schemaVersion == 1 else { throw LinuxDoCacheError.invalidSnapshot }
         let payload = envelope.data
-        try payload.validate(for: resource)
+        try payload.validateStructure(for: resource)
         return LinuxDoResponse(payload: payload, etag: etag)
     }
 

@@ -11,7 +11,7 @@
 //    像 hash 一样"任何字段变就全等不成立"。
 //
 //  关键约束：
-//  - **必须 Codable**：完整快照会以 JSON 字符串落到 `repo_embeddings.snapshot_json`；
+//  - **必须 Codable**：完整快照会以压缩 JSON 落到 `repo_embeddings.snapshot_payload`；
 //    新增 / 改名字段必须考虑 JSON 兼容性（产品上线前可任意改，上线后只能加非必选字段）；
 //  - **必须 Equatable**：`IndexedTextDiff.shouldRebuild` 依赖 metadata 元组的相等比较；
 //  - **metadata 只放"语义稳定"的字段**：fullName / description / language / topics /
@@ -79,21 +79,16 @@ struct IndexedSnapshot: Codable, Equatable, Sendable {
 
     // MARK: - Codec
 
-    /// 编码成 JSON 字符串落到 `repo_embeddings.snapshot_json`。
-    ///
-    /// 用 `sortedKeys` 保证同一内容编码出的 JSON 字节序一致，方便测试断言以及
-    /// 后续如果再想算 hash 也是稳定值。
-    func encodedJSONString() throws -> String {
+    /// 保留完整快照的 Codable Schema，压缩只用于持久化。
+    func encodedPayload() throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(self)
-        return String(decoding: data, as: UTF8.self)
+        return try CacheJSONCodec.pack(encoder.encode(self))
     }
 
-    /// 从 SQLite 取出的 JSON 字符串还原结构。失败时调用方应当走"无旧快照"分支
+    /// 从 SQLite 取出的 BLOB 还原结构。失败时调用方应当走"无旧快照"分支
     /// （`IndexedTextDiff.shouldRebuild` 中 `old == nil` 即触发重建），不应阻塞流程。
-    static func decode(json: String) throws -> IndexedSnapshot {
-        let data = Data(json.utf8)
-        return try JSONDecoder().decode(IndexedSnapshot.self, from: data)
+    static func decode(payload: Data) throws -> IndexedSnapshot {
+        try JSONDecoder().decode(IndexedSnapshot.self, from: CacheJSONCodec.unpack(payload))
     }
 }

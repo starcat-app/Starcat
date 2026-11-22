@@ -138,9 +138,10 @@ struct MyInsightsView: View {
                 .padding(.bottom, 24)
                 .frame(maxWidth: .infinity, alignment: .top)
             }
-            .nativeDetailTransition(value: topic)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // 页头与正文同步交接，外层背景遮住下方的分栏内容。
+        .nativeDetailTransition(value: topic)
         .background(Color(nsColor: .windowBackgroundColor))
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in profileDay = Date() }
         .onAppear { profileDay = Date() }
@@ -233,7 +234,9 @@ struct MyInsightsView: View {
 
     private var header: some View {
         InsightsColumnHeader {
-            headerTitle
+            Text(topic.titleKey)
+                .font(interfaceScale.font(.panelTitle))
+                .accessibilityAddTraits(.isHeader)
         } controls: {
             headerControls
         }
@@ -244,32 +247,6 @@ struct MyInsightsView: View {
                 .gesture(WindowDragGesture())
                 .allowsWindowActivationEvents()
         }
-    }
-
-    private var headerTitle: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(topic.titleKey)
-                .font(interfaceScale.font(.panelTitle))
-                .accessibilityAddTraits(.isHeader)
-
-            Group {
-                if let displayedAt {
-                    Text(displayedAt, format: .dateTime.month().day().hour().minute())
-                } else {
-                    Text(topic.subtitleKey)
-                        .lineLimit(2)
-                }
-            }
-            .font(interfaceScale.font(.caption))
-            .foregroundStyle(.secondary)
-            .contentTransition(reduceMotion ? .identity : .opacity)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: topic)
-        }
-    }
-
-    private var displayedAt: Date? {
-        if topic == .knowledgeProfile { return profileLoader.displayed(for: profileRequest)?.facts.classifiedAt }
-        return snapshot?.generatedAt
     }
 
     private var headerControls: some View {
@@ -704,6 +681,7 @@ private struct MyInsightsDashboard: View {
                     .font(interfaceScale.font(.captionSmall, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
+            .padding(.trailing, 8)
             .padding(.vertical, 9)
             .contentShape(Rectangle())
         }
@@ -790,6 +768,9 @@ private struct MyInsightsDashboard: View {
         )
     }
 
+    /// 在卡片的内边距里为整行背景留出空间，文字和色条仍与卡片标题图标对齐。
+    private static let distributionRowHorizontalInset: CGFloat = 8
+
     private func distributionSection(
         title: LocalizedStringKey,
         subtitle: LocalizedStringKey,
@@ -816,7 +797,7 @@ private struct MyInsightsDashboard: View {
                 }
             }
         ) {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     distributionBarRow(
                         item,
@@ -829,6 +810,7 @@ private struct MyInsightsDashboard: View {
                     )
                 }
             }
+            .padding(.horizontal, -Self.distributionRowHorizontalInset)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(Text(title))
         }
@@ -864,6 +846,7 @@ private struct MyInsightsDashboard: View {
                     Image(systemName: "arrow.up.right")
                         .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
+                        .padding(.trailing, 8)
                 }
             }
 
@@ -873,6 +856,8 @@ private struct MyInsightsDashboard: View {
                 animationDelay: Double(rowIndex) * 0.045
             )
         }
+        .padding(.horizontal, Self.distributionRowHorizontalInset)
+        .padding(.vertical, 4)
         .contentShape(Rectangle())
         .listRowSurface(index: rowIndex)
 
@@ -1024,6 +1009,7 @@ private struct MyInsightsDashboard: View {
                     .foregroundStyle(.secondary)
                     .padding(.top, 3)
             }
+            .padding(.trailing, 8)
             .padding(.vertical, 9)
             .contentShape(Rectangle())
         }

@@ -194,15 +194,15 @@ struct WidgetSnapshotBuilder: Sendable {
     ) -> WidgetContributionActivity? {
         guard let payload else { return nil }
 
-        let weeks = payload.weeks.map { week in
+        let weeks = (0..<payload.weekCount).map { week in
             WidgetContributionWeek(
-                days: week.contributionDays.map { day in
+                days: payload.days[payload.dayIndices(inWeek: week)].map { day in
                     WidgetContributionDay(
                         date: day.date,
-                        count: max(0, day.contributionCount),
+                        count: day.contributionCount,
                         level: WidgetContributionLevel(rawValue: day.contributionLevel.rawValue)
                             ?? .none,
-                        weekday: min(6, max(0, day.weekday))
+                        weekday: day.weekday
                     )
                 }
             )

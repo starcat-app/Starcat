@@ -71,9 +71,11 @@ actor DiskRecommendationCacheStorage {
         }
 
         do {
+            let snapshot = try decoder.decode(RecommendationCacheSnapshot.self, from: CacheJSONCodec.unpack(data))
+            let savedBytes = CacheJSONCodec.migrateFileIfSmaller(data, at: url)
             return RecommendationCacheLoadResult(
-                snapshot: try decoder.decode(RecommendationCacheSnapshot.self, from: data),
-                statistics: nil
+                snapshot: snapshot,
+                statistics: savedBytes == nil ? nil : statistics()
             )
         } catch {
             // 缓存可重建；损坏时删除单文件，不能让一次解码失败反复阻塞详情页。
@@ -92,7 +94,7 @@ actor DiskRecommendationCacheStorage {
             at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        let data = try encoder.encode(snapshot)
+        let data = try CacheJSONCodec.pack(encoder.encode(snapshot))
         try data.write(to: url, options: .atomic)
         return statistics()
     }

@@ -101,11 +101,16 @@ private struct ReleaseWorkspaceAssetRow: View {
 
     private var state: ReleaseWorkspaceDownloads.State? { downloads.states[build.id] }
 
+    private var fileBadge: some View {
+        let style = ReleaseAssetIcon.workspaceStyle(for: build.asset.name)
+        return RepoFileIcon(source: style.source, size: 19, templateTint: style.templateTint)
+            .frame(width: 29, height: 29)
+            .background(style.tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 6))
+    }
+
     var body: some View {
         HStack(spacing: 9) {
-            BusinessIcon(source: ReleaseAssetIcon.iconSource(for: build.asset.name), pointSize: 19)
-                .frame(width: 29, height: 29)
-                .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
+            fileBadge
             VStack(alignment: .leading, spacing: 3) {
                 Text(verbatim: build.asset.name)
                     .font(scale.font(.body, weight: .medium)).lineLimit(2).truncationMode(.middle)

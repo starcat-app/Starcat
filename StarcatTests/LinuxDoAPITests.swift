@@ -90,22 +90,4 @@ struct LinuxDoAPITests {
         }
     }
 
-    @Test @MainActor func paginationAndPromotionOrderResetWithQueryIdentity() throws {
-        let repos = try (1...95).map { id in
-            let data = try JSONSerialization.data(withJSONObject: ["repo_id": id, "owner": "test", "name": "repo-\(id)", "full_name": "test/repo-\(id)", "stars": id, "forks": 0, "watchers": 0, "subscribers": 0, "open_issues": 0, "is_archived": false, "is_fork": false, "release_download_count": 0])
-            return try JSONDecoder().decode(DiscoveryRepoDTO.self, from: data)
-        }
-        let model = LinuxDoListModel()
-        model.reset(repositories: repos, promotionDates: ["1": "2026-10-15T00:00:00Z"], search: "", recentPromotionFirst: true, identity: "one")
-        #expect(model.rows.count == 40)
-        #expect(model.rows.first?.repoID == 1)
-        model.loadMore(); model.loadMore(); model.loadMore()
-        #expect(model.rows.count == 95)
-        #expect(!model.hasMore)
-        #expect(Set(model.rows.map(\.repoID)).count == 95)
-        model.reset(repositories: repos, promotionDates: [:], search: "repo-9", recentPromotionFirst: false, identity: "two")
-        #expect(model.rows.count == 7)
-        #expect(model.rows.first?.repoID == 95)
-        #expect(model.identity == "two")
-    }
 }

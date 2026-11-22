@@ -41,6 +41,27 @@ struct DiskExternalSearchCacheTests {
         #expect(exa == nil)
     }
 
+    @Test("命中旧外部搜索缓存后原地压缩并更新占用统计")
+    func migratesLegacyJSON() async throws {
+        let (cache, root) = makeCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let request = ExternalSearchRequest(query: "swift", purpose: .globalSearch)
+        let response = makeResponse(provider: .tavily, title: "Tavily")
+        try await cache.saveGlobal(provider: .tavily, request: request, response: response)
+        let file = try #require(jsonFiles(under: root).first)
+        let legacy = try CacheJSONCodec.unpack(Data(contentsOf: file))
+        try legacy.write(to: file)
+        cache.reload()
+        #expect(cache.totalBytes == legacy.count)
+
+        let hit = try await cache.loadGlobal(provider: .tavily, request: request)
+        #expect(hit?.hits.first?.title == "Tavily")
+        let stored = try Data(contentsOf: file)
+        #expect(CacheJSONCodec.isCompressed(stored))
+        #expect(try CacheJSONCodec.unpack(stored) == legacy)
+        #expect(cache.totalBytes == stored.count)
+    }
+
     @Test("credentialTest 和 0 命中不写 global cache")
     func credentialTestAndEmptyResponseAreNotSaved() async throws {
         let (cache, root) = makeCache()

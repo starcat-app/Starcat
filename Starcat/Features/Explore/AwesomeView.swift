@@ -238,30 +238,8 @@ struct AwesomeView: View {
                     ForEach(group.items) { item in
                         Group {
                             switch item {
-                            case .repository(let repo):
-                                repositoryRow(repo)
-                                    .automaticListPagination(
-                                        appearingIndex: listModel.rowIndices[item.id] ?? 0,
-                                        visibleItemCount: listModel.rows.count,
-                                        loadedItemCount: listModel.total,
-                                        hasMore: listModel.hasMore || (store.hasMoreRepositories && !requiresCompleteRepositorySet),
-                                        isLoading: listModel.isUpdating,
-                                        identity: presentationQuery
-                                    ) {
-                                        await loadNextVisiblePage(appearingID: item.id)
-                                    }
-                            case .resource(let resource):
-                                resourceRow(resource)
-                                    .automaticListPagination(
-                                        appearingIndex: listModel.rowIndices[item.id] ?? 0,
-                                        visibleItemCount: listModel.rows.count,
-                                        loadedItemCount: listModel.total,
-                                        hasMore: listModel.hasMore || (store.hasMoreRepositories && !requiresCompleteRepositorySet),
-                                        isLoading: listModel.isUpdating,
-                                        identity: presentationQuery
-                                    ) {
-                                        await loadNextVisiblePage(appearingID: item.id)
-                                    }
+                            case .repository(let repo): repositoryRow(repo)
+                            case .resource(let resource): resourceRow(resource)
                             }
                         }
                         .listRowReveal(
@@ -269,6 +247,7 @@ struct AwesomeView: View {
                             snapshotID: snapshotID,
                             replayAfterSnapshotCommit: true
                         )
+                        .automaticListPagination(appearingIndex: listModel.rowIndices[item.id] ?? -1)
                     }
                 }
             }
@@ -276,6 +255,19 @@ struct AwesomeView: View {
         .listStyle(.inset)
         .alternatingRowBackgrounds()
         .scrollContentBackground(.hidden)
+        .linuxDoSourceBadges(for: groups.flatMap(\.items).compactMap { item in
+            if case .repository(let repo) = item { return repo.id }
+            return nil
+        })
+        .automaticListPagination(
+            visibleItemCount: listModel.rows.count,
+            loadedItemCount: store.repositories.count,
+            hasMore: listModel.hasMore || (store.hasMoreRepositories && !requiresCompleteRepositorySet),
+            isLoading: listModel.isUpdating || isLoadingVisiblePage || store.isLoadingMoreRepositories,
+            identity: "\(presentationQuery):\(listModel.projectionRevision)"
+        ) {
+            await loadNextVisiblePage()
+        }
         .refreshable { await store.refresh() }
         .background {
             // Cmd+A 的语义与其它列表一致：只选择当前搜索、章节与全局筛选后的可见仓库。
@@ -408,7 +400,7 @@ struct AwesomeView: View {
         multiStore.selectAll(store.repositories.filter { visibleIDs.contains($0.id) }.map { selectionSnapshot(for: $0) })
     }
 
-    /// 全局筛选可能让一页 40 条只剩少量结果。继续读取本地页直到凑满一个可滚动首屏，
+    /// 全局筛选可能让一页只剩少量结果。继续读取本地页直到凑满一个可滚动首屏，
     /// 否则空结果页没有行可触发预取，用户会误以为整个来源没有匹配仓库。
     private var skillScanScope: String {
         "awesome:\(store.selectedSourceID ?? ""):\(searchText):\(selectedSection ?? ""):\(settings.skillScanFilterIdentity)"
@@ -417,8 +409,9 @@ struct AwesomeView: View {
     private func fillVisiblePageIfNeeded() async {
         guard !requiresCompleteRepositorySet else { return }
         guard listModel.identity == listIdentity,
-              listModel.total < AwesomeStore.repositoryPageSize,
-              store.hasMoreRepositories,
+              ListPaginationPolicy.shouldFillVisibleWindow(
+                  visibleItemCount: listModel.total, hasMore: store.hasMoreRepositories
+              ),
               let lastRepositoryID = store.repositories.last?.id,
               !Task.isCancelled else { return }
         if settings.skillFilter != .any,
@@ -471,20 +464,20 @@ struct AwesomeView: View {
         )
     }
 
-    private func loadNextVisiblePage(appearingID: String) async {
-        guard !isLoadingVisiblePage, listModel.identity == listIdentity,
-              ListPaginationPolicy.shouldPrefetch(
-                appearingIndex: listModel.rowIndices[appearingID] ?? -1,
-                itemCount: listModel.rows.count,
-                hasMore: listModel.hasMore || (store.hasMoreRepositories && !requiresCompleteRepositorySet)
-              ) else { return }
+    private func loadNextVisiblePage() async {
+        guard !isLoadingVisiblePage, !store.isLoadingMoreRepositories, listModel.identity == listIdentity else { return }
         isLoadingVisiblePage = true
         defer { isLoadingVisiblePage = false }
         if listModel.hasMore {
             listModel.loadMore()
         } else if !requiresCompleteRepositorySet, let lastID = store.repositories.last?.id {
+            let requestedQuery = listIdentity.query
+            let requestedSourceID = store.selectedSourceID
             await store.loadMoreRepositoriesIfNeeded(currentRepositoryID: lastID)
+            guard store.selectedSourceID == requestedSourceID, listIdentity.query == requestedQuery else { return }
             await updateListProjection()
+            guard store.selectedSourceID == requestedSourceID, listIdentity.query == requestedQuery,
+                  listModel.identity == listIdentity else { return }
             listModel.loadMore()
         }
     }
@@ -530,10 +523,10 @@ struct AwesomeView: View {
             onRepoCountChange(listModel.total)
             return
         }
-        // 许可证需要完整来源，不能把前 40 条中的命中数冒充完整计数。
+        // 许可证需要完整来源才能发布完整计数。
         guard !settings.licenseFilter.isActive || !store.hasMoreRepositories else { return }
         if store.hasMoreRepositories, !requiresCompleteRepositorySet {
-            // 默认分页浏览时不能把已加载 40 条冒充完整结果数。
+            // 默认分页浏览时用数据源总数。
             onRepoCountChange(store.currentRepositoryCount)
         } else {
             onRepoCountChange(listModel.total)

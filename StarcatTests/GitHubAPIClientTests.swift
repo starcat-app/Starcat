@@ -380,6 +380,253 @@ struct GitHubAPIClientTests {
         #expect(URLProtocolStub.receivedRequests.count == 3)
     }
 
+    @Test("贡献批量查询用 UTC 日区间，并保留部分成功的日期明细")
+    func contributionDayActivitiesUseCalendarDates() async throws {
+        let client = makeClient()
+        URLProtocolStub.requestHandler = { request in
+            let body = """
+            {"data":{"user":{"day2":null,"day1":{
+                "totalCommitContributions":1,"totalPullRequestContributions":0,
+                "totalPullRequestReviewContributions":0,"totalIssueContributions":0,
+                "contributionCalendar":{"weeks":[{"contributionDays":[{"date":"2027-01-01","contributionCount":1}]}]}
+            },"day0":{
+                "totalCommitContributions":55,"totalPullRequestContributions":3,
+                "totalPullRequestReviewContributions":2,"totalIssueContributions":2,
+                "contributionCalendar":{"weeks":[{"contributionDays":[{"date":"2026-12-31","contributionCount":65}]}]}
+            }}},"errors":[{"message":"One day could not be resolved","path":["user","day2"]}]}
+            """
+            return (httpResponse(200, request.url!), Data(body.utf8))
+        }
+
+        let result = try await client.contributionDayActivities(
+            login: "alice", dates: ["2026-12-31", "2026-12-30", "2026-12-29"]
+        )
+        #expect(result.count == 1)
+        let activity = try #require(result["2026-12-31"])
+        #expect(activity == ContributionDayActivity(calendarCount: 65, commits: 55, pullRequests: 3, reviews: 2, issues: 2))
+        #expect(activity.unclassifiedCount == 3)
+
+        let requests = URLProtocolStub.receivedRequests
+        #expect(requests.count == 1)
+        let request = try #require(requests.first)
+        #expect(request.httpMethod == "POST")
+        #expect(request.url?.path == "/graphql")
+        let body = try #require(request.httpBody)
+        let requestJSON = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let query = try #require(requestJSON["query"] as? String)
+        #expect(query.contains("day0: contributionsCollection(from: $from0, to: $to0)"))
+        #expect(query.contains("day1: contributionsCollection(from: $from1, to: $to1)"))
+        #expect(requestJSON["variables"] as? [String: String] == [
+            "login": "alice",
+            "from0": "2026-12-31T00:00:00Z", "to0": "2026-12-31T23:59:59Z",
+            "from1": "2026-12-30T00:00:00Z", "to1": "2026-12-30T23:59:59Z",
+            "from2": "2026-12-29T00:00:00Z", "to2": "2026-12-29T23:59:59Z"
+        ])
+    }
+
+    @Test("批量查询无匹配日期时返回失败，避免显示错日明细")
+    func contributionDayActivityRejectsWrongDate() async throws {
+        let client = makeClient()
+        URLProtocolStub.requestHandler = { request in
+            let body = """
+            {"data":{"user":{"day0":{
+                "totalCommitContributions":1,"totalPullRequestContributions":0,
+                "totalPullRequestReviewContributions":0,"totalIssueContributions":0,
+                "contributionCalendar":{"weeks":[{"contributionDays":[{"date":"2027-01-01","contributionCount":1}]}]}
+            }}}}
+            """
+            return (httpResponse(200, request.url!), Data(body.utf8))
+        }
+        await #expect(throws: NetworkError.self) {
+            try await client.contributionDayActivities(login: "alice", dates: ["2026-12-31"])
+        }
+    }
+
+    @Test("旧草坪首读恢复时间戳并自动压缩，迁移写入失败时保留旧缓存", arguments: [false, true])
+    @MainActor
+    func legacyContributionCalendarCache(failWrite: Bool) throws {
+        let suite = UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let directory = URL.temporaryDirectory.appending(component: suite)
+        let file = directory.appending(component: "alice.calendar.cache")
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        if failWrite {
+            try FileManager.default.createDirectory(at: file, withIntermediateDirectories: true)
+        }
+        let fetchedAt = Date().timeIntervalSince1970
+        let key = "contribution.calendar.alice"
+        let oldJSON = Data("""
+        {"fetchedAt":\(fetchedAt),"payload":{"totalContributions":0,"weeks":[
+          {"contributionDays":[{"date":"2026-12-29","contributionCount":0,"contributionLevel":"NONE","weekday":2},
+            {"date":"2026-12-31","contributionCount":0,"contributionLevel":"NONE","weekday":4}]}
+        ]}}
+        """.utf8)
+        defaults.set(oldJSON, forKey: key)
+        let service = ContributionService(apiClient: makeClient(), defaults: defaults, cacheDirectory: directory)
+        service.load(login: "Alice")
+        let payload = try #require(service.payload)
+        #expect(service.lastFetchedAt == Date(timeIntervalSince1970: fetchedAt))
+        #expect(!service.isPrefetchingDayActivity)
+        #expect(payload.days.map(\.date) == ["2026-12-29", "2026-12-31"])
+        #expect(payload.activityStats == .empty)
+        if failWrite {
+            #expect(defaults.data(forKey: key) == oldJSON)
+            try FileManager.default.removeItem(at: file)
+        } else {
+            #expect(defaults.data(forKey: key) == nil)
+        }
+
+        let restarted = ContributionService(apiClient: makeClient(), defaults: defaults, cacheDirectory: directory)
+        restarted.load(login: "alice")
+        #expect(restarted.payload == payload)
+        #expect(restarted.lastFetchedAt == service.lastFetchedAt)
+        #expect(defaults.data(forKey: key) == nil)
+        let stored = try Data(contentsOf: file)
+        #expect(CacheJSONCodec.isCompressed(stored))
+        #expect(stored.count < oldJSON.count)
+        restarted.reset(login: "Alice")
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+    }
+
+    @Test("预拉优先近期活跃日，保留成功批次，重启与扩展范围只补缺")
+    @MainActor
+    func contributionActivityPrefetchAndRestore() async throws {
+        let client = makeClient()
+        let defaultsName = UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: defaultsName))
+        let directory = URL.temporaryDirectory.appending(component: defaultsName)
+        defer {
+            defaults.removePersistentDomain(forName: defaultsName)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let older = contributionFixtureDay("2026-10-01")
+        let pending = contributionFixtureDay("2026-12-16")
+        let changed = contributionFixtureDay("2026-12-18", count: 5)
+        let zero = contributionFixtureDay("2026-12-30", count: 0)
+        let latest = contributionFixtureDay("2026-12-31")
+        let days = [older] + (15...31).map { dayOfMonth in
+            contributionFixtureDay("2026-12-\(dayOfMonth)", count: dayOfMonth == 30 ? 0 : 4)
+        }
+
+        stubContributionRequests(days: days, failingOn: pending.date)
+        let first = ContributionService(apiClient: client, defaults: defaults, cacheDirectory: directory)
+        first.load(login: "Alice")
+        try await waitForContributionPrefetch(first)
+        #expect(first.cachedDayActivity(login: "alice", day: latest)?.reviews == 1)
+        #expect(first.cachedDayActivity(login: "alice", day: zero) == .empty)
+        #expect(first.cachedDayActivity(login: "alice", day: pending) == nil)
+        #expect(first.cachedDayActivity(login: "alice", day: older) == nil)
+        #expect(first.cachedDayActivity(login: "alice", day: changed) == nil)
+        try #require(URLProtocolStub.receivedRequests.count == 3)
+        let firstVariables = try contributionVariables(URLProtocolStub.receivedRequests[1])
+        #expect(firstVariables["from0"] == "2026-12-31T00:00:00Z")
+        #expect(firstVariables["from1"] == "2026-12-29T00:00:00Z")
+        #expect(firstVariables["from13"] == "2026-12-17T00:00:00Z")
+        #expect(firstVariables["from14"] == nil)
+
+        stubContributionRequests(days: days)
+        let restarted = ContributionService(apiClient: client, defaults: defaults, cacheDirectory: directory)
+        restarted.load(login: "alice")
+        #expect(restarted.cachedDayActivity(login: "alice", day: latest)?.pullRequests == 1)
+        #expect(restarted.cachedDayActivity(login: "bob", day: latest) == nil)
+        try await waitForContributionPrefetch(restarted)
+        #expect(restarted.cachedDayActivity(login: "alice", day: pending)?.issues == 1)
+        try #require(URLProtocolStub.receivedRequests.count == 4)
+        #expect(try contributionVariables(URLProtocolStub.receivedRequests[3])["from0"] == "2026-12-16T00:00:00Z")
+
+        restarted.load(login: "alice", activityRange: .year)
+        try await waitForContributionPrefetch(restarted)
+        #expect(restarted.cachedDayActivity(login: "alice", day: older)?.commits == 1)
+        #expect(URLProtocolStub.receivedRequests.count == 5)
+
+        stubContributionRequests(days: days.map { $0.date == changed.date ? changed : $0 })
+        restarted.load(login: "alice", force: true)
+        try await waitForContributionPrefetch(restarted)
+        #expect(restarted.cachedDayActivity(login: "alice", day: changed)?.commits == 2)
+        try #require(URLProtocolStub.receivedRequests.count == 7)
+        let refreshed = try contributionVariables(URLProtocolStub.receivedRequests[6])
+        #expect(refreshed["from0"] == "2026-12-31T00:00:00Z")
+        #expect(refreshed["from1"] == "2026-12-29T00:00:00Z")
+        #expect(refreshed["from2"] == "2026-12-18T00:00:00Z")
+        #expect(refreshed["from3"] == nil)
+
+        restarted.load(login: "bob")
+        #expect(restarted.cachedDayActivity(login: "alice", day: latest) == nil)
+        #expect(restarted.cachedDayActivity(login: "bob", day: latest) == nil)
+        try await waitForContributionPrefetch(restarted)
+        #expect(restarted.cachedDayActivity(login: "bob", day: latest)?.issues == 1)
+        let bobFile = directory.appending(component: "bob.json.zlib")
+        #expect(FileManager.default.fileExists(atPath: bobFile.path))
+        restarted.reset(login: "Bob")
+        #expect(!FileManager.default.fileExists(atPath: bobFile.path))
+        #expect(FileManager.default.fileExists(atPath: directory.appending(component: "alice.json.zlib").path))
+        #expect(restarted.cachedDayActivity(login: "bob", day: latest) == nil)
+    }
+
+    @MainActor
+    private func waitForContributionPrefetch(_ service: ContributionService) async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while service.isPrefetchingDayActivity, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(!service.isPrefetchingDayActivity)
+    }
+
+    private func contributionFixtureDay(_ date: String, count: Int = 4) -> ContributionDay {
+        ContributionDay(date: date, contributionCount: count, contributionLevel: .firstQuartile, weekday: 0)
+    }
+
+    private func contributionVariables(_ request: URLRequest) throws -> [String: String] {
+        let body = try #require(request.httpBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        return try #require(json["variables"] as? [String: String])
+    }
+
+    /// 使用真实查询变量生成响应，零值日被预拉或日期串位时会直接失败。
+    private func stubContributionRequests(days: [ContributionDay], failingOn failureDate: String? = nil) {
+        let byDate = Dictionary(uniqueKeysWithValues: days.map { ($0.date, $0) })
+        URLProtocolStub.requestHandler = { request in
+            let variables = try contributionVariables(request)
+            let user: [String: Any]
+            if variables["from0"] == nil {
+                user = ["contributionsCollection": try contributionCollection(days)]
+            } else {
+                var aliases: [String: Any] = [:]
+                while let from = variables["from\(aliases.count)"] {
+                    let date = String(from.prefix(10))
+                    if date == failureDate {
+                        return (httpResponse(200, request.url!), Data(#"{"data":null,"errors":[{"message":"Unavailable"}]}"#.utf8))
+                    }
+                    let day = try #require(byDate[date])
+                    try #require(day.contributionCount > 0)
+                    aliases["day\(aliases.count)"] = try contributionCollection([day])
+                }
+                user = aliases
+            }
+            let data = try JSONSerialization.data(withJSONObject: ["data": ["user": user]])
+            return (httpResponse(200, request.url!), data)
+        }
+    }
+
+    private func contributionCollection(_ days: [ContributionDay]) throws -> [String: Any] {
+        let weeks = [ContributionWeek(contributionDays: days)]
+        let total = days.reduce(0) { $0 + $1.contributionCount }
+        return [
+            "totalCommitContributions": max(0, total - 3),
+            "totalPullRequestContributions": 1, "totalPullRequestReviewContributions": 1,
+            "totalIssueContributions": 1, "totalRepositoryContributions": 0,
+            "contributionCalendar": [
+                "totalContributions": total,
+                "weeks": try JSONSerialization.jsonObject(with: JSONEncoder().encode(weeks))
+            ]
+        ]
+    }
+
     /// 网页抓取必须保持匿名，且把强制刷新策略传到 HTML 请求。
     @Test("成就网页不携带 API Token")
     func achievementsPageIsAnonymous() async throws {

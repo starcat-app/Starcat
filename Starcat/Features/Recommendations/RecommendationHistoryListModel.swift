@@ -19,7 +19,7 @@ final class RecommendationHistoryListModel {
     private(set) var filtered: [RecommendationHistoryEntry] = []
     /// 当前页只在数据或分页变化时重建；每行读取分页计数不能再次复制整页数组。
     private(set) var rows: [RecommendationHistoryEntry] = []
-    private(set) var visibleLimit = 100
+    private(set) var visibleLimit = ListPaginationPolicy.repoCardPageSize
     private(set) var revision = 0
     private(set) var paginationIdentity = UUID()
     private var scope = ""
@@ -43,7 +43,7 @@ final class RecommendationHistoryListModel {
         selectedID = nil
         filtered = []
         rows = []
-        visibleLimit = 100
+        visibleLimit = ListPaginationPolicy.repoCardPageSize
         lastQuery = ""
         didPrepareHistory = false
         paginationIdentity = UUID()
@@ -56,7 +56,7 @@ final class RecommendationHistoryListModel {
         let query = QuickSearchTextMatcher.normalized(search)
         let identity = "\(dateScope.identity)|\(filter.rawValue)|\(query)"
         if lastQuery != identity {
-            visibleLimit = 100
+            visibleLimit = ListPaginationPolicy.repoCardPageSize
             lastQuery = identity
             paginationIdentity = UUID()
         }
@@ -78,8 +78,9 @@ final class RecommendationHistoryListModel {
     /// 追加当前筛选的下一页，保留选择和分页身份。
     func loadMore() {
         guard hasMore else { return }
-        visibleLimit += 100
-        refreshRows()
+        let nextRows = filtered.dropFirst(rows.count).prefix(ListPaginationPolicy.repoCardPageSize)
+        visibleLimit += ListPaginationPolicy.repoCardPageSize
+        rows.append(contentsOf: nextRows)
     }
 
     private func refreshRows() {

@@ -1623,6 +1623,9 @@ struct HomeView: View {
             AwesomeDetailView(store: dependencies.awesomeStore)
         } else if selectedSidebarPage == .trending, selectedExploreMode != .trending {
             DiscoveryDetailView(item: selectedDiscoveryRepo)
+                .environment(\.linuxDoDetailBadgeSource,
+                             selectedExploreMode == .discover && dependencies.linuxDoStore.selectedSource == .linuxDo
+                                ? .catalog : .verifiedMembership)
         } else {
             RepoDetailView(
                 selectedTrendingRepo: selectedTrendingRepo

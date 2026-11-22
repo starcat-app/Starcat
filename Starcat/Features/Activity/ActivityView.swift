@@ -216,7 +216,7 @@ struct ActivityView: View {
     private func categoryToolbarContent(_ viewModel: ActivityViewModel) -> some View {
         let items = viewModel.presentationItems(for: selectedCategory)
         let isPublished = viewModel.publishedCategory == selectedCategory
-        let query = "\(selectedCategory.rawValue):\(viewModel.timeSort(for: selectedCategory).rawValue):\(viewModel.quickSearchQuery):\(viewModel.licenseFilter.cacheKey)"
+        let query = "\(selectedCategory.rawValue):\(viewModel.timeSort(for: selectedCategory).rawValue):\(viewModel.quickSearchQuery):\(settings.skillScanFilterIdentity)"
         VStack(spacing: 0) {
             activityFilterBar(viewModel)
             Divider()
@@ -321,26 +321,19 @@ struct ActivityView: View {
                 )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
-                .automaticListPagination(
-                    appearingIndex: index,
-                    visibleItemCount: visibleItems.count,
-                    loadedItemCount: items.count,
-                    hasMore: isPublished && viewModel.hasMoreItems,
-                    isLoading: viewModel.isLoading || viewModel.isApplyingCategoryFilter,
-                    identity: paginationIdentity
-                ) {
-                    viewModel.loadMoreIfNeeded()
-                }
+                .automaticListPagination(appearingIndex: index)
             }
         }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
-        .automaticListPaginationFill(
+        .linuxDoSourceBadges(for: visibleItems.compactMap { $0.repo?.id })
+        .automaticListPagination(
             visibleItemCount: visibleItems.count,
             loadedItemCount: items.count,
             hasMore: isPublished && viewModel.hasMoreItems,
             isLoading: viewModel.isLoading || viewModel.isApplyingCategoryFilter,
-            identity: paginationIdentity
+            identity: "\(paginationIdentity):\(viewModel.itemsRevision)",
+            fillsFilteredWindow: settings.skillFilter == .any
         ) {
             viewModel.loadMoreIfNeeded()
         }
@@ -358,14 +351,17 @@ struct ActivityView: View {
         // 技能筛选关闭时候选构造（逐 item 全局过滤）没有消费方；
         // 任务身份在此场景取常量，状态变化不再白算 skillCandidates，任务体 guard 天然 no-op。
         .task(id: settings.skillFilter == .any ? "skills-off" : "\(viewModel.itemsRevision):\(skillCandidates(viewModel.items).map(\.id)):\(selectedCategory):\(settings.skillScanFilterIdentity):\(dependencies.repoSkillStore.paginationRevision)") {
-            guard settings.skillFilter != .any else { return }
+            guard settings.skillFilter != .any, isPublished else { return }
             let scope = "activity:\(selectedCategory):\(viewModel.quickSearchQuery):\(settings.skillScanFilterIdentity)"
             dependencies.repoSkillStore.enqueue(
                 skillCandidates(viewModel.items),
                 scope: scope
             )
             for _ in 0..<20 {
-                guard !Task.isCancelled, globalFilteredItems(viewModel.items).count < 40, viewModel.hasMoreItems else { break }
+                guard !Task.isCancelled, ListPaginationPolicy.shouldFillVisibleWindow(
+                    visibleItemCount: globalFilteredItems(viewModel.items).count,
+                    hasMore: viewModel.hasMoreItems
+                ) else { break }
                 guard skillPageBudget.claim(scope: "\(scope):\(dependencies.repoSkillStore.paginationRevision)") else { break }
                 let count = viewModel.items.count
                 viewModel.loadMoreIfNeeded()

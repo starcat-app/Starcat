@@ -316,8 +316,46 @@ private struct ReleaseAssetDownloadToastModifier: ViewModifier {
 // MARK: - Icon helper
 
 enum ReleaseAssetIcon {
-    /// Release 资产类型图标：dmg 硬盘 / pkg 软件包 / 压缩包 / Windows 显示器 / Linux 终端 / app 窗口。
+    /// 下载清单的图标与底色成对使用。已有品牌原色的素材只给底板配色。
+    struct WorkspaceStyle {
+        let source: BusinessIcon.Source
+        var tint: Color = .secondary
+        var keepsOriginalColors = false
+
+        var templateTint: Color? { keepsOriginalColors ? nil : tint }
+    }
+
     static func iconSource(for filename: String) -> BusinessIcon.Source {
+        buildSource(for: filename) ?? .business(.file)
+    }
+
+    /// 按最终扩展名区分附件的实际用途，例如 `app.dmg.sig` 展示为签名。
+    static func workspaceStyle(for filename: String) -> WorkspaceStyle {
+        switch (filename as NSString).pathExtension.lowercased() {
+        case "dmg", "pkg", "app", "ipa":
+            return WorkspaceStyle(source: .asset("apple"), tint: .indigo)
+        case "exe", "msi", "msix":
+            return WorkspaceStyle(source: .asset("windows11"), tint: .blue, keepsOriginalColors: true)
+        case "deb", "rpm", "appimage":
+            return WorkspaceStyle(source: .asset("linux"), tint: .orange, keepsOriginalColors: true)
+        case "apk", "aab":
+            return WorkspaceStyle(source: .asset("android"), tint: .green, keepsOriginalColors: true)
+        case "sig", "asc":
+            return WorkspaceStyle(source: .system("checkmark.seal"), tint: .green)
+        case "sha256", "sha512", "md5":
+            return WorkspaceStyle(source: .system("number"), tint: .green)
+        case "json", "yaml", "yml", "toml":
+            return WorkspaceStyle(source: .system("curlybraces"), tint: .teal)
+        default:
+            let source = RepoFileTypeIcon.iconSource(forFileName: filename)
+            if source == .business(.fileArchive) {
+                return WorkspaceStyle(source: source, tint: .purple)
+            }
+            return WorkspaceStyle(source: source, keepsOriginalColors: true)
+        }
+    }
+
+    private static func buildSource(for filename: String) -> BusinessIcon.Source? {
         let lower = filename.lowercased()
         if lower.hasSuffix(".dmg") { return .business(.storage) }
         if lower.hasSuffix(".pkg") { return .business(.packageAsset) }
@@ -325,6 +363,6 @@ enum ReleaseAssetIcon {
         if lower.hasSuffix(".exe") || lower.hasSuffix(".msi") { return .business(.monitor) }
         if lower.hasSuffix(".deb") || lower.hasSuffix(".rpm") || lower.hasSuffix(".appimage") { return .business(.terminal) }
         if lower.hasSuffix(".app") { return .business(.appWindow) }
-        return .business(.file)
+        return nil
     }
 }

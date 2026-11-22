@@ -264,14 +264,17 @@ struct SidebarView: View {
         .background(.bar)
         .task {
             await dependencies.linuxDoStore.restoreCatalog()
-            // 公共来源索引不依赖进入发现页；长期前台使用也按 TTL 低频更新。
+        }
+        .task(id: "\(isShowingLinuxDoCatalog):\(dependencies.linuxDoStore.providerID)") {
+            guard !isShowingLinuxDoCatalog else { return }
+            // 跨分类来源标识需要低频校验。进入 Linux.do 时，中栏和侧栏只依赖目录。
             while !Task.isCancelled {
                 await dependencies.linuxDoStore.refreshProvenance()
                 do { try await Task.sleep(for: .seconds(30 * 60)) } catch { return }
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await dependencies.linuxDoStore.refreshProvenance() } }
+            if phase == .active, !isShowingLinuxDoCatalog { Task { await dependencies.linuxDoStore.refreshProvenance() } }
         }
         .task(id: "\(dependencies.databaseScopeRevision):\(settings.exploreCatalogPreferences.hiddenWeeklySources.sorted())") {
             // 首帧 bulk meta 可能尚未落盘；nil 时保留旧值，等 Weekly 列表加载后由
@@ -1333,7 +1336,7 @@ struct SidebarView: View {
                 if id == "linuxDo" {
                     exploreSelectableRow(
                         selection: .linuxDo,
-                        count: dependencies.linuxDoStore.provenance?.payload.origins?.count ?? 0
+                        count: dependencies.linuxDoStore.total
                     ) {
                         // 官方圆形占画布的 5/6；17.6pt 画布使可见直径与相邻 16pt 业务图标一致。
                         // 外层仍用原来的 16pt 图标槽，品牌原色不参与选中态染色。
@@ -2352,12 +2355,16 @@ struct SidebarView: View {
         }
     }
 
+    private var isShowingLinuxDoCatalog: Bool {
+        selectedPage == .trending && selectedExploreMode == .discover && dependencies.linuxDoStore.selectedSource == .linuxDo
+    }
+
     private func exploreLanguageRow(_ language: DiscoveryLanguageDTO?, isLinuxDo: Bool = false) -> some View {
         let key = language?.key
         // 「其他」/感兴趣语言由客户端聚合而来，count 优先用 DTO 自带值；
         // 「全部」回退到 catalog total。
         let count: Int? = language?.count ?? (isLinuxDo
-            ? dependencies.linuxDoStore.repositories.count
+            ? dependencies.linuxDoStore.total
             : dependencies.exploreCatalogStore.total(for: exploreLanguageMode))
         // 语言 logo 不是 SF Symbol，不能塞进 systemImage 字符串；仍走 Label icon 槽，
         // 与趋势/周刊语言行、星标主导航同一套 sidebar 图标列对齐。

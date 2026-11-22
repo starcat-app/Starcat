@@ -78,8 +78,7 @@ struct ContributionGraphView: View {
     /// 上次成功加载时间戳；用于显示 "更新于 X 分前"。nil 表示从未成功加载过。
     var lastFetchedAt: Date?
 
-    /// 用户登录名，预留扩展用（如果未来需要 deep link 等）；当前不渲染跳转按钮，
-    /// 因为头像已经承担"跳 GitHub 主页"的语义。
+    /// 单日明细使用的 GitHub 登录名。
     var login: String?
 
     /// 调色板只影响后台位图渲染，不改变草坪的动态固有高度。
@@ -87,6 +86,7 @@ struct ContributionGraphView: View {
 
     /// 仅侧栏提供范围、玩法与逐日悬停入口，资料卡继续作为只读内容。
     var allowsStyleCycling: Bool = false
+    var detailService: ContributionService?
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatReduceMotion) private var reduceMotion
@@ -112,7 +112,6 @@ struct ContributionGraphView: View {
     /// 旧位图淡出后才交接布局，防止年度图片先被压进两行网格。
     @State private var renderedRange: ContributionGraphRange = .recent90
     @State private var hoveredPosition: GridPosition?
-    @State private var hoveredPoint: CGPoint?
     @State private var isInspecting = false
     @State private var isRangeHovered = false
 
@@ -133,7 +132,7 @@ struct ContributionGraphView: View {
 
     private var summaryText: String {
         if let days = selectedRange.dayCount {
-            let count = ContributionGrid(weeks: payload?.weeks, range: selectedRange).totalContributions
+            let count = ContributionGrid(payload: payload, range: selectedRange).totalContributions
             return String(
                 format: String.l10n("contribution.range.daysCount"), locale: locale,
                 days.formatted(.number.locale(locale)), count.formatted(.number.locale(locale))
@@ -146,8 +145,9 @@ struct ContributionGraphView: View {
     }
 
     var body: some View {
-        // 一次视图更新共用日期映射，避免逐格辅助功能描述重复解析整年的日期。
-        let grid = ContributionGrid(weeks: payload?.weeks, range: displayedRange)
+        let grid = ContributionGrid(payload: payload, range: displayedRange)
+        let day = hoveredPosition.flatMap { grid.day(at: $0) }
+        let dayDetail = detail(for: day)
         VStack(alignment: .leading, spacing: 6) {
             headerRow
 
@@ -165,19 +165,20 @@ struct ContributionGraphView: View {
                         guard allowsStyleCycling, isGridVisible else { return }
                         switch phase {
                         case .active(let point):
-                            hoveredPoint = point
                             isInspecting = geometry.gridRect.contains(point)
-                            hoveredPosition = geometry.inspectionPosition(
+                            let position = geometry.inspectionPosition(
                                 at: point, in: grid, previous: hoveredPosition
                             )
+                            if position != hoveredPosition {
+                                hoveredPosition = position
+                            }
                         case .ended:
                             hoveredPosition = nil
-                            hoveredPoint = nil
                             isInspecting = false
                         }
                     }
                     .overlay(alignment: .topLeading) {
-                        if let hoveredPosition, grid.day(at: hoveredPosition) != nil {
+                        if let hoveredPosition, day != nil {
                             let rect = geometry.rect(at: hoveredPosition)
                             RoundedRectangle(cornerRadius: displayedRange == .year ? 1 : 3)
                                 .strokeBorder(.primary.opacity(0.8), lineWidth: 1)
@@ -188,12 +189,19 @@ struct ContributionGraphView: View {
                         }
                     }
                     .background {
-                        // 普通 overlay 的层级受侧栏父容器限制；窗口级宿主才能盖过导航图标。
                         ContributionTooltipPresenter(
-                            point: hoveredPosition != nil && isGridVisible ? hoveredPoint : nil
+                            cell: isGridVisible && day != nil ? hoveredPosition.map(geometry.rect(at:)) : nil
                         ) {
-                            hoverAnnotation(grid: grid)
-                                .padding(8)
+                            if let day {
+                                let palette = ContributionPalette.palette(for: colorScheme, style: style)
+                                ContributionTooltipCard(
+                                    metrics: ContributionTooltipMetrics(
+                                        day: day, maximumCount: payload?.maximumCount ?? 0, grid: grid, locale: locale
+                                    ),
+                                    color: palette.tooltipColor(for: day.contributionLevel, scheme: colorScheme),
+                                    detail: dayDetail
+                                )
+                            }
                         }
                         .allowsHitTesting(false)
                     }
@@ -207,10 +215,16 @@ struct ContributionGraphView: View {
                 )
         }
         .opacity(isLoading && payload == nil ? 0.6 : 1.0)
+        .task(id: login) {
+            if let login { detailService?.load(login: login, activityRange: selectedRange) }
+        }
         // v4 HOM-SNAKE-MODES：根据玩法 / 数据变化重建 animator
         .onAppear { rebuildAnimator() }
         .onChange(of: settings.snakeStyle) { _, _ in transitionToSelectedStyle() }
-        .onChange(of: selectedRange) { _, _ in transitionToSelectedStyle() }
+        .onChange(of: selectedRange) { _, range in
+            if let login { detailService?.load(login: login, activityRange: range) }
+            transitionToSelectedStyle()
+        }
         .onChange(of: isInspecting) { _, _ in rebuildAnimator() }
         .onChange(of: continuousAnimationsPaused) { _, _ in rebuildAnimator() }
         .onChange(of: renderService.readyRevision) { _, _ in
@@ -229,12 +243,10 @@ struct ContributionGraphView: View {
         // payload 从 nil → 有数据时也要重建，让 greedy / foodChase / multiSnake 拿到真实 weeks
         .onChange(of: payload) { _, _ in
             hoveredPosition = nil
-            hoveredPoint = nil
             rebuildAnimator()
         }
         .onChange(of: login) { _, _ in
             hoveredPosition = nil
-            hoveredPoint = nil
             isInspecting = false
             selectedRange = .recent90
             rebuildAnimator()
@@ -249,7 +261,6 @@ struct ContributionGraphView: View {
             isAwaitingStyleFrame = false
             isGridVisible = true
             hoveredPosition = nil
-            hoveredPoint = nil
             isInspecting = false
             renderService.stop()
         }
@@ -258,7 +269,6 @@ struct ContributionGraphView: View {
     /// 淡出完成后才读取最新设置，连续点击不会排队播放已经过时的玩法。
     private func transitionToSelectedStyle() {
         hoveredPosition = nil
-        hoveredPoint = nil
         isInspecting = false
         guard !reduceMotion else {
             rebuildAnimator()
@@ -286,7 +296,7 @@ struct ContributionGraphView: View {
         // 查日数据时显示真实底图。格子间移动不重建动画，离开整个网格后恢复当前玩法。
         let shouldAnimate = !reduceMotion && !continuousAnimationsPaused && !isInspecting
         let animator = shouldAnimate ? SnakeAnimatorFactory.make(
-            style: settings.snakeStyle, weeks: payload?.weeks, range: displayedRange
+            style: settings.snakeStyle, payload: payload, range: displayedRange
         ) : nil
         renderService.configure(
             animator: animator,
@@ -390,7 +400,7 @@ struct ContributionGraphView: View {
             .accessibilityValue(Text(LocalizedStringKey(settings.snakeStyle.displayNameKey)))
             .accessibilityChildren {
                 ForEach(grid.allPositions, id: \.self) { position in
-                    if let day = grid.day(at: position) {
+                    if let day = grid.cell(at: position) {
                         Text(verbatim: "\(dateText(day)) — \(dayCountText(day))")
                     }
                 }
@@ -401,64 +411,59 @@ struct ContributionGraphView: View {
         }
     }
 
-    /// 内容宽度独立于侧栏；实际位置由窗口级宿主跟随光标，不能反向改变草坪尺寸。
-    @ViewBuilder
-    private func hoverAnnotation(grid: ContributionGrid) -> some View {
-        if let hoveredPosition, let day = grid.day(at: hoveredPosition) {
-            ContributionTooltipCard(
-                metrics: ContributionTooltipMetrics(day: day, weeks: payload?.weeks, locale: locale),
-                color: ContributionPalette.palette(for: colorScheme, style: style)
-                    .color(for: day.contributionLevel)
-            )
-        }
+    private func detail(for day: ContributionDay?) -> ContributionTooltipDetail {
+        guard isGridVisible, let day else { return .unavailable }
+        if day.contributionCount == 0 { return .loaded(.empty) }
+        guard let login, let detailService else { return .unavailable }
+        if let activity = detailService.cachedDayActivity(login: login, day: day) { return .loaded(activity) }
+        return detailService.isPrefetchingDayActivity ? .loading : .unavailable
     }
 
-    private func dayCountText(_ day: ContributionDay) -> String {
+    private func dayCountText(_ day: ContributionCalendarPayload.Day) -> String {
         String(
             format: String.l10n("contribution.day.count"), locale: locale,
             day.contributionCount.formatted(.number.locale(locale))
         )
     }
 
-    private func dateText(_ day: ContributionDay) -> String {
-        guard let date = ContributionGrid.date(day.date) else { return day.date }
+    private func dateText(_ day: ContributionCalendarPayload.Day) -> String {
         let format = Date.FormatStyle(
             locale: locale,
             calendar: Calendar(identifier: .gregorian),
             timeZone: TimeZone(secondsFromGMT: 0)!
         ).year().month(.abbreviated).day().weekday(.abbreviated)
-        return date.formatted(format)
+        return day.calendarDate.formatted(format)
     }
 }
 
-/// 隐藏的占位文字只参与布局，实际文字覆盖其上，避免逐日悬停时卡片和单位左右跳动。
+/// 概览不依赖明细请求，失败也不丢失日期、总数和日均。
+enum ContributionTooltipDetail: Equatable {
+    case loading
+    case loaded(ContributionDayActivity)
+    case unavailable
+
+    var activity: ContributionDayActivity? {
+        if case .loaded(let value) = self { return value }
+        return nil
+    }
+}
+
+/// 卡片宽度和明细行高在日期及加载状态间保持稳定。
 struct ContributionTooltipCard: View {
     let metrics: ContributionTooltipMetrics
     let color: Color
+    var detail: ContributionTooltipDetail = .loading
 
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.locale) private var locale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
-        VStack(alignment: .leading, spacing: interfaceScale.scaled(4)) {
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text(verbatim: metrics.datePlaceholder)
-                    .hidden()
-                    .overlay(alignment: .leading) {
-                        Text(verbatim: metrics.dateText)
-                    }
-                // 贡献行在英文等语言下更宽，日期行须吸收剩余宽度，让星期贴齐卡片右侧。
-                Spacer(minLength: interfaceScale.scaled(12))
-                // 星期名称长度因语言和日期而异，始终保留该语言七天中最宽的长度。
-                ZStack(alignment: .trailing) {
-                    ForEach(metrics.weekdayPlaceholders, id: \.self) { weekday in
-                        Text(verbatim: weekday)
-                    }
-                }
-                .hidden()
-                .overlay(alignment: .trailing) {
-                    Text(verbatim: metrics.weekdayText)
-                }
+        VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(verbatim: metrics.dateText)
+                Spacer()
+                Text(verbatim: metrics.weekdayText)
             }
             .font(interfaceScale.font(.caption))
             .monospacedDigit()
@@ -480,28 +485,105 @@ struct ContributionTooltipCard: View {
                     .font(interfaceScale.font(.body))
                     .foregroundStyle(.secondary)
             }
+
+            if let comparison = metrics.comparison {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(verbatim: formatted("contribution.day.average", comparison.dayCount, comparison.average))
+                    Spacer(minLength: 8)
+                    if let ratio = comparison.ratio {
+                        Text(verbatim: formatted("contribution.day.averageRatio", ratio))
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.primary)
+                    }
+                }
+                .font(interfaceScale.font(.captionSmall))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+            }
+
+            Divider()
+            breakdown
         }
         .lineLimit(1)
-        .padding(interfaceScale.scaled(12))
-        .fixedSize()
-        // 纯色表面隔绝底下的标题和图案；Material 在侧栏里会透出内容，影响可读性。
-        .background(StarcatSurface.panel(colorScheme: colorScheme), in: RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8).strokeBorder(.primary.opacity(0.12))
-        }
-        .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
+        .padding(.horizontal, interfaceScale.scaled(10))
+        .padding(.vertical, interfaceScale.scaled(12))
+        .frame(width: interfaceScale.scaled(240))
+        .fixedSize(horizontal: false, vertical: true)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
+
+    private var breakdown: some View {
+        let activity = detail.activity
+        return VStack(alignment: .leading, spacing: interfaceScale.scaled(7)) {
+            HStack {
+                Text(LocalizedStringKey(
+                    detail == .unavailable ? "contribution.day.unavailable" : "contribution.day.breakdown"
+                ))
+                Spacer()
+                if detail == .loading {
+                    if reduceMotion {
+                        Text(verbatim: "…")
+                    } else {
+                        ProgressView().controlSize(.mini)
+                    }
+                } else if let activity, activity.unclassifiedCount > 0 {
+                    Text(verbatim: formatted(
+                        "contribution.day.unclassified", activity.unclassifiedCount.formatted(.number.locale(locale))
+                    ))
+                }
+            }
+            .font(interfaceScale.font(.captionSmall))
+            .foregroundStyle(.secondary)
+            .frame(height: interfaceScale.scaled(16))
+
+            activityRow("insights.repo.activity.commits", count: activity?.commits)
+            activityRow("insights.repo.activity.pullRequests", count: activity?.pullRequests)
+            activityRow("contribution.day.review", count: activity?.reviews)
+            activityRow("insights.repo.activity.issues", count: activity?.issues)
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: detail)
+    }
+
+    private func activityRow(_ label: LocalizedStringKey, count: Int32?) -> some View {
+        let share = count.flatMap { detail.activity?.share(of: $0) }
+        return VStack(alignment: .leading, spacing: interfaceScale.scaled(3)) {
+            HStack(alignment: .firstTextBaseline, spacing: interfaceScale.scaled(6)) {
+                Text(label)
+                    .layoutPriority(1)
+                Spacer(minLength: 0)
+                Text(verbatim: count?.formatted(.number.locale(locale)) ?? "—")
+                    .fontWeight(.semibold)
+                Text(verbatim: share?.formatted(.percent.precision(.fractionLength(0)).locale(locale)) ?? "—")
+                    .foregroundStyle(.secondary)
+                    .frame(width: interfaceScale.scaled(36), alignment: .trailing)
+            }
+            .font(interfaceScale.font(.caption))
+            .monospacedDigit()
+            Capsule()
+                .fill(.primary.opacity(0.08))
+                .frame(height: interfaceScale.scaled(3))
+                .overlay(alignment: .leading) {
+                    GeometryReader { track in
+                        Capsule()
+                            .fill(color)
+                            .frame(width: track.size.width * (share ?? 0))
+                    }
+                }
+        }
+    }
+
+    private func formatted(_ key: String, _ values: CVarArg...) -> String {
+        String(format: String.l10n(key), locale: locale, arguments: values)
+    }
 }
 
-/// 将贡献提示挂到窗口内容与 toolbar 的共同父层，跨过 SwiftUI 侧栏内部的绘制层级。
+/// 系统子面板可越过主窗上边缘，避免紧贴标题栏的草坪方格总是被迫向下弹出。
 ///
-/// 只承载提示，不创建窗口、不接管焦点；环境必须跨宿主传递，保留应用的语言、主题和字号。
-/// Swift 学习索引关键词：NSViewRepresentable / NSHostingView / 坐标转换。
+/// 面板跟随宿主窗口排序且不接收鼠标事件。SwiftUI 环境跨宿主传递，语言、主题和字号保持一致。
 @MainActor
 private struct ContributionTooltipPresenter<Content: View>: NSViewRepresentable {
-    let point: CGPoint?
+    let cell: CGRect?
     @ViewBuilder var content: () -> Content
 
     func makeCoordinator() -> Coordinator {
@@ -519,8 +601,7 @@ private struct ContributionTooltipPresenter<Content: View>: NSViewRepresentable 
 
     func updateNSView(_ nsView: AnchorView, context: Context) {
         context.coordinator.update(
-            from: nsView, point: point,
-            content: AnyView(content().environment(\.self, context.environment))
+            from: nsView, cell: cell, content: AnyView(content()), environment: context.environment
         )
     }
 
@@ -532,50 +613,96 @@ private struct ContributionTooltipPresenter<Content: View>: NSViewRepresentable 
     /// 同一个宿主在相邻日期间复用；位置直接更新，不给高频鼠标移动叠加位移动画。
     @MainActor
     final class Coordinator {
-        private var hostingView: ContributionTooltipHostingView?
-        private var point: CGPoint?
+        private var panel: NSPanel?
+        private var hostingView: NSHostingView<AnyView>?
+        private var cell: CGRect?
+        private var placement: ContributionTooltipGeometry?
+        private var content = AnyView(EmptyView())
+        private var environment = EnvironmentValues()
 
-        func update(from anchor: AnchorView, point: CGPoint?, content: AnyView) {
-            self.point = point
-            guard point != nil else {
-                hostingView?.isHidden = true
+        func update(from anchor: AnchorView, cell: CGRect?, content: AnyView, environment: EnvironmentValues) {
+            self.cell = cell
+            guard cell != nil else {
+                hide()
+                hostingView?.rootView = AnyView(EmptyView())
                 return
             }
+            self.content = content
+            self.environment = environment
             if let hostingView {
-                hostingView.rootView = content
+                hostingView.rootView = rootView()
             } else {
-                let view = ContributionTooltipHostingView(rootView: content)
+                let view = NSHostingView(rootView: rootView())
                 view.sizingOptions = [.intrinsicContentSize]
                 view.safeAreaRegions = []
                 view.setAccessibilityHidden(true)
                 hostingView = view
+
+                let panel = NSPanel(
+                    contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
+                    backing: .buffered, defer: false
+                )
+                panel.backgroundColor = .clear
+                panel.isOpaque = false
+                panel.hasShadow = true
+                panel.animationBehavior = .none
+                panel.ignoresMouseEvents = true
+                panel.collectionBehavior = [.fullScreenAuxiliary, .ignoresCycle]
+                panel.contentView = view
+                self.panel = panel
             }
             position(from: anchor)
         }
 
-        /// 从草坪左上坐标转换到真实窗口坐标，不能用局部 offset 猜测父容器的位置。
+        /// 先换算到屏幕，再使用方格所在显示器的可用范围决定方向。
         func position(from anchor: AnchorView) {
-            guard let hostingView else { return }
-            guard let point, let container = anchor.window?.contentView?.superview else {
-                hostingView.removeFromSuperview()
+            guard let cell, let panel, let hostingView, let parent = anchor.window,
+                  parent.isKeyWindow, parent.isVisible, parent.attachedSheet == nil else {
+                hide()
                 return
             }
-            if hostingView.superview !== container || container.subviews.last !== hostingView {
-                container.addSubview(hostingView, positioned: .above, relativeTo: nil)
+            let screenCell = parent.convertToScreen(anchor.convert(cell, to: nil))
+            let center = CGPoint(x: screenCell.midX, y: screenCell.midY)
+            let screen = NSScreen.screens.first { $0.frame.contains(center) } ?? parent.screen
+            guard let screen, let next = ContributionTooltipGeometry(
+                cell: screenCell, size: hostingView.fittingSize, within: screen.visibleFrame
+            ) else {
+                hide()
+                return
             }
-            hostingView.frame = ContributionTooltipGeometry.frame(
-                at: anchor.convert(point, to: container),
-                size: hostingView.fittingSize,
-                within: container.bounds,
-                isFlipped: container.isFlipped
+
+            if placement?.arrowX != next.arrowX || placement?.isAbove != next.isAbove {
+                placement = next
+                hostingView.rootView = rootView()
+                panel.invalidateShadow()
+            }
+            panel.setFrame(next.frame, display: panel.isVisible)
+            if panel.parent !== parent {
+                panel.parent?.removeChildWindow(panel)
+                parent.addChildWindow(panel, ordered: .above)
+                panel.orderFront(nil)
+            }
+        }
+
+        private func rootView() -> AnyView {
+            AnyView(ContributionTooltipBubble(
+                content: content, arrowX: placement?.arrowX, isAbove: placement?.isAbove ?? true
             )
-            hostingView.isHidden = false
+            .appLocaleEnvironment()
+            .environment(\.self, environment))
+        }
+
+        private func hide() {
+            guard let panel, panel.parent != nil else { return }
+            panel.parent?.removeChildWindow(panel)
+            panel.orderOut(nil)
         }
 
         func detach() {
-            hostingView?.removeFromSuperview()
+            hide()
+            panel = nil
             hostingView = nil
-            point = nil
+            cell = nil
         }
     }
 
@@ -585,6 +712,21 @@ private struct ContributionTooltipPresenter<Content: View>: NSViewRepresentable 
         var onGeometryChange: (() -> Void)?
 
         override var isFlipped: Bool { true }
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            super.viewWillMove(toWindow: newWindow)
+            NotificationCenter.default.removeObserver(self)
+            guard let newWindow else { return }
+            for name in [
+                NSWindow.didMoveNotification, NSWindow.didResizeNotification,
+                NSWindow.didChangeScreenNotification, NSWindow.didResignKeyNotification,
+                NSWindow.didBecomeKeyNotification
+            ] {
+                NotificationCenter.default.addObserver(
+                    self, selector: #selector(windowGeometryChanged(_:)), name: name, object: newWindow
+                )
+            }
+        }
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -599,14 +741,53 @@ private struct ContributionTooltipPresenter<Content: View>: NSViewRepresentable 
         override func hitTest(_ point: NSPoint) -> NSView? {
             nil
         }
+
+        @objc private func windowGeometryChanged(_ notification: Notification) {
+            onGeometryChange?()
+        }
     }
 }
 
-/// 提示即使覆盖导航、原生图标或 WebView，也必须让原窗口继续接收鼠标事件。
-@MainActor
-private final class ContributionTooltipHostingView: NSHostingView<AnyView> {
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
+/// 圆角卡片和箭头共用一个轮廓，避免箭头根部出现描边接缝。
+private struct ContributionTooltipBubble: View {
+    let content: AnyView
+    let arrowX: CGFloat?
+    let isAbove: Bool
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let outline = Outline(arrowX: arrowX, isAbove: isAbove)
+        content
+            .padding(isAbove ? .bottom : .top, ContributionTooltipGeometry.arrowHeight)
+            .background { outline.fill(StarcatSurface.panel(colorScheme: colorScheme)) }
+            .overlay { outline.stroke(.primary.opacity(0.12), lineWidth: 1) }
+    }
+
+    private struct Outline: Shape {
+        let arrowX: CGFloat?
+        let isAbove: Bool
+
+        func path(in rect: CGRect) -> Path {
+            let arrowHeight = ContributionTooltipGeometry.arrowHeight
+            let cornerRadius: CGFloat = 11
+            let halfBase: CGFloat = 7
+            let body = CGRect(
+                x: rect.minX, y: rect.minY + (isAbove ? 0 : arrowHeight),
+                width: rect.width, height: rect.height - arrowHeight
+            )
+            let tipX = arrowX ?? rect.midX
+            let baseInset = cornerRadius + halfBase
+            let baseX = min(max(tipX, rect.minX + baseInset), rect.maxX - baseInset)
+            let baseY = isAbove ? body.maxY - 1 : body.minY + 1
+            let arrow = Path { path in
+                path.move(to: CGPoint(x: baseX - halfBase, y: baseY))
+                path.addLine(to: CGPoint(x: tipX, y: isAbove ? rect.maxY : rect.minY))
+                path.addLine(to: CGPoint(x: baseX + halfBase, y: baseY))
+                path.closeSubpath()
+            }
+            return RoundedRectangle(cornerRadius: cornerRadius).path(in: body).union(arrow)
+        }
     }
 }
 
@@ -632,11 +813,7 @@ private struct SnakeFrameImageView: View {
 
 /// 贡献草坪颜色调色板（5 档 × 2 主题）。
 ///
-/// 严格按照 GitHub 主页色值：
-/// - light: `#ebedf0` (none) / `#9be9a8` / `#40c463` / `#30a14e` / `#216e39`
-/// - dark : `#161b22` (none) / `#0e4429` / `#006d32` / `#26a641` / `#39d353`
-///
-/// 拆成独立结构而非散落 hex 字符串：①便于单测；②未来用户自定义主题时只换这一处。
+/// 亮色沿用 GitHub 色板。暗色提亮低档绿，使小方块在侧栏与悬浮卡上都能辨识。
 struct ContributionPalette {
     let none: Color
     let noneBorder: Color?
@@ -672,6 +849,10 @@ struct ContributionPalette {
         }
     }
 
+    func tooltipColor(for level: ContributionLevel, scheme: ColorScheme) -> Color {
+        scheme == .dark && level == .none ? .secondary : color(for: level)
+    }
+
     static let light = ContributionPalette(
         none: Color(hex6: 0xebedf0),
         noneBorder: nil,
@@ -682,22 +863,22 @@ struct ContributionPalette {
     )
 
     static let dark = ContributionPalette(
-        none: Color(hex6: 0x161b22),
+        none: Color(hex6: 0x373e47),
         noneBorder: nil,
-        l1:   Color(hex6: 0x0e4429),
-        l2:   Color(hex6: 0x006d32),
-        l3:   Color(hex6: 0x26a641),
-        l4:   Color(hex6: 0x39d353)
+        l1:   Color(hex6: 0x369e62),
+        l2:   Color(hex6: 0x43b875),
+        l3:   Color(hex6: 0x5cd485),
+        l4:   Color(hex6: 0x88e9a6)
     )
 
-    /// Owner Dark 的空格子比卡片底色亮一档，并带轻描边；绿色等级沿用 GitHub 深色调色板。
+    /// Owner Dark 的空格子有描边，便于从卡片底色里区分独立方格。
     static let ownerCardDark = ContributionPalette(
-        none: Color(hex6: 0x2b3139),
-        noneBorder: Color(hex6: 0x3b4550),
-        l1: Color(hex6: 0x0e4429),
-        l2: Color(hex6: 0x006d32),
-        l3: Color(hex6: 0x26a641),
-        l4: Color(hex6: 0x39d353)
+        none: dark.none,
+        noneBorder: Color(hex6: 0x4a535f),
+        l1: dark.l1,
+        l2: dark.l2,
+        l3: dark.l3,
+        l4: dark.l4
     )
 
     static func palette(
@@ -753,7 +934,8 @@ struct SidebarContributionGraphSection: View {
                 lastFetchedAt: contributionService.lastFetchedAt,
                 snakeStyle: settings.snakeStyle,
                 colorScheme: colorScheme,
-                localeID: locale.identifier
+                localeID: locale.identifier,
+                detailService: contributionService
             )
             .padding(.horizontal, 14)
             // 语言条下方热区已留 6pt，这里只补 2pt，保持两区紧凑衔接。
@@ -763,9 +945,6 @@ struct SidebarContributionGraphSection: View {
             // 拆成 bottom 4 + top 8 = 12pt，对称收缩、视觉更聚拢。
             .padding(.bottom, 4)
             .task(id: user.login) {
-                // 用 user.login 作为 task id：账号切换时自动重新加载。
-                // ContributionService / UserProfileService 内部各自做 TTL 与 inflight 互斥，重复调用安全。
-                contributionService.load(login: user.login)
                 userProfileService.load(login: user.login)
             }
         }
@@ -782,6 +961,7 @@ private struct EquatableContributionGraphHost: View {
     let snakeStyle: SnakeStyle
     let colorScheme: ColorScheme
     let localeID: String
+    let detailService: ContributionService
 
     var body: some View {
         ContributionGraphView(
@@ -789,7 +969,8 @@ private struct EquatableContributionGraphHost: View {
             isLoading: isLoading,
             lastFetchedAt: lastFetchedAt,
             login: login,
-            allowsStyleCycling: true
+            allowsStyleCycling: true,
+            detailService: detailService
         )
     }
 }

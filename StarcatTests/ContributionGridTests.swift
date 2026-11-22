@@ -27,7 +27,8 @@ struct ContributionGridTests {
 
     @Test("最近30天按两行时间顺序排列，合计不包含更早日期")
     func recentDaysAndTotal() throws {
-        let grid = ContributionGrid(weeks: fixtureWeeks(), range: .recent30)
+        let payload = fixturePayload(fixtureWeeks())
+        let grid = ContributionGrid(payload: payload, range: .recent30)
         #expect(grid.cols == 15)
         #expect(grid.rows == 2)
         #expect(grid.day(at: GridPosition(col: 0, row: 0))?.date == "2026-09-30")
@@ -36,7 +37,7 @@ struct ContributionGridTests {
         #expect(grid.day(at: GridPosition(col: 14, row: 1))?.date == "2026-10-29")
         #expect(grid.totalContributions == 735)
 
-        let annual = ContributionGrid(weeks: fixtureWeeks())
+        let annual = ContributionGrid(payload: payload)
         for position in grid.allPositions {
             let day = try #require(grid.day(at: position))
             let original = try #require(annual.allPositions.compactMap { annual.day(at: $0) }
@@ -51,7 +52,7 @@ struct ContributionGridTests {
     ])
     func longerRecentRanges(range: ContributionGraphRange) throws {
         let weeks = fixtureWeeks(count: 120)
-        let grid = ContributionGrid(weeks: weeks, range: range)
+        let grid = ContributionGrid(payload: fixturePayload(weeks), range: range)
         let dayCount = try #require(range.dayCount)
         #expect(grid.cols == (range == .recent60 ? 20 : 23))
         #expect(grid.rows == (range == .recent60 ? 3 : 4))
@@ -84,7 +85,9 @@ struct ContributionGridTests {
                 weekday: day.weekday
             )
         }
-        let grid = ContributionGrid(weeks: [ContributionWeek(contributionDays: days)], range: .recent30)
+        let grid = ContributionGrid(
+            payload: fixturePayload([ContributionWeek(contributionDays: days)]), range: .recent30
+        )
         #expect(grid.day(at: GridPosition(col: 0, row: 1)) == nil)
         #expect(grid.day(at: GridPosition(col: 0, row: 0))?.date == "2026-09-30")
         let zeroDay = try #require(grid.day(at: GridPosition(col: 14, row: 1)))
@@ -97,16 +100,37 @@ struct ContributionGridTests {
         let day = ContributionDay(
             date: "2026-10-29", contributionCount: 0, contributionLevel: .none, weekday: 4
         )
-        let weeks = [ContributionWeek(contributionDays: [day])]
-        let annual = ContributionGrid(weeks: weeks)
+        let payload = fixturePayload([ContributionWeek(contributionDays: [day])])
+        let annual = ContributionGrid(payload: payload)
         #expect(annual.day(at: GridPosition(col: 52, row: 4)) == day)
         #expect(annual.day(at: GridPosition(col: 52, row: 5)) == nil)
         #expect(annual.day(at: GridPosition(col: 51, row: 4)) == nil)
-        let recent = ContributionGrid(weeks: weeks, range: .recent30)
+        let recent = ContributionGrid(payload: payload, range: .recent30)
         #expect(recent.day(at: GridPosition(col: 14, row: 1)) == day)
         #expect(recent.day(at: GridPosition(col: 13, row: 1)) == nil)
         #expect(!recent.isPlaceholder)
-        #expect(ContributionGrid(weeks: nil, range: .recent30).isPlaceholder)
+        #expect(ContributionGrid(payload: nil, range: .recent30).isPlaceholder)
+    }
+
+    @Test("暗色低档色块与空格和卡片底分离，四档贡献逐级提亮")
+    func darkContributionContrast() {
+        var environment = EnvironmentValues()
+        environment.colorScheme = .dark
+        func luminance(_ color: Color) -> Double {
+            let resolved = color.resolve(in: environment)
+            return 0.2126 * Double(resolved.linearRed)
+                + 0.7152 * Double(resolved.linearGreen)
+                + 0.0722 * Double(resolved.linearBlue)
+        }
+
+        let palette = ContributionPalette.dark
+        let levels: [ContributionLevel] = [.none, .firstQuartile, .secondQuartile, .thirdQuartile, .fourthQuartile]
+        let ordered = levels.map { luminance(palette.color(for: $0)) }
+        let panel = luminance(StarcatSurface.panel(colorScheme: .dark))
+        let weakest = luminance(palette.tooltipColor(for: .firstQuartile, scheme: .dark))
+        #expect(zip(ordered, ordered.dropFirst()).allSatisfy { $0 < $1 })
+        #expect((ordered[1] + 0.05) / (ordered[0] + 0.05) >= 3)
+        #expect((weakest + 0.05) / (panel + 0.05) >= 3)
     }
 
     @Test("缩放后日期命中准确，间隙与居中留白不命中", arguments: ContributionGraphRange.allCases)
@@ -116,7 +140,7 @@ struct ContributionGridTests {
                 layout: range.layout,
                 containerSize: CGSize(width: width, height: width * 110 / 634)
             )
-            let grid = ContributionGrid(weeks: nil, range: range)
+            let grid = ContributionGrid(payload: nil, range: range)
             for position in grid.allPositions {
                 let rect = geometry.rect(at: position)
                 #expect(geometry.position(at: CGPoint(x: rect.midX, y: rect.midY)) == position)
@@ -135,7 +159,7 @@ struct ContributionGridTests {
 
     @Test("悬停跨格间隙保留上一日，进入下一格更新，离开草坪清空", arguments: ContributionGraphRange.allCases)
     func continuousInspection(range: ContributionGraphRange) throws {
-        let grid = ContributionGrid(weeks: fixtureWeeks(count: 120), range: range)
+        let grid = ContributionGrid(payload: fixturePayload(fixtureWeeks(count: 120)), range: range)
         let geometry = ContributionGraphGeometry(
             layout: range.layout, containerSize: CGSize(width: 232, height: 232 * 110 / 634)
         )
@@ -159,46 +183,99 @@ struct ContributionGridTests {
         ) == nil)
     }
 
-    @Test("提示位于光标右下方，并正确换算窗口向上为正的坐标", arguments: [true, false])
-    func tooltipFollowsPointer(isFlipped: Bool) {
+    @Test("提示居中锚定在方格上方")
+    func tooltipAnchorsAboveCell() throws {
         let bounds = CGRect(x: 40, y: 30, width: 1_000, height: 700)
-        let point = CGPoint(x: 300, y: 350)
-        let size = CGSize(width: 256, height: 84)
-        let frame = ContributionTooltipGeometry.frame(
-            at: point, size: size, within: bounds, isFlipped: isFlipped
-        )
-        #expect(frame.minX == point.x + 16)
-        #expect(isFlipped ? frame.minY == point.y + 20 : frame.maxY == point.y - 20)
-        #expect(frame.size == size)
-        #expect(!frame.contains(point))
-
-        let nextPoint = CGPoint(x: point.x + 3, y: point.y + 2)
-        let nextFrame = ContributionTooltipGeometry.frame(
-            at: nextPoint, size: size, within: bounds, isFlipped: isFlipped
-        )
-        #expect(nextFrame.minX - frame.minX == 3)
-        #expect(nextFrame.minY - frame.minY == 2)
+        let cell = CGRect(x: 298, y: 350, width: 8, height: 8)
+        let size = CGSize(width: 276, height: 220)
+        let placement = try #require(ContributionTooltipGeometry(cell: cell, size: size, within: bounds))
+        #expect(placement.isAbove)
+        #expect(placement.frame.midX == cell.midX)
+        #expect(placement.frame.minY == cell.maxY + 4)
+        #expect(placement.arrowX == size.width / 2)
+        #expect(placement.frame.size == size)
     }
 
-    @Test("提示在窗口边缘避让，字号放大后仍不覆盖光标", arguments: [true, false])
-    func tooltipAvoidsWindowEdges(isFlipped: Bool) {
-        let bounds = CGRect(x: 40, y: 30, width: 640, height: 480)
-        for width: CGFloat in [256, 316] {
-            for pointerX: CGFloat in [50, 360, 670] {
-                for pointerY: CGFloat in [40, 270, 500] {
-                    let point = CGPoint(x: pointerX, y: pointerY)
-                    let frame = ContributionTooltipGeometry.frame(
-                        at: point, size: CGSize(width: width, height: 100),
-                        within: bounds, isFlipped: isFlipped
-                    )
-                    #expect(bounds.insetBy(dx: 8, dy: 8).contains(frame))
-                    #expect(!frame.contains(point))
-                    if pointerX == 670 {
-                        #expect(frame.maxX == point.x - 16)
-                    }
-                }
-            }
+    @Test("屏幕边缘平移卡身或翻转箭头，目标格不被覆盖",
+          arguments: [50 as CGFloat, 360, 660], [40 as CGFloat, 505])
+    func tooltipAvoidsScreenEdges(cellX: CGFloat, cellY: CGFloat) throws {
+        let bounds = CGRect(x: 40, y: 30, width: 640, height: 510)
+        let size = CGSize(width: 320, height: 258)
+        let cell = CGRect(x: cellX, y: cellY, width: 8, height: 8)
+        let placement = try #require(ContributionTooltipGeometry(cell: cell, size: size, within: bounds))
+        #expect(bounds.insetBy(dx: 8, dy: 8).contains(placement.frame))
+        #expect(!placement.frame.intersects(cell))
+        #expect(placement.frame.minX + placement.arrowX == cell.midX)
+        #expect(placement.isAbove == (cellY == 40))
+        if !placement.isAbove {
+            #expect(placement.frame.maxY == cell.minY - 4)
         }
+    }
+
+    @Test("日均使用当前范围，包含零贡献日并排除空位")
+    func tooltipComparisonUsesDisplayedDays() throws {
+        let weeks = fixtureWeeks()
+        let payload = fixturePayload(weeks)
+        let locale = Locale(identifier: "en-US")
+        let recent = ContributionGrid(payload: payload, range: .recent30)
+        let day = try #require(weeks.last?.contributionDays.last)
+        let recentMetrics = ContributionTooltipMetrics(day: day, maximumCount: payload.maximumCount, grid: recent, locale: locale)
+        #expect(recentMetrics.comparison?.dayCount == "30")
+        #expect(recentMetrics.comparison?.average == "24.5")
+        #expect(recentMetrics.comparison?.ratio == "1.6")
+
+        let shortWeeks = fixtureWeeks(count: 3)
+        let shortPayload = fixturePayload(shortWeeks)
+        let sparse = ContributionGrid(payload: shortPayload, range: .recent90)
+        let zeroDay = try #require(shortWeeks.first?.contributionDays.first)
+        let sparseMetrics = ContributionTooltipMetrics(day: zeroDay, maximumCount: shortPayload.maximumCount, grid: sparse, locale: locale)
+        #expect(sparseMetrics.comparison?.dayCount == "3")
+        #expect(sparseMetrics.comparison?.average == "1.0")
+        #expect(sparseMetrics.comparison?.ratio == "0.0")
+    }
+
+    @Test("分类占比以可分类的四类之和为分母，其他贡献单独计数")
+    func tooltipClassificationAccountsForUnclassifiedActivity() {
+        let activity = ContributionDayActivity(
+            calendarCount: 60, commits: 55, pullRequests: 0, reviews: 0, issues: 2
+        )
+        #expect(activity.unclassifiedCount == 3)
+        #expect(activity.share(of: activity.commits) == 55.0 / 57.0)
+        #expect(activity.share(of: activity.issues) == 2.0 / 57.0)
+        #expect(ContributionDayActivity.empty.share(of: 0) == 0)
+    }
+
+    @Test("压缩缓存区分未拉取和全零，跨年移动窗口保留重合日期")
+    func contributionActivityCacheRoundTrips() throws {
+        let file = URL.temporaryDirectory.appending(component: "\(UUID().uuidString).json.zlib")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let firstDay = try #require(ContributionActivityCache.dayIndex("2026-12-31"))
+        let nextYear = try #require(ContributionActivityCache.dayIndex("2027-01-01"))
+        #expect(nextYear == firstDay + 1)
+        #expect(MemoryLayout<ContributionDayActivity>.stride == 20)
+
+        var cache = ContributionActivityCache()
+        cache.align(to: firstDay...(firstDay + 89))
+        cache.recentSnapshotAt = 1_800_000_000
+        cache[firstDay] = .empty
+        let activity = ContributionDayActivity(calendarCount: 6, commits: 2, pullRequests: 1, reviews: 1, issues: 1)
+        cache[firstDay + 2] = activity
+        cache.save(to: file)
+
+        let compressed = try Data(contentsOf: file)
+        let data = try (compressed as NSData).decompressed(using: .zlib) as Data
+        #expect(compressed.count < data.count)
+        let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let records = try #require(json["days"] as? [Any])
+        #expect(records.first as? [Int] == [0, 0, 0, 0, 0])
+        #expect(records.dropFirst().first is NSNull)
+        #expect(records.dropFirst(2).first as? [Int] == [6, 2, 1, 1, 1])
+        var restored = ContributionActivityCache.restore(from: file)
+        #expect(restored == cache)
+        restored.align(to: nextYear...(nextYear + 89))
+        #expect(restored[firstDay] == nil)
+        #expect(restored[nextYear] == nil)
+        #expect(restored[nextYear + 1] == activity)
     }
 
     @Test("数字占位按全年最高值变化，超过三位时包含千位分隔符", arguments: [
@@ -214,7 +291,7 @@ struct ContributionGridTests {
             contributionLevel: .fourthQuartile, weekday: 5
         )
         let metrics = ContributionTooltipMetrics(
-            day: day, weeks: [ContributionWeek(contributionDays: [peak, day])],
+            day: day, maximumCount: fixturePayload([ContributionWeek(contributionDays: [peak, day])]).maximumCount,
             locale: Locale(identifier: "en-US")
         )
         #expect(metrics.countPlaceholder == testCase.expected)
@@ -232,14 +309,15 @@ struct ContributionGridTests {
                 )
             })
         }
-        let grid = ContributionGrid(weeks: weeks, range: range)
+        let payload = fixturePayload(weeks)
+        let grid = ContributionGrid(payload: payload, range: range)
         let day = try #require(grid.allPositions.compactMap { grid.day(at: $0) }
             .first { $0.contributionCount == 5 })
         if range != .year {
             #expect(grid.allPositions.compactMap { grid.day(at: $0) }
                 .allSatisfy { $0.contributionCount == 5 })
         }
-        let metrics = ContributionTooltipMetrics(day: day, weeks: weeks, locale: Locale(identifier: "en-US"))
+        let metrics = ContributionTooltipMetrics(day: day, maximumCount: payload.maximumCount, locale: Locale(identifier: "en-US"))
         #expect(metrics.countPlaceholder == "1,250")
         #expect(metrics.countText == "5")
     }
@@ -250,13 +328,12 @@ struct ContributionGridTests {
             date: "2026-01-09", contributionCount: 9, contributionLevel: .firstQuartile, weekday: 5
         )
         let metrics = ContributionTooltipMetrics(
-            day: day, weeks: [ContributionWeek(contributionDays: [day])],
+            day: day, maximumCount: day.contributionCount,
             locale: Locale(identifier: "zh-Hans")
         )
         #expect(metrics.dateText == "2026年01月09日")
         #expect(metrics.weekdayText == "周五")
         #expect(metrics.countText == "9")
-        #expect(metrics.weekdayPlaceholders.contains(metrics.weekdayText))
     }
 
     @Test("各语言与字号下，跨日期、星期和数字位数的卡片尺寸保持不变",
@@ -271,18 +348,29 @@ struct ContributionGridTests {
         ].map { date, count in
             ContributionDay(date: date, contributionCount: count, contributionLevel: .firstQuartile, weekday: 0)
         }
-        let weeks = [ContributionWeek(contributionDays: samples)]
+        let payload = fixturePayload([ContributionWeek(contributionDays: samples)])
+        let grid = ContributionGrid(payload: payload, range: .recent90)
         let locale = Locale(identifier: language)
         for scale in [InterfaceScale.standard, .large] {
             var referenceSize: CGSize?
-            for day in samples {
-                let metrics = ContributionTooltipMetrics(day: day, weeks: weeks, locale: locale)
-                let host = NSHostingView(rootView: ContributionTooltipCard(metrics: metrics, color: .green)
+            for (index, day) in samples.enumerated() {
+                let metrics = ContributionTooltipMetrics(day: day, maximumCount: payload.maximumCount, grid: grid, locale: locale)
+                let detail: ContributionTooltipDetail = switch index {
+                case 0: .loaded(.empty)
+                case 1: .unavailable
+                case 2: .loading
+                default: .loaded(ContributionDayActivity(
+                    calendarCount: 1_250, commits: 1_200, pullRequests: 25, reviews: 15, issues: 9
+                ))
+                }
+                let host = NSHostingView(rootView: ContributionTooltipCard(metrics: metrics, color: .green, detail: detail)
                     .environment(\.locale, locale)
                     .environment(\.starcatInterfaceScale, scale))
                 // 只测离屏布局，不创建窗口或操作桌面；直接验证真正参与窗口定位的 fittingSize。
                 let size = host.fittingSize
-                #expect(size.width > 0 && size.height > 0)
+                // 放大后的宽度可能有小数，AppKit 的 fittingSize 会取整。
+                #expect(abs(size.width - scale.scaled(240)) < 1)
+                #expect(size.height > 0)
                 if let referenceSize {
                     #expect(abs(size.width - referenceSize.width) < 0.001)
                     #expect(abs(size.height - referenceSize.height) < 0.001)
@@ -306,21 +394,23 @@ struct ContributionGridTests {
         )
         let locale = Locale(identifier: "en-US")
         let metrics = ContributionTooltipMetrics(
-            day: day, weeks: [ContributionWeek(contributionDays: [peak, day])], locale: locale
+            day: day, maximumCount: peak.contributionCount, locale: locale
         )
         for scale in [InterfaceScale.standard, .large] {
             let renderer = ImageRenderer(content: ContributionTooltipCard(metrics: metrics, color: .green)
                 .environment(\.locale, locale)
                 .environment(\.colorScheme, .light)
-                .environment(\.starcatInterfaceScale, scale))
+                .environment(\.starcatInterfaceScale, scale)
+                .background(StarcatSurface.panel(colorScheme: .light)))
             renderer.scale = 2
             let bitmap = NSBitmapImageRep(cgImage: try #require(renderer.cgImage))
-            let inset = Int(scale.scaled(12) * renderer.scale)
+            let inset = Int(scale.scaled(10) * renderer.scale)
+            let top = Int(scale.scaled(12) * renderer.scale)
             let headerBottom = Int(scale.scaled(28) * renderer.scale)
             let contentRight = bitmap.pixelsWide - inset
             // 离屏检查日期行的真实文字边界；卡片总宽不变并不能证明星期已经右对齐。
             let textRight = try #require((inset..<contentRight).reversed().first { pixelX in
-                (inset..<headerBottom).contains { pixelY in
+                (top..<headerBottom).contains { pixelY in
                     guard let color = bitmap.colorAt(x: pixelX, y: pixelY)?.usingColorSpace(.deviceRGB) else {
                         return false
                     }
@@ -337,7 +427,7 @@ struct ContributionGridTests {
           ContributionGraphRange.allCases.filter { $0 != .year })
     func recentAnimationBounds(style: SnakeStyle, range: ContributionGraphRange) throws {
         let animator = try #require(SnakeAnimatorFactory.make(
-            style: style, weeks: fixtureWeeks(count: 120), range: range
+            style: style, payload: fixturePayload(fixtureWeeks(count: 120)), range: range
         ))
         #expect(animator.totalSteps > 0)
         var visited = Set<GridPosition>()
@@ -353,6 +443,11 @@ struct ContributionGridTests {
         if style != .foodChase {
             #expect(visited.count == range.layout.cols * range.layout.rows)
         }
+    }
+
+    private func fixturePayload(_ weeks: [ContributionWeek]) -> ContributionCalendarPayload {
+        let total = weeks.lazy.flatMap(\.contributionDays).reduce(0) { $0 + $1.contributionCount }
+        return ContributionCalendarPayload(totalContributions: total, weeks: weeks)
     }
 
     /// 默认40天跨月数据，120天用例跨年；颜色直接使用接口档位。

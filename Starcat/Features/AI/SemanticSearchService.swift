@@ -322,7 +322,7 @@ final class SemanticSearchService {
                 snapshot = nil
                 literalHit = true
             } else {
-                snapshot = try? IndexedSnapshot.decode(json: row.snapshotJson)
+                snapshot = try? IndexedSnapshot.decode(payload: row.snapshotPayload)
                 literalHit = Self.hasLiteralMatch(repo: repo, query: query, snapshot: snapshot)
             }
             let effectiveScore = literalHit ? max(cosine, Self.literalBoostFloor) : cosine
@@ -534,7 +534,7 @@ final class SemanticSearchService {
             )
 
             if !force, let row = existing[repo.id] {
-                let oldSnapshot = (try? IndexedSnapshot.decode(json: row.snapshotJson))
+                let oldSnapshot = try? IndexedSnapshot.decode(payload: row.snapshotPayload)
                 if !IndexedTextDiff.shouldRebuild(
                     old: oldSnapshot,
                     new: snapshot,
@@ -556,12 +556,11 @@ final class SemanticSearchService {
             let vectors = try await client.embeddings(inputs: chunk.map(\.renderedText), model: model)
             let now = ISO8601DateFormatter.shared.string(from: Date())
             let rows = try zip(chunk, vectors).map { item, vector -> RepoEmbedding in
-                let json = try item.snapshot.encodedJSONString()
                 return RepoEmbedding(
                     repoId: item.repo.id,
                     model: model,
                     vector: vector,
-                    snapshotJson: json,
+                    snapshotPayload: try item.snapshot.encodedPayload(),
                     updatedAt: now
                 )
             }
@@ -709,7 +708,7 @@ final class SemanticSearchService {
 
     /// 判定 query 是否字面出现在仓卡片字段，或已索引 snapshot 的 body / 简介。
     ///
-    /// `snapshot` 来自 `repo_embeddings.snapshot_json`：刷新后 body 含摘要+README。
+    /// `snapshot` 来自 `repo_embeddings.snapshot_payload`：刷新后 body 含摘要和 README。
     /// 用 `localizedLowercase + contains` 做大小写不敏感子串匹配；不做分词、不做正则。
     /// 不扫笔记：笔记已走 FTS，且不应把私有笔记字面命中抬到 95% 展示分。
     nonisolated static func hasLiteralMatch(

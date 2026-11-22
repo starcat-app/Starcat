@@ -221,14 +221,14 @@ enum SnakeAnimatorFactory {
 
     /// - Parameters:
     ///   - style: 用户在 Settings 里选的玩法。
-    ///   - weeks: GitHub 返回的贡献周数组；某些玩法（greedy / foodChase）需要依
+    ///   - payload: 共用的紧凑日数组；某些玩法（greedy / foodChase）需要依
     ///     contributionLevel 决策路径，其他玩法可以忽略。允许 nil（数据未到时）。
     static func make(
         style: SnakeStyle,
-        weeks: [ContributionWeek]?,
+        payload: ContributionCalendarPayload?,
         range: ContributionGraphRange = .year
     ) -> SnakeAnimator? {
-        let grid = ContributionGrid(weeks: weeks, range: range)
+        let grid = ContributionGrid(payload: payload, range: range)
         let cols = grid.cols
         let rows = grid.rows
         switch style {
@@ -239,7 +239,7 @@ enum SnakeAnimatorFactory {
         case .greedy:
             return GreedySnakeAnimator(grid: grid)
         case .multiMode:
-            return MultiModeSnakeAnimator(cols: cols, rows: rows, weeks: weeks)
+            return MultiModeSnakeAnimator(cols: cols, rows: rows)
         case .foodChase:
             return FoodChaseSnakeAnimator(grid: grid)
         case .hilbert:

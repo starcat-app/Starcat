@@ -346,32 +346,39 @@ struct RepoSkillDetailPane: View {
         dependencies.distributionGate.isAvailable(.externalToolBridge)
     }
 
+    private var isManifestPreviewDisabled: Bool {
+        document?.skillID != skill.id || !isContentVisible
+    }
+
     @ViewBuilder private var detailToolbar: some View {
-        if tab == .manifest {
-            manifestToolbar
-        }
-        if canEvaluate {
-            Button {
-                let source = [session.repo.fullName, skill.directory].filter { !$0.isEmpty }.joined(separator: "/")
-                evaluationItem = SkillEvaluationPanelItem(target: .repository(session.repo, skill), name: skill.name, source: source)
-            } label: {
-                Label("skills.evaluation.action", systemImage: "checklist")
-                    .labelStyle(.iconOnly)
+        if tab == .manifest || canEvaluate {
+            HStack(spacing: 6) {
+                if tab == .manifest, !showsManifestSource,
+                   let manifestURL = contentBaseURL(raw: false)?.appendingPathComponent("SKILL.md") {
+                    aiInstallButton(manifestURL: manifestURL)
+                        .id(skill.id)
+                        .disabled(isManifestPreviewDisabled)
+                }
+                if canEvaluate {
+                    Button("skills.evaluation.action") {
+                        let source = [session.repo.fullName, skill.directory].filter { !$0.isEmpty }.joined(separator: "/")
+                        evaluationItem = SkillEvaluationPanelItem(
+                            target: .repository(session.repo, skill), name: skill.name, source: source
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                }
+                if tab == .manifest {
+                    manifestPreviewControls
+                }
             }
-            .buttonStyle(.bordered)
-            .help("skills.evaluation.action")
-            .accessibilityLabel(Text("skills.evaluation.action"))
+            .fixedSize()
         }
     }
 
     /// 链接和下载绑定扫描时的提交，不受阅读层译文影响。
-    private var manifestToolbar: some View {
+    private var manifestPreviewControls: some View {
         HStack(spacing: 6) {
-            if !showsManifestSource,
-               let manifestURL = contentBaseURL(raw: false)?.appendingPathComponent("SKILL.md") {
-                aiInstallButton(manifestURL: manifestURL)
-                    .id(skill.id)
-            }
             Picker("repo.files.markdown.mode", selection: $showsManifestSource) {
                 Text("repo.files.markdown.rendered").tag(false)
                 Text("repo.files.markdown.source").tag(true)
@@ -399,8 +406,7 @@ struct RepoSkillDetailPane: View {
             .disabled(showsManifestSource)
             previewSizeButton
         }
-        .disabled(document?.skillID != skill.id || !isContentVisible)
-        .fixedSize()
+        .disabled(isManifestPreviewDisabled)
     }
 
     /// 只把当前 Skill 的固定提交链接交给 AI，避免复制整仓安装指令或随分支更新改变目标。

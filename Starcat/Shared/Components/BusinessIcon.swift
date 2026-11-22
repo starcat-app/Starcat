@@ -86,6 +86,7 @@ struct BusinessIcon: View {
         case insightsOverview = "BusinessInsightsOverview"
         case dashboard = "BusinessDashboard"
         case organization = "BusinessOrganization"
+        case knowledgeProfile = "BusinessKnowledgeProfile"
         // 排序菜单、文件类型、Release 资产与通知筛选补充条目（批次 3）。
         case thumbsUp = "BusinessThumbsUp"
         case recentUpdate = "BusinessRecentUpdate"

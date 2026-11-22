@@ -128,6 +128,40 @@ enum DatabaseMigrations {
         registerV28(into: &migrator)
         registerV29(into: &migrator)
         registerV30(into: &migrator)
+        registerV31(into: &migrator)
+    }
+
+    /// 逐批压缩可重建快照，向量与用于筛选的 Skill 元数据不需解码或重建。
+    private static func registerV31(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v31-compressed-local-snapshots") { db in
+            if try db.tableExists("repo_embeddings") {
+                try db.execute(sql: "ALTER TABLE repo_embeddings ADD COLUMN snapshot_payload BLOB NOT NULL DEFAULT X''")
+                try compressSnapshotRows(in: db, table: "repo_embeddings", source: "snapshot_json", target: "snapshot_payload")
+                try db.execute(sql: "ALTER TABLE repo_embeddings DROP COLUMN snapshot_json")
+            }
+            if try db.tableExists("repo_skill_scans") {
+                try compressSnapshotRows(in: db, table: "repo_skill_scans", source: "payload", target: "payload")
+            }
+        }
+    }
+
+    /// 先收完当前批次再回写，避免更新游标正在遍历的行。GRDB 在同一事务提交替换和账本。
+    private static func compressSnapshotRows(in db: Database, table: String, source: String, target: String) throws {
+        var lastRowID: Int64 = .min
+        while true {
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT rowid AS migration_rowid, CAST(\(source) AS BLOB) AS json_bytes
+                FROM \(table) WHERE rowid > ? ORDER BY rowid LIMIT 32
+                """, arguments: [lastRowID])
+            guard !rows.isEmpty else { return }
+            for row in rows {
+                let stored: Data = row["json_bytes"]
+                let rowID: Int64 = row["migration_rowid"]
+                let packed = try CacheJSONCodec.isCompressed(stored) ? stored : CacheJSONCodec.pack(stored)
+                try db.execute(sql: "UPDATE \(table) SET \(target) = ? WHERE rowid = ?", arguments: [packed, rowID])
+                lastRowID = rowID
+            }
+        }
     }
 
     /// 每个账号有自己的库。采集起点与新账本原子创建，空账本也可以证明本机覆盖期。

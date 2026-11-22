@@ -440,6 +440,7 @@ targets:
       - path: StarcatWidgets
       # 仅复用纯 Foundation 快照契约；Extension 不编译 GRDB、网络或业务层。
       - path: Starcat/Core/Widget/Shared
+      - path: Starcat/Core/Cache/CacheJSONCodec.swift
       - path: Starcat/Resources/Localizable.xcstrings
         buildPhase: resources
     # Extension 必须复用宿主的本地签名 Team；否则宿主可以签名而 Widget
@@ -482,6 +483,7 @@ targets:
     sources:
       - path: StarcatWidgets
       - path: Starcat/Core/Widget/Shared
+      - path: Starcat/Core/Cache/CacheJSONCodec.swift
       - path: Starcat/Resources/Localizable.xcstrings
         buildPhase: resources
     configFiles:

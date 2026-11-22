@@ -181,8 +181,8 @@ struct IndexedSnapshotTests {
                 homepage: "https://example.com"
             )
         )
-        let json = try snapshot.encodedJSONString()
-        let decoded = try IndexedSnapshot.decode(json: json)
+        let payload = try snapshot.encodedPayload()
+        let decoded = try IndexedSnapshot.decode(payload: payload)
         #expect(decoded == snapshot)
     }
 
