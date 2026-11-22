@@ -240,9 +240,12 @@ struct DeveloperLanguageServiceTests {
         try await waitForRequestCount(1)
         // 换号：取消 A 的在途任务、登记并启动 B。
         fixture.service.load(login: loginB)
-        try await waitForRequestCount(2)
-        // 放行 A 的响应，给被取消的旧任务恢复执行 catch / defer 的窗口。
+        // stub 的 startLoading 队列串行：A 的 handler 阻塞在队头期间，B 的请求
+        // 进不了 stub、计数不会推进。先放行 A，B 的 startLoading 才会执行并登记
+        // 计数，随即阻塞在 gate 索引 1；A 的响应由取消语义吞掉，catch / defer
+        // 的恢复窗口由 Task.cancel 触发，不依赖 A 的响应到达。
         gate.release(0)
+        try await waitForRequestCount(2)
         try await Task.sleep(for: .milliseconds(200))
         // 修复后：旧 defer 因代数不匹配跳过清理，B 的在途登记还在 → 本次 load 早退；
         // 缺陷版会误清登记并在此发出第 3 条请求。
@@ -313,8 +316,9 @@ struct DeveloperLanguageServiceTests {
         Issue.record("开发语言后台刷新未在预期时间内完成")
     }
 
-    /// 等待 stub 收到的请求计数达到目标。stub 在执行 handler 前就登记计数，
-    /// 因此计数达标即代表阻塞中的请求也已进入，可安全衔接门控放行。
+    /// 等待 stub 收到的请求计数达到目标。stub 在执行 handler 前登记计数，
+    /// 但 startLoading 队列串行：队头 handler 阻塞期间后续请求进不了 stub，
+    /// 需要先放行队头阻塞的请求，新请求的计数才会推进（阻塞点在队尾时无此约束）。
     private func waitForRequestCount(_ count: Int) async throws {
         for _ in 0..<200 {
             if URLProtocolStub.receivedRequests.count >= count { return }
