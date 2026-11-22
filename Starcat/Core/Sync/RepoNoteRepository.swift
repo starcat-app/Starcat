@@ -42,6 +42,31 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
         }
     }
 
+    /// 批量版 `find(repoId:)`：一条 IN 查询取回全部笔记行（全仓性能专项 P2-5）。
+    ///
+    /// `args` 必须在 read 闭包内构造 —— GRDB 的 `writer.read { ... }` 闭包是 `@Sendable`，
+    /// 而 `[any DatabaseValueConvertible]` 非 Sendable，闭包外构造会触发 Swift 6
+    /// 严格并发报错（详细说明同 `fetchStatusMap`）。
+    func find(repoIds: [Int64]) async throws -> [Int64: RepoNote] {
+        guard !repoIds.isEmpty else { return [:] }
+        let placeholders = Array(repeating: "?", count: repoIds.count).joined(separator: ",")
+        return try await database.writer.read { db in
+            let args = repoIds.map { $0 as DatabaseValueConvertible }
+            let notes = try RepoNote.fetchAll(
+                db,
+                sql: "SELECT * FROM repo_notes WHERE repo_id IN (\(placeholders))",
+                arguments: StatementArguments(args)
+            )
+            var map: [Int64: RepoNote] = [:]
+            map.reserveCapacity(notes.count)
+            for note in notes {
+                // repo_id 是主键，正常输入不会重复；循环赋值让重复 id 静默取最后一行而非崩溃
+                map[note.repoId] = note
+            }
+            return map
+        }
+    }
+
     func fetchStatusMap(repoIds: [Int64]) async throws -> [Int64: RepoStatus] {
         guard !repoIds.isEmpty else { return [:] }
         let placeholders = Array(repeating: "?", count: repoIds.count).joined(separator: ",")

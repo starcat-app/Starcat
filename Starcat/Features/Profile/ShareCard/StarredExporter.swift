@@ -202,6 +202,9 @@ enum StarredExporter {
         async let ownerAvatarsTask = AvatarCacheLoader.loadOwnerAvatars(owners: ownerSet)
         async let healthSnapshotsTask = (try? await dependencies.repoHealthRepository.snapshots(for: repos.map(\.id))) ?? [:]
         async let openSSFRecordsTask = (try? await dependencies.openSSFScoreRepository.records(for: repos.map(\.id))) ?? [:]
+        // P2-5：私有笔记 + 状态改批量 IN 取数，与其它数据源并发（此前逐仓串行 await，
+        // 上千仓库的知识库导出光这一项就要上千次 SQLite 往返）。
+        async let noteMapTask = (try? await dependencies.repoNoteRepository.find(repoIds: repos.map(\.id))) ?? [:]
 
         let aiRecords = await aiRecordsTask
         let tagAssignments = await tagAssignmentsTask
@@ -209,6 +212,7 @@ enum StarredExporter {
         let ownerAvatars = await ownerAvatarsTask
         let healthSnapshots = await healthSnapshotsTask
         let openSSFRecords = await openSSFRecordsTask
+        let noteMap = await noteMapTask
 
         var aiSummaries: [Int64: String] = [:]
         for (repoId, record) in aiRecords {
@@ -225,9 +229,11 @@ enum StarredExporter {
         var notes: [Int64: String] = [:]
         var statuses: [Int64: RepoStatus] = [:]
         var libraryUpdatedAt: [Int64: String] = [:]
-        var readmeExcerpts: [Int64: String] = [:]
+        // 字段语义与旧逐仓版一致：content / libraryUpdatedAt trim 后非空才收录。
+        // 失败语义变化说明：旧版逐仓 `try?` 是"单仓失败只丢该仓"；批量版一次失败丢整批
+        // （map 为空 → 全部跳过）。导出是只读场景，缺笔记的降级可接受，不值得为它保留 N+1。
         for repo in repos {
-            guard let note = try? await dependencies.repoNoteRepository.find(repoId: repo.id) else { continue }
+            guard let note = noteMap[repo.id] else { continue }
             statuses[repo.id] = RepoStatus.parse(note.status)
             if let content = note.content?.trimmingCharacters(in: .whitespacesAndNewlines), !content.isEmpty {
                 notes[repo.id] = content
@@ -236,12 +242,7 @@ enum StarredExporter {
                 libraryUpdatedAt[repo.id] = updatedAt
             }
         }
-        for repo in repos {
-            if let content = try? await dependencies.readmeRepository.findContent(repoId: repo.id),
-               let excerpt = readmeExcerpt(from: content) {
-                readmeExcerpts[repo.id] = excerpt
-            }
-        }
+        let readmeExcerpts = await Self.loadReadmeExcerpts(repos: repos, dependencies: dependencies)
 
         return LibraryExportSupplements(
             aiSummaries: aiSummaries,
@@ -269,6 +270,49 @@ enum StarredExporter {
         if collapsed.count <= maxLength { return collapsed }
         let index = collapsed.index(collapsed.startIndex, offsetBy: maxLength)
         return String(collapsed[..<index]) + "..."
+    }
+
+    /// README 分块批量读的块大小：每块一条 IN 查询。
+    ///
+    /// 为什么不一条巨型 IN：SQLite 变量上限（默认 999）会顶爆，且一次性解码上千条
+    /// 压缩 Markdown 会推高峰值内存；100 一块让 IO 与内存都平滑（全仓性能专项 P2-5）。
+    private static let readmeChunkSize = 100
+
+    /// 分块批量读本地 README Markdown 缓存，再做离主线程的摘录压缩。
+    /// 单块读取失败只丢该块（try? 逐块隔离），不阻断整个导出。
+    private static func loadReadmeExcerpts(
+        repos: [Repo],
+        dependencies: AppDependencies
+    ) async -> [Int64: String] {
+        var contents: [Int64: String] = [:]
+        contents.reserveCapacity(repos.count)
+        for start in stride(from: 0, to: repos.count, by: readmeChunkSize) {
+            let end = min(start + readmeChunkSize, repos.count)
+            let ids = repos[start ..< end].map(\.id)
+            if let part = try? await dependencies.readmeRepository.findContents(repoIds: ids) {
+                contents.merge(part) { _, new in new }
+            }
+        }
+        return await excerpts(from: contents)
+    }
+
+    /// 批量把已缓存的 README Markdown 压缩成导出摘录。
+    ///
+    /// `nonisolated` + async（SE-0338）：从 MainActor 调用 nonisolated async 函数会
+    /// 跳到全局执行器，上千个仓库的 split / trim / joined 纯 CPU 工作不再占用主线程。
+    /// 摘录长度与单条版 `readmeExcerpt(from:)` 保持一致。
+    nonisolated private static func excerpts(
+        from contents: [Int64: String],
+        maxLength: Int = 600
+    ) async -> [Int64: String] {
+        var result: [Int64: String] = [:]
+        result.reserveCapacity(contents.count)
+        for (repoId, content) in contents {
+            if let excerpt = readmeExcerpt(from: content, maxLength: maxLength) {
+                result[repoId] = excerpt
+            }
+        }
+        return result
     }
 
     /// 从 `AISummaryRecord.summaryJson` 解出可展示的 markdown 文本。

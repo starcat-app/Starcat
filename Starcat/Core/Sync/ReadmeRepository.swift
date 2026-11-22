@@ -143,6 +143,33 @@ struct ReadmeRepository {
         }
     }
 
+    /// 批量版 `findContent(repoId:)`：一条 IN 查询取回多个 repo 的 raw Markdown
+    /// （全仓性能专项 P2-5，知识库导出用）。
+    ///
+    /// 结果口径与 `fetchAllContents` 一致：content 为 nil / 空串的行不进字典；
+    /// 空输入返回空字典。注意必须 `SELECT *` —— `ReadmeContent.init(row:)` 会
+    /// 无条件读 `cached_at` / `size` 列，裁剪列会导致行解码崩溃；args 在闭包内
+    /// 构造的原因同 `RepoNoteRepository.fetchStatusMap`（GRDB @Sendable 闭包）。
+    func findContents(repoIds: [Int64]) async throws -> [Int64: String] {
+        guard !repoIds.isEmpty else { return [:] }
+        let placeholders = Array(repeating: "?", count: repoIds.count).joined(separator: ",")
+        return try await database.writer.read { db in
+            let args = repoIds.map { $0 as DatabaseValueConvertible }
+            let rows = try ReadmeContent.fetchAll(
+                db,
+                sql: "SELECT * FROM readme_contents WHERE repo_id IN (\(placeholders))",
+                arguments: StatementArguments(args)
+            )
+            var map: [Int64: String] = [:]
+            map.reserveCapacity(rows.count)
+            for row in rows {
+                guard let content = row.content, !content.isEmpty else { continue }
+                map[row.repoId] = content
+            }
+            return map
+        }
+    }
+
     /// 一次读取当前用户库中全部已缓存 Markdown，供首次标签体系做全局本地分析。
     ///
     /// 不按仓库逐条调用 `findContent`：新用户可能一次导入上千个 Star，N+1 查询会把

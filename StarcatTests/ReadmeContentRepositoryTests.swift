@@ -5,6 +5,7 @@
 //  HOM-201 P2-2(2026-06-14):readmes.content 拆到独立表 readme_contents 后,
 //  验证 `ReadmeRepository.findContent` / `upsertContent` 的读写 + 与 readmes 表完全
 //  隔离的边界(读 readme_contents 不引发 readmes 行变更)。
+//  全仓性能专项 P2-5(2026-11-22):补 `findContents(repoIds:)` 批量读回归。
 //
 
 import Testing
@@ -227,6 +228,43 @@ struct ReadmeContentRepositoryTests {
             let repoCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM repos")
             #expect(repoCount == 2)
         }
+    }
+
+    // MARK: - findContents 批量(全仓性能专项 P2-5)
+
+    @Test("findContents 批量取回多仓 markdown,缺失 repo 不进结果")
+    func findContentsReturnsRequestedRowsOnly() async throws {
+        let (repo, db, repoId) = try await makeRepoAndDb()
+        try await db.insertRepoFixture(id: 8)
+        try await db.insertRepoFixture(id: 9)
+        try await repo.upsertContent(repoId: repoId, content: "markdown-7", at: Date())
+        try await repo.upsertContent(repoId: 8, content: "markdown-8", at: Date())
+
+        // 9 没有 readme_contents 行、100 不存在,都不应出现在结果里
+        let map = try await repo.findContents(repoIds: [repoId, 8, 9, 100])
+        #expect(map == [repoId: "markdown-7", 8: "markdown-8"])
+    }
+
+    @Test("findContents 跳过 nil / 空串 content 行")
+    func findContentsSkipsEmptyContent() async throws {
+        let (repo, db, repoId) = try await makeRepoAndDb()
+        try await db.insertRepoFixture(id: 8)
+        // nil content 行只能直接落库构造:upsertContent 不接受 nil
+        try await db.writer.write { db in
+            var row = ReadmeContent(repoId: 8, content: nil, cachedAt: "2026-11-22T00:00:00Z", size: 0)
+            try row.upsert(db)
+        }
+        // 空串行:与 fetchAllContents 相同口径,isEmpty 即跳过
+        try await repo.upsertContent(repoId: repoId, content: "", at: Date())
+
+        let map = try await repo.findContents(repoIds: [repoId, 8])
+        #expect(map.isEmpty)
+    }
+
+    @Test("findContents 空输入返回空字典")
+    func findContentsEmptyInput() async throws {
+        let (repo, _, _) = try await makeRepoAndDb()
+        #expect(try await repo.findContents(repoIds: []).isEmpty)
     }
 }
 

@@ -47,6 +47,31 @@ struct RepoNoteRepositoryTests {
         #expect(got == nil)
     }
 
+    @Test("find 批量: 一条 IN 查询取回多行，缺失 repo 不进结果")
+    func findBatchReturnsExistingRowsOnly() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixtures(count: 3, idStart: 1)
+        try await repo.updateContent(repoId: 1, content: "note-1")
+        try await repo.updateStatus(repoId: 3, status: .using)
+
+        // 2 没写过 repo_notes 行、999 不存在，都不应出现在结果里
+        let map = try await repo.find(repoIds: [1, 2, 3, 999])
+        #expect(Set(map.keys) == [1, 3])
+        #expect(map[1]?.content == "note-1")
+        #expect(map[1]?.status == RepoStatus.unread.rawValue)
+        #expect(map[3]?.status == RepoStatus.using.rawValue)
+        #expect(map[3]?.content == nil)
+    }
+
+    @Test("find 批量: 空输入 / 全缺失返回空字典")
+    func findBatchEmptyAndMissingInput() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1)
+
+        #expect(try await repo.find(repoIds: []).isEmpty)
+        #expect(try await repo.find(repoIds: [42, 43]).isEmpty)
+    }
+
     // MARK: - upsert
 
     @Test("upsert + find: 整记录往返")

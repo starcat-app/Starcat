@@ -25,6 +25,11 @@ protocol RepoNoteRepositoryProtocol: Sendable {
     /// 找该 repo 的笔记 + 状态行。未写过返回 nil。
     func find(repoId: Int64) async throws -> RepoNote?
 
+    /// 批量找一组 repo 的笔记 + 状态行（导出 / 汇总场景，一条 IN 查询替代 N+1 逐仓往返）。
+    /// 只返回有 repo_notes 行的 repo；空输入返回空字典。
+    /// 超过 SQLite 变量上限（999）的批量由调用方自行分块。
+    func find(repoIds: [Int64]) async throws -> [Int64: RepoNote]
+
     /// 批量找一组 repo 的状态映射（用于列表角标，避免 N+1）。
     func fetchStatusMap(repoIds: [Int64]) async throws -> [Int64: RepoStatus]
 
