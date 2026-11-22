@@ -38,22 +38,30 @@ struct GRDBRepoEmbeddingRepository: RepoEmbeddingRepositoryProtocol {
         self.database = database
     }
 
+    /// 重复候选 ID 落进不同分块时，同一行会被各块分别返回 / 计数：IN 查询只在块内
+    /// 天然去重，跨块不会（评分重复叠加、覆盖率虚高）。分块前按值去重，顺便减少分块数。
+    private static func deduplicatedIDs(_ ids: [Int64]) -> [Int64] {
+        var seen = Set<Int64>()
+        return ids.filter { seen.insert($0).inserted }
+    }
+
     func fetchEmbeddings(model: String, repoIDs: [Int64]) async throws -> [RepoEmbedding] {
-        guard !repoIDs.isEmpty else { return [] }
+        let uniqueIDs = Self.deduplicatedIDs(repoIDs)
+        guard !uniqueIDs.isEmpty else { return [] }
         // P1-3（2026-11-22 性能专项）：按 500-ID 分块（与 countEmbeddings 对齐）。
         // 5k 候选一条 IN 会超 SQLite 变量上限；分块循环放在同一个 read 快照内，
         // 整批向量仍来自同一份数据快照，评分输入不会跨快照不一致。
         return try await database.writer.read { db -> [RepoEmbedding] in
             var rows: [RepoEmbedding] = []
-            rows.reserveCapacity(repoIDs.count)
-            var start = repoIDs.startIndex
-            while start < repoIDs.endIndex {
-                let end = repoIDs.index(start, offsetBy: Self.queryChunkSize, limitedBy: repoIDs.endIndex) ?? repoIDs.endIndex
+            rows.reserveCapacity(uniqueIDs.count)
+            var start = uniqueIDs.startIndex
+            while start < uniqueIDs.endIndex {
+                let end = uniqueIDs.index(start, offsetBy: Self.queryChunkSize, limitedBy: uniqueIDs.endIndex) ?? uniqueIDs.endIndex
                 let placeholders = Array(repeating: "?", count: end - start).joined(separator: ",")
                 var args: [any DatabaseValueConvertible] = [model]
                 // 切片形态必须元素级上转型：`[any DVC].append(contentsOf:)` 的泛型约束
                 // 要求 S.Element 恰好等于存在类型，ArraySlice<Int64> 不满足（Array 直传可以）。
-                args.append(contentsOf: repoIDs[start..<end].map { $0 as (any DatabaseValueConvertible) })
+                args.append(contentsOf: uniqueIDs[start..<end].map { $0 as (any DatabaseValueConvertible) })
                 rows.append(contentsOf: try RepoEmbedding.fetchAll(db, sql: """
                     SELECT * FROM repo_embeddings
                     WHERE model = ? AND repo_id IN (\(placeholders))
@@ -70,14 +78,15 @@ struct GRDBRepoEmbeddingRepository: RepoEmbeddingRepositoryProtocol {
     }
 
     func countEmbeddings(model: String, repoIDs: [Int64]) async throws -> Int {
-        guard !repoIDs.isEmpty else { return 0 }
+        let uniqueIDs = Self.deduplicatedIDs(repoIDs)
+        guard !uniqueIDs.isEmpty else { return 0 }
         // 分块避免 SQLite 变量上限；覆盖率只关心 COUNT，不必一次塞进全部 ID。
         var total = 0
         let chunkSize = Self.queryChunkSize
-        var start = repoIDs.startIndex
-        while start < repoIDs.endIndex {
-            let end = repoIDs.index(start, offsetBy: chunkSize, limitedBy: repoIDs.endIndex) ?? repoIDs.endIndex
-            let chunk = Array(repoIDs[start..<end])
+        var start = uniqueIDs.startIndex
+        while start < uniqueIDs.endIndex {
+            let end = uniqueIDs.index(start, offsetBy: chunkSize, limitedBy: uniqueIDs.endIndex) ?? uniqueIDs.endIndex
+            let chunk = Array(uniqueIDs[start..<end])
             total += try await countEmbeddingsChunk(model: model, repoIDs: chunk)
             start = end
         }
