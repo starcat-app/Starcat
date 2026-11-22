@@ -36,6 +36,9 @@ enum PerformanceSpan: Sendable {
     case readmeLoad
     case aiStreamResponse
     case repoContextPack
+    case databaseOpen
+    case databaseMigrate
+    case accountSwitchBarrier
 }
 
 /// 用户交互到首帧之间的离散时间点。
@@ -168,6 +171,12 @@ final class PerformanceTracer: @unchecked Sendable {
             return "ai.stream_response"
         case .repoContextPack:
             return "repo_context.pack"
+        case .databaseOpen:
+            return "database.open"
+        case .databaseMigrate:
+            return "database.migrate"
+        case .accountSwitchBarrier:
+            return "account.switch_barrier"
         }
     }
 

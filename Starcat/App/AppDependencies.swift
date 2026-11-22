@@ -1995,6 +1995,10 @@ final class AppDependencies {
         session.activeDatabaseUserID = { [db] in db.currentUserId }
         session.onUserSessionChanged = { [weak self] userId in
             guard let self else { return }
+            // P2-11：账号切换屏障整体区间；DatabaseManager 的 database.open /
+            // database.migrate 会作为嵌套子区间落在其中，Instruments 按嵌套解读。
+            let barrier = PerformanceTracer.shared.begin(.accountSwitchBarrier)
+            defer { PerformanceTracer.shared.end(barrier) }
             // 先等公共任务真实退出，再让任何领域服务切换数据库，避免旧账号句柄串库。
             self.skillEvaluation.beginAccountChange()
             await mcpFacade.publicCapabilities?.prepareForAccountChange()

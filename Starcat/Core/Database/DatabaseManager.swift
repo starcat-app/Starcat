@@ -137,7 +137,10 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
 
         let pool: DatabasePool
         do {
-            pool = try DatabasePool(path: path, configuration: config)
+            // P2-11：开池含 SQLite 文件句柄与 WAL 初始化，是启动/切库耗时的分段之一。
+            pool = try PerformanceTracer.shared.trace(.databaseOpen) {
+                try DatabasePool(path: path, configuration: config)
+            }
         } catch {
             diagnostic.finish(.failed, error: error)
             throw DatabaseError.openFailed(underlying: error)
@@ -186,7 +189,10 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
 
         let newPool: DatabasePool
         do {
-            newPool = try DatabasePool(path: path, configuration: config)
+            // P2-11：与 init 同口径，切账号时可在 Instruments 里对比新旧库开池成本。
+            newPool = try PerformanceTracer.shared.trace(.databaseOpen) {
+                try DatabasePool(path: path, configuration: config)
+            }
         } catch {
             AppLog.database.error("reopen: failed to open new pool at \(path, privacy: .public): \(error.localizedDescription, privacy: .public)")
             throw DatabaseError.openFailed(underlying: error)
@@ -218,14 +224,19 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
         DatabaseMigrations.registerAll(into: &migrator)
 
         do {
-            try migrator.migrate(writer)
-            try repairPrelaunchDevelopmentSchema(on: writer)
-            let applied = try writer.read { db in
-                try migrator.appliedMigrations(db)
+            // P2-11：迁移含正式 registerVN 与开发库补齐；热库幂等迁移同样有
+            // appliedMigrations 读回成本，分段后可在 Instruments 里单独观察。
+            try PerformanceTracer.shared.trace(.databaseMigrate) {
+                try migrator.migrate(writer)
+                try repairPrelaunchDevelopmentSchema(on: writer)
+                let applied = try writer.read { db in
+                    try migrator.appliedMigrations(db)
+                }
+                diagnostic.finish(fields: ["migrationCount": .integer(applied.count),
+                                          "migrationRevision": .string(applied.last ?? "none")])
+                AppLog.database.info("Migrations applied: \(applied.joined(separator: ", "), privacy: .public)")
+                return applied
             }
-            diagnostic.finish(fields: ["migrationCount": .integer(applied.count),
-                                      "migrationRevision": .string(applied.last ?? "none")])
-            AppLog.database.info("Migrations applied: \(applied.joined(separator: ", "), privacy: .public)")
         } catch {
             diagnostic.finish(.failed, error: error)
             AppLog.database.error("Migration failed: \(error.localizedDescription, privacy: .public)")
