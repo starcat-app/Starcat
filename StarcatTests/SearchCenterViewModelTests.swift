@@ -264,6 +264,8 @@ struct SearchCenterViewModelTests {
         viewModel.clear()
         #expect(viewModel.resultFilter == nil)
         #expect(viewModel.candidates.isEmpty)
+        #expect(viewModel.discoveryResultCount == 0)
+        #expect(SearchSource.allCases.allSatisfy { viewModel.resultCount(for: $0) == 0 })
     }
 
     @Test("来源筛选不重复请求 Provider、Router 或智能发现")
@@ -281,10 +283,16 @@ struct SearchCenterViewModelTests {
             historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager()),
             includeWebInAll: { true }, intentRouter: router, discoveryService: discovery
         )
+        // 先读取一次发现计数，确保最终结果会替换已读取的候选快照。
+        discovery.onDiscover = { [weak viewModel] in
+            #expect(viewModel?.discoveryResultCount == 0)
+        }
         viewModel.query = "swift"
         await viewModel.submit()
-        for source in [SearchSource.localKeyword, .localSemantic, .github, .web] {
+        #expect(viewModel.discoveryResultCount == 1)
+        for source in SearchSource.allCases {
             viewModel.toggleResultFilter(.source(source))
+            #expect(viewModel.candidates.count == viewModel.resultCount(for: source))
         }
         viewModel.toggleResultFilter(.discovery)
         viewModel.toggleResultFilter(.discovery)

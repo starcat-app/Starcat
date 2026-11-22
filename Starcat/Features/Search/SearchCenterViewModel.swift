@@ -169,7 +169,13 @@ final class SearchCenterViewModel {
 
     /// 智能发现独立于 Coordinator：基础搜索先展示，发现完成后再合并。
     private(set) var discoverySession: SearchDiscoverySession?
-    private var latestDiscoveryResult: RepositoryDiscoveryResult?
+    private var latestDiscoveryResult: RepositoryDiscoveryResult? {
+        // 发现结果是结构体快照，没有稳定身份可做缓存键；didSet 递增代次让
+        // 候选快照缓存感知合并输入变化（含 updateRepositoryLibraryState 的重写）。
+        didSet { discoveryStateEpoch &+= 1 }
+    }
+    /// 发现合并输入的变更代次，与 coordinator.resultStateVersion 一起构成快照缓存键。
+    private var discoveryStateEpoch: UInt64 = 0
     private(set) var discoveryDiagnostics: [SearchDiscoveryDiagnostic] = []
     private(set) var isDiscoveryRunning = false
 
@@ -213,13 +219,58 @@ final class SearchCenterViewModel {
     }
 
     var candidates: [SearchCandidate] {
-        let candidates = unfilteredCandidates
-        guard let resultFilter else { return candidates }
-        return matchingCandidates(resultFilter, in: candidates)
+        let snapshot = currentCandidateSnapshot
+        guard let resultFilter else { return snapshot.candidates }
+        return matchingCandidates(resultFilter, in: snapshot)
     }
 
-    /// 内容策略与多来源合并先完成，再应用底栏筛选；计数始终基于这一完整快照。
-    private var unfilteredCandidates: [SearchCandidate] {
+    /// 候选快照缓存键：coordinator 结果版本 + 发现代次 + 影响合并的会话状态。
+    /// resultFilter 不进键——快照与底栏筛选无关，筛选只在派生时应用；
+    /// includeWebInAll 的当前值进键，设置开关翻转后快照随之重建。
+    private struct CandidateSnapshotKey: Equatable {
+        var resultStateVersion: UInt64
+        var discoveryEpoch: UInt64
+        var scope: SearchScope
+        var includeWebInAll: Bool
+    }
+
+    /// 从同一输入一次性派生的候选快照：展示列表、各来源计数与发现计数全部
+    /// 共享这份派生。SwiftUI 一次 body 评估会分别读列表、底栏 chip 与发现
+    /// 计数，改造前每个读取方都重建一遍完整候选管线（合并 + 排序 + 过滤）。
+    private struct CandidateSnapshot {
+        let candidates: [SearchCandidate]
+        /// 来源归属按 coordinator 基础结果计算：发现合并不进任何来源计数，
+        /// 只进发现计数；两个集合在派生筛选时复用，不再每次访问重建。
+        let repositoryIDsBySource: [SearchSource: Set<RepoIdentity>]
+        let referenceIDsBySource: [SearchSource: Set<String>]
+        /// 与对应筛选列表一致的去重数，按来源预计算，读取时 O(1) 查表。
+        let countsBySource: [SearchSource: Int]
+        /// 只计去重后的发现仓库，不包含网页资料或 API 命中总数。
+        let discoveryCount: Int
+    }
+
+    /// 缓存自身不进 Observation：命中路径只消费键里的 tracked 值
+    /// （resultStateVersion / discoveryStateEpoch / scope / 设置闭包内部状态），
+    /// 任何输入变化都会让键失配并重建一次快照。
+    @ObservationIgnored
+    private var candidateSnapshotCache: (key: CandidateSnapshotKey, snapshot: CandidateSnapshot)?
+
+    /// 当前有效的候选快照：键命中直接复用，任何输入变化后重建一次。
+    private var currentCandidateSnapshot: CandidateSnapshot {
+        let key = CandidateSnapshotKey(
+            resultStateVersion: coordinator.resultStateVersion,
+            discoveryEpoch: discoveryStateEpoch,
+            scope: scope,
+            includeWebInAll: includeWebInAll()
+        )
+        if let cache = candidateSnapshotCache, cache.key == key { return cache.snapshot }
+        let snapshot = rebuildCandidateSnapshot(scope: key.scope, includeWebInAll: key.includeWebInAll)
+        candidateSnapshotCache = (key, snapshot)
+        return snapshot
+    }
+
+    /// 内容策略与多来源合并先完成，再生成快照；计数始终基于这一完整快照。
+    private func rebuildCandidateSnapshot(scope: SearchScope, includeWebInAll: Bool) -> CandidateSnapshot {
         var repositories = coordinator.repositories
         var repositoryIndices = Dictionary(uniqueKeysWithValues: repositories.enumerated().map {
             ($0.element.id, $0.offset)
@@ -241,7 +292,7 @@ final class SearchCenterViewModel {
                 }
             }
             // AI 取证许可与资料卡展示是两个开关；隐藏网页卡片仍保留仓库的证据链接。
-            if includeWebInAll() {
+            if includeWebInAll {
                 for reference in latestDiscoveryResult.references
                 where seenReferenceIDs.insert(reference.id).inserted {
                     references.append(reference)
@@ -264,28 +315,61 @@ final class SearchCenterViewModel {
         }
 
         let blockedIDs = contentSummary.blockedIDs
-        return repositories.filter { !blockedIDs.contains($0.contentKey) }.map(SearchCandidate.repository)
+        let candidates = repositories.filter { !blockedIDs.contains($0.contentKey) }.map(SearchCandidate.repository)
             + references.filter { !blockedIDs.contains($0.contentKey) }.map(SearchCandidate.reference)
+
+        var repositoryIDsBySource: [SearchSource: Set<RepoIdentity>] = [:]
+        var referenceIDsBySource: [SearchSource: Set<String>] = [:]
+        var countsBySource: [SearchSource: Int] = [:]
+        for source in SearchSource.allCases {
+            repositoryIDsBySource[source] = Set(
+                coordinator.repositories.filter { $0.sources.contains(source) }.map(\.id)
+            )
+            referenceIDsBySource[source] = Set(
+                coordinator.references.filter { $0.source == source }.map(\.id)
+            )
+            let repositoryIDs = repositoryIDsBySource[source] ?? []
+            let referenceIDs = referenceIDsBySource[source] ?? []
+            countsBySource[source] = candidates.filter { candidate in
+                switch candidate {
+                case .repository(let repository): return repositoryIDs.contains(repository.id)
+                case .reference(let reference): return referenceIDs.contains(reference.id)
+                }
+            }.count
+        }
+        let discoveryCount = candidates.reduce(0) { count, candidate in
+            if case .repository(let repository) = candidate, repository.discovery != nil {
+                return count + 1
+            }
+            return count
+        }
+        return CandidateSnapshot(
+            candidates: candidates,
+            repositoryIDsBySource: repositoryIDsBySource,
+            referenceIDsBySource: referenceIDsBySource,
+            countsBySource: countsBySource,
+            discoveryCount: discoveryCount
+        )
     }
 
     /// 普通来源只认基础搜索的贡献，避免发现链路内部的 GitHub 请求膨胀普通来源计数。
     /// 对同仓库保留多来源身份，因此关键词与语义同时命中时，两种筛选都能看到它。
     private func matchingCandidates(
         _ filter: SearchResultFilter,
-        in candidates: [SearchCandidate]
+        in snapshot: CandidateSnapshot
     ) -> [SearchCandidate] {
         switch filter {
         case .source(let source):
-            let repositoryIDs = Set(coordinator.repositories.filter { $0.sources.contains(source) }.map(\.id))
-            let referenceIDs = Set(coordinator.references.filter { $0.source == source }.map(\.id))
-            return candidates.filter { candidate in
+            let repositoryIDs = snapshot.repositoryIDsBySource[source] ?? []
+            let referenceIDs = snapshot.referenceIDsBySource[source] ?? []
+            return snapshot.candidates.filter { candidate in
                 switch candidate {
                 case .repository(let repository): return repositoryIDs.contains(repository.id)
                 case .reference(let reference): return referenceIDs.contains(reference.id)
                 }
             }
         case .discovery:
-            return candidates.filter { candidate in
+            return snapshot.candidates.filter { candidate in
                 if case .repository(let repository) = candidate { return repository.discovery != nil }
                 return false
             }
@@ -293,8 +377,9 @@ final class SearchCenterViewModel {
     }
 
     /// 与对应筛选列表一致的去重数，不受当前选择了哪个来源影响。
+    /// 从候选快照按来源查表：底栏每个 chip 一次读取，不再各自重建候选。
     func resultCount(for source: SearchSource) -> Int {
-        matchingCandidates(.source(source), in: unfilteredCandidates).count
+        currentCandidateSnapshot.countsBySource[source] ?? 0
     }
 
     /// 空结果等待态只关心当前所选来源，不能被其他来源的在途请求遮成空白。
@@ -324,7 +409,7 @@ final class SearchCenterViewModel {
 
     /// 与实际展示列表同口径：只计去重后的发现仓库，不包含网页资料或 API 命中总数。
     var discoveryResultCount: Int {
-        matchingCandidates(.discovery, in: unfilteredCandidates).count
+        currentCandidateSnapshot.discoveryCount
     }
 
     var hasDiscoveryFailures: Bool {

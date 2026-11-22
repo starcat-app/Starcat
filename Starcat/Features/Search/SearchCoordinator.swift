@@ -18,9 +18,20 @@ import Observation
 @Observable
 final class SearchCoordinator {
     private(set) var statuses: [SearchSource: SearchProviderStatus] = [:]
-    private(set) var repositories: [RepositoryCandidate] = []
-    private(set) var references: [ReferenceCandidate] = []
-    private(set) var contentSummary = SearchContentSummary()
+    private(set) var repositories: [RepositoryCandidate] = [] {
+        didSet { resultStateVersion &+= 1 }
+    }
+    private(set) var references: [ReferenceCandidate] = [] {
+        didSet { resultStateVersion &+= 1 }
+    }
+    private(set) var contentSummary = SearchContentSummary() {
+        didSet { resultStateVersion &+= 1 }
+    }
+    /// 候选结果（repositories / references / contentSummary）的变更版本号。
+    /// SearchCenterViewModel 用它做候选快照缓存键：列表与各来源计数从同一份
+    /// 派生共享，任何写入（含写入等值）后键失配、快照重建一次。
+    /// 普通读取方（status / blockedQuery 等）不影响候选派生，不递增。
+    private(set) var resultStateVersion: UInt64 = 0
     private(set) var blockedQuery: SearchContentMatch?
 
     private let providers: [any SearchProvider]
