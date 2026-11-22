@@ -21,7 +21,7 @@ struct InsightsColumnHeader<Title: View, Controls: View>: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
                 title
                 Spacer(minLength: 16)
                 controls
@@ -34,7 +34,7 @@ struct InsightsColumnHeader<Title: View, Controls: View>: View {
         .padding(.horizontal, 24)
         .padding(.vertical, InsightsColumnChrome.headerVerticalPadding)
         .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .frame(minHeight: InsightsColumnChrome.minimumHeaderHeight, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minHeight: InsightsColumnChrome.minimumHeaderHeight)
     }
 }

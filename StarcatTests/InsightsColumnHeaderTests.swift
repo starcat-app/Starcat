@@ -69,14 +69,8 @@ struct InsightsColumnHeaderTests {
         for scale in InterfaceScale.allCases {
             for topic in InsightsTopic.allCases {
                 for width in [CGFloat(320), 720] {
-                    let content = VStack(alignment: .leading, spacing: 2) {
-                        Text(topic.titleKey)
-                            .font(scale.font(.panelTitle))
-                        Text(topic.subtitleKey)
-                            .font(scale.font(.caption))
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    let content = Text(topic.titleKey)
+                        .font(scale.font(.panelTitle))
                     let naturalSize = try measuredSize(
                         content.fixedSize(horizontal: false, vertical: true)
                             .environment(\.locale, locale.effectiveLocale),

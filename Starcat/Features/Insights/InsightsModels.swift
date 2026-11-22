@@ -44,14 +44,14 @@ enum InsightsTopic: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// 复用原有洞察图标，画像沿用其原入口的书本图标。
+    /// 洞察分类统一使用业务图标，个人画像用单人轮廓表达。
     var iconSource: BusinessIcon.Source {
         switch self {
         case .overview:     return .business(.dashboard)
         case .organization: return .business(.organization)
         case .technology:   return .business(.codeContext)
         case .health:       return .business(.repositoryHealth)
-        case .knowledgeProfile: return .system("books.vertical")
+        case .knowledgeProfile: return .business(.knowledgeProfile)
         }
     }
 
@@ -63,16 +63,6 @@ enum InsightsTopic: String, CaseIterable, Identifiable, Sendable {
         case .technology:   return .purple
         case .health:       return .pink
         case .knowledgeProfile: return .indigo
-        }
-    }
-
-    var subtitleKey: LocalizedStringKey {
-        switch self {
-        case .overview:     return "insights.topic.overview.subtitle"
-        case .organization: return "insights.topic.organization.subtitle"
-        case .technology:   return "insights.topic.technology.subtitle"
-        case .health:       return "insights.topic.health.subtitle"
-        case .knowledgeProfile: return "insights.profile.classification"
         }
     }
 

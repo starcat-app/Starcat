@@ -233,7 +233,9 @@ struct MyInsightsView: View {
 
     private var header: some View {
         InsightsColumnHeader {
-            headerTitle
+            Text(topic.titleKey)
+                .font(interfaceScale.font(.panelTitle))
+                .accessibilityAddTraits(.isHeader)
         } controls: {
             headerControls
         }
@@ -244,32 +246,6 @@ struct MyInsightsView: View {
                 .gesture(WindowDragGesture())
                 .allowsWindowActivationEvents()
         }
-    }
-
-    private var headerTitle: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(topic.titleKey)
-                .font(interfaceScale.font(.panelTitle))
-                .accessibilityAddTraits(.isHeader)
-
-            Group {
-                if let displayedAt {
-                    Text(displayedAt, format: .dateTime.month().day().hour().minute())
-                } else {
-                    Text(topic.subtitleKey)
-                        .lineLimit(2)
-                }
-            }
-            .font(interfaceScale.font(.caption))
-            .foregroundStyle(.secondary)
-            .contentTransition(reduceMotion ? .identity : .opacity)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: topic)
-        }
-    }
-
-    private var displayedAt: Date? {
-        if topic == .knowledgeProfile { return profileLoader.displayed(for: profileRequest)?.facts.classifiedAt }
-        return snapshot?.generatedAt
     }
 
     private var headerControls: some View {
@@ -704,6 +680,7 @@ private struct MyInsightsDashboard: View {
                     .font(interfaceScale.font(.captionSmall, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
+            .padding(.trailing, 8)
             .padding(.vertical, 9)
             .contentShape(Rectangle())
         }
@@ -864,6 +841,7 @@ private struct MyInsightsDashboard: View {
                     Image(systemName: "arrow.up.right")
                         .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
+                        .padding(.trailing, 8)
                 }
             }
 
@@ -1024,6 +1002,7 @@ private struct MyInsightsDashboard: View {
                     .foregroundStyle(.secondary)
                     .padding(.top, 3)
             }
+            .padding(.trailing, 8)
             .padding(.vertical, 9)
             .contentShape(Rectangle())
         }
