@@ -151,7 +151,9 @@ struct TrendingView: View {
         .task(id: settings.wikiAvailabilityFilter.rawValue) {
             await reloadWikiAvailabilityMap(for: viewModel.filterCandidateRepos)
         }
-        .task(id: "\(skillCandidates.map(\.id)):\(viewModel.selectedPeriod.rawValue):\(selectedLanguage):\(settings.skillScanFilterIdentity):\(quickSearchQuery)") {
+        // 技能筛选关闭时候选构造（临时 Repo 排序 / registry 查询）没有消费方；
+        // 任务身份在此场景取常量，状态变化不再白算 skillCandidates，任务体 guard 天然 no-op。
+        .task(id: settings.skillFilter == .any ? "skills-off" : "\(skillCandidates.map(\.id)):\(viewModel.selectedPeriod.rawValue):\(selectedLanguage):\(settings.skillScanFilterIdentity):\(quickSearchQuery)") {
             guard settings.skillFilter != .any else { return }
             dependencies.repoSkillStore.enqueue(
                 skillCandidates,
