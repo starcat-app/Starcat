@@ -71,7 +71,10 @@ struct RepoNotesEntry: View {
             let title: LocalizedStringKey = workspace.isLoaded && workspace.savedSummary == nil
                 ? "repo.notes.write" : "repo.privateNotes"
             Button {
-                if !RepoNoteWindowController.focusIfOpen(for: workspace.scope), !workspace.isDrawerOpen {
+                if workspace.isDrawerOpen {
+                    // 复用关闭按钮的保存流程，写入失败时保留浮层和编辑内容。
+                    Task { await workspace.closeDrawer() }
+                } else if !RepoNoteWindowController.focusIfOpen(for: workspace.scope) {
                     workspace.isDrawerMaximized = false
                     workspace.isDrawerOpen = true
                 }
@@ -126,6 +129,7 @@ struct RepoNotesEntry: View {
     private var chevron: some View {
         Image(systemName: "chevron.right")
             .font(.caption2.weight(.semibold))
+            .rotationEffect(.degrees(workspace?.isDrawerOpen == true ? 90 : 0))
             .foregroundStyle(.secondary)
             .accessibilityHidden(true)
     }
