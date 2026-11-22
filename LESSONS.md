@@ -151,6 +151,14 @@
 - Seen: 2026-06-08
 - Status: active
 
+### L-TEST-001 Swift Testing #require 需要内层 try
+
+- Rule: `#require` 包裹可抛错表达式时必须写 `try #require(try expr)`；宏展开不传播外层 `try`，不能依赖测试函数签名上的 throws。`#expect(try ...)` 无此问题。
+- Reason: 缺内层 `try` 会让单个测试文件的编译失败级联成同批全部文件的失败计数（如 "22 failures"），而 xcresult `totalTestCount: 0` 才是构建期失败的判据；排障时容易误判为大量用例失败。
+- Evidence: `StarcatTests/DiskChatHistoryStoreTests.swift:563`（2026-11-22 编译失败，`xcrun xcresulttool get test-results summary` 证实 totalTestCount 为 0）
+- Seen: 2026-11-22
+- Status: active
+
 ## UI 与布局
 
 ### L-UI-001 滚动条不得遮盖文字和控件
