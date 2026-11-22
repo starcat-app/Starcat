@@ -520,7 +520,7 @@ final class SemanticSearchService {
         // 用户在 Settings 编辑过的 embedding template（默认值见 AIDefaultPrompts.embedding）。
         // template 是用户层面可改的，每次重建索引都拿当前最新值。
         let embeddingTemplate = settings.aiEmbeddingTask.prompt.userPromptTemplate
-        let summaryLookup = await loadAISummaryLookup()
+        let summaryLookup = await loadAISummaryLookup(repos: repos)
 
         for repo in repos {
             let snapshot = await buildSnapshot(
@@ -619,9 +619,20 @@ final class SemanticSearchService {
     /// `fetchLatestPerRepo()` 本身会按 `generated_at DESC` 读全表并在应用层去重；
     /// 如果在 `buildSnapshot` 的 per-repo 循环里调用，语义搜索 1.8K stars 时会退化为
     /// 1.8K 次全表扫描。这里在 `ensureIndexed` 开头只读一次，后续按 repo id 查字典。
-    private func loadAISummaryLookup() async -> [Int64: AISummaryRecord] {
+    ///
+    /// P2-2（2026-11-22 性能专项）：单仓刷新（笔记保存 / 摘要生成后的
+    /// `refreshIndexIfChanged(for:)`）只带一个 repo 进来，改走 `fetchLatest(repoId:)`
+    /// 的 `WHERE repo_id = ?` 限定查询，不为一条摘要付全表扫描；结果语义与全表
+    /// 去重一致（同 repo 按 `generated_at DESC` 取首条）。internal 可见性供单测直验
+    /// 单仓路由。
+    func loadAISummaryLookup(repos: [Repo]) async -> [Int64: AISummaryRecord] {
         guard let summaryRepo = summaryRepository else { return [:] }
         do {
+            if repos.count == 1 {
+                let repoID = repos[0].id
+                guard let record = try await summaryRepo.fetchLatest(repoId: repoID) else { return [:] }
+                return [repoID: record]
+            }
             return try await summaryRepo.fetchLatestPerRepo()
         } catch {
             AppLog.ai.error("loadAISummaryLookup failed: \(error.localizedDescription, privacy: .public)")

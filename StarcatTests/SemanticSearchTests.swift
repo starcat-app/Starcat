@@ -430,6 +430,74 @@ struct SemanticSearchTests {
         }
     }
 
+    // MARK: - P2-2（2026-11-22 性能专项）：单仓刷新摘要读取走限定 repo 查询
+
+    @Test("P2-2: 单仓索引用 fetchLatest(repoId:)，多仓仍走全表去重")
+    @MainActor func loadAISummaryLookupRoutesSingleRepoToScopedQuery() async throws {
+        let suiteName = "semantic-search-summary-route"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let settings = AppSettings(defaults: defaults)
+        let recordA = AISummaryRecord(
+            repoId: 1,
+            model: "chat-model",
+            sourceHash: "hash-a",
+            summaryJson: "{}",
+            generatedAt: "2026-11-22T00:00:00Z"
+        )
+        let recordB = AISummaryRecord(
+            repoId: 2,
+            model: "chat-model",
+            sourceHash: "hash-b",
+            summaryJson: "{}",
+            generatedAt: "2026-11-22T00:00:00Z"
+        )
+        let summaryRepo = RecordingAISummaryRepository(latestByRepoID: [1: recordA, 2: recordB])
+        let service = SemanticSearchService(
+            embeddingRepository: RecordingEmbeddingRepository(),
+            settings: settings,
+            summaryRepository: summaryRepo
+        )
+        let repoA = makeRepo(fullName: "owner/repo-a", description: nil, topics: nil, id: 1)
+        let repoB = makeRepo(fullName: "owner/repo-b", description: nil, topics: nil, id: 2)
+
+        // 单仓刷新（笔记保存 / 摘要生成后的 refreshIndexIfChanged）只应触发 WHERE repo_id = ? 查询。
+        let single = await service.loadAISummaryLookup(repos: [repoA])
+        let (latestCount, perRepoCount, lastQueriedID) = await summaryRepo.callCounts
+        #expect(latestCount == 1)
+        #expect(perRepoCount == 0)
+        #expect(lastQueriedID == 1)
+        #expect(single == [1: recordA])
+
+        // 多仓批量索引仍走全表去重，避免 N 次单查询。
+        let batch = await service.loadAISummaryLookup(repos: [repoA, repoB])
+        let (latestAfterBatch, perRepoAfterBatch, _) = await summaryRepo.callCounts
+        #expect(latestAfterBatch == 1)
+        #expect(perRepoAfterBatch == 1)
+        #expect(batch == [1: recordA, 2: recordB])
+    }
+
+    @Test("P2-2: 单仓无摘要时返回空字典且不触发全表查询")
+    @MainActor func loadAISummaryLookupSingleRepoWithoutRecordReturnsEmpty() async throws {
+        let suiteName = "semantic-search-summary-route-empty"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let settings = AppSettings(defaults: defaults)
+        let summaryRepo = RecordingAISummaryRepository(latestByRepoID: [:])
+        let service = SemanticSearchService(
+            embeddingRepository: RecordingEmbeddingRepository(),
+            settings: settings,
+            summaryRepository: summaryRepo
+        )
+        let repo = makeRepo(fullName: "owner/repo-x", description: nil, topics: nil, id: 7)
+
+        let lookup = await service.loadAISummaryLookup(repos: [repo])
+        #expect(lookup.isEmpty)
+        let (latestCount, perRepoCount, _) = await summaryRepo.callCounts
+        #expect(latestCount == 1)
+        #expect(perRepoCount == 0)
+    }
+
     // MARK: - helpers
 
     private actor RecordingEmbeddingRepository: RepoEmbeddingRepositoryProtocol {
@@ -457,6 +525,45 @@ struct SemanticSearchTests {
 
         func upsert(_ embeddings: [RepoEmbedding]) async throws {
             upsertCount += embeddings.count
+        }
+    }
+
+    /// P2-2：记录 fetchLatest / fetchLatestPerRepo 调用次数与单查目标 repo，
+    /// 验证单仓刷新路由到限定查询而不触发全表去重。
+    private actor RecordingAISummaryRepository: AISummaryRepositoryProtocol {
+        private let latestByRepoID: [Int64: AISummaryRecord]
+        private(set) var fetchLatestCount = 0
+        private(set) var fetchLatestPerRepoCount = 0
+        private(set) var lastQueriedRepoID: Int64?
+
+        init(latestByRepoID: [Int64: AISummaryRecord] = [:]) {
+            self.latestByRepoID = latestByRepoID
+        }
+
+        /// 一次 await 取回全部计数，测试断言保持读取一致性。
+        var callCounts: (fetchLatest: Int, fetchLatestPerRepo: Int, lastQueriedRepoID: Int64?) {
+            (fetchLatestCount, fetchLatestPerRepoCount, lastQueriedRepoID)
+        }
+
+        func find(repoId: Int64, model: String) async throws -> AISummaryRecord? {
+            latestByRepoID[repoId]
+        }
+
+        func fetchLatest(repoId: Int64) async throws -> AISummaryRecord? {
+            fetchLatestCount += 1
+            lastQueriedRepoID = repoId
+            return latestByRepoID[repoId]
+        }
+
+        func upsert(_ record: AISummaryRecord) async throws {}
+
+        func fetchLatestPerRepo() async throws -> [Int64: AISummaryRecord] {
+            fetchLatestPerRepoCount += 1
+            return latestByRepoID
+        }
+
+        func fetchRepoIDsWithSummary() async throws -> Set<Int64> {
+            Set(latestByRepoID.keys)
         }
     }
 
@@ -989,6 +1096,40 @@ struct SemanticIndexProgressSinkTests {
         #expect(byID.count == 1200)
         #expect(byID[1]?.vector == [1, 0.5])
         #expect(byID[1200]?.vector == [1200, 0.5])
+    }
+
+    @Test("P2-2: fetchLatest 的 SQL 限定 repo_id，结果与全表去重路径一致")
+    func fetchLatestScopesToSingleRepoID() async throws {
+        let db = try InMemoryDatabaseManager()
+        let repository = GRDBAISummaryRepository(database: db)
+        // ai_summaries.repo_id 外键指向 repos.id，先插占位 repo 行再写摘要。
+        try await db.insertRepoFixture(id: 1)
+        try await db.insertRepoFixture(id: 2)
+
+        let oldForRepo1 = AISummaryRecord(
+            repoId: 1, model: "chat-model", sourceHash: "old", summaryJson: "{}",
+            generatedAt: "2026-01-01T00:00:00Z"
+        )
+        let latestForRepo1 = AISummaryRecord(
+            repoId: 1, model: "chat-model-v2", sourceHash: "latest", summaryJson: "{}",
+            generatedAt: "2026-02-01T00:00:00Z"
+        )
+        let repo2Latest = AISummaryRecord(
+            repoId: 2, model: "chat-model", sourceHash: "repo2", summaryJson: "{}",
+            generatedAt: "2026-03-01T00:00:00Z"
+        )
+        try await repository.upsert(oldForRepo1)
+        try await repository.upsert(latestForRepo1)
+        try await repository.upsert(repo2Latest)
+
+        // 单仓查询只回 repo 1 按 generated_at 最新的那条；repo 2 更晚的记录不得干扰。
+        let scoped = try await repository.fetchLatest(repoId: 1)
+        #expect(scoped == latestForRepo1)
+
+        // P2-2 路由等价前提：限定查询与全表去重在 repo 1 上取到同一条。
+        let perRepo = try await repository.fetchLatestPerRepo()
+        #expect(perRepo[1] == latestForRepo1)
+        #expect(scoped == perRepo[1])
     }
 
     @Test("底栏向量 chip：刷新中优先进度，空闲看覆盖率，0 条为未就绪")
