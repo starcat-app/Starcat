@@ -228,6 +228,208 @@ struct SemanticSearchTests {
         #expect(await repository.upsertCount == 0)
     }
 
+    // MARK: - P1-3（2026-11-22 性能专项）：打分 / 排序 / 截断调度出主 actor 的对拍回归
+
+    /// 可复现伪随机向量（LCG）。对拍期望依赖「每次运行生成完全相同的样本」，
+    /// System RandomNumberGenerator 会让失败不可复现；固定种子保证确定性。
+    private func seededVector(seed: UInt64, dimension: Int) -> [Float] {
+        var state = seed
+        var vector = [Float](repeating: 0, count: dimension)
+        for index in 0..<dimension {
+            state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            // 取高 24 位归一到 [-1, 1)；分量不会全零，幅度分布贴近真实 embedding。
+            let normalized = Double((state >> 40) & 0xFF_FFFF) / Double(0xFF_FFFF)
+            vector[index] = Float(normalized * 2 - 1)
+        }
+        return vector
+    }
+
+    @Test("P1-3: 5k 候选（混缺向量/坏向量/字面命中/FTS 加权）与纯函数基准逐位对拍")
+    @MainActor func searchFiveThousandCandidatesMatchesReferenceRanking() async throws {
+        let suiteName = "semantic-search-rank-parity"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let settings = AppSettings(defaults: defaults)
+        let model = "test-embedding-model"
+        let dimension = 16
+        let queryVector = seededVector(seed: 1, dimension: dimension)
+        let repository = RecordingEmbeddingRepository()
+        let service = SemanticSearchService(
+            embeddingRepository: repository,
+            settings: settings,
+            queryClientOverride: StubEmbeddingClient(queryVector: queryVector),
+            queryModelOverride: model
+        )
+
+        let candidateCount = 5_000
+        var candidates: [Repo] = []
+        var stored: [RepoEmbedding] = []
+        candidates.reserveCapacity(candidateCount)
+        stored.reserveCapacity(candidateCount)
+        for index in 1...candidateCount {
+            let id = Int64(index)
+            // 约六分之一候选的 description 携带 query 词，覆盖字面命中 boost 路径。
+            let description = index % 6 == 0 ? "a needle in the haystack \(index)" : "unrelated description \(index)"
+            candidates.append(makeRepo(
+                fullName: "owner/repo-\(index)",
+                description: description,
+                topics: nil,
+                id: id
+            ))
+            // 三类坏行交错混入：缺行（%7）、维度不符（%13）、零向量 → cosine NaN（%17）。
+            if index % 7 == 0 {
+                continue // 缺向量：库里根本没有这条
+            }
+            if index % 13 == 0 {
+                stored.append(RepoEmbedding(repoId: id, model: model, vector: seededVector(seed: UInt64(index), dimension: 3), snapshotJson: "{}", updatedAt: "2026-01-01T00:00:00Z"))
+            } else if index % 17 == 0 {
+                stored.append(RepoEmbedding(repoId: id, model: model, vector: [Float](repeating: 0, count: dimension), snapshotJson: "{}", updatedAt: "2026-01-01T00:00:00Z"))
+            } else {
+                stored.append(RepoEmbedding(repoId: id, model: model, vector: seededVector(seed: UInt64(index), dimension: dimension), snapshotJson: "{}", updatedAt: "2026-01-01T00:00:00Z"))
+            }
+        }
+        await repository.store(stored)
+        let ftsHitIDs = Set((1...candidateCount).map(Int64.init).filter { $0 % 11 == 0 })
+        let query = "needle"
+
+        let hits = try await service.search(query: query, candidates: candidates, ftsHitIDs: ftsHitIDs, limit: 200)
+
+        // 独立重算期望排名：经由 internal 纯函数原语（cosineSimilarity / hasLiteralMatch /
+        // normalizeDisplayScore / tier / reason）逐位重放同一公式，不镜像任何实现代码。
+        // snapshotJson 固定 "{}"（解码失败 → snapshot == nil），与实现内字面两分支结果一致。
+        var expected: [(hit: SemanticSearchHit, sortScore: Double)] = []
+        expected.reserveCapacity(candidateCount)
+        var storedById: [Int64: RepoEmbedding] = [:]
+        for row in stored {
+            storedById[row.repoId] = row
+        }
+        for repo in candidates {
+            guard let row = storedById[repo.id] else { continue }
+            let vector = row.vector
+            guard !vector.isEmpty, vector.count == queryVector.count else { continue }
+            let cosine = SemanticSearchService.cosineSimilarity(queryVector, vector)
+            guard cosine.isFinite else { continue }
+            let literalHit = SemanticSearchService.hasLiteralMatch(repo: repo, query: query)
+            let effectiveScore = literalHit ? max(cosine, SemanticSearchService.literalBoostFloor) : cosine
+            let sortScore = effectiveScore + (ftsHitIDs.contains(repo.id) ? SemanticSearchService.ftsBoostWeight : 0)
+            let displayScore = SemanticSearchService.normalizeDisplayScore(effectiveScore)
+            expected.append((
+                SemanticSearchHit(
+                    repo: repo,
+                    score: cosine,
+                    displayScore: displayScore,
+                    tier: SemanticSearchService.tier(forDisplayScore: displayScore),
+                    reason: SemanticSearchService.reason(
+                        for: repo,
+                        query: query,
+                        displayScore: displayScore,
+                        literalHit: literalHit,
+                        ftsHit: ftsHitIDs.contains(repo.id)
+                    )
+                ),
+                sortScore
+            ))
+        }
+        let expectedHits = expected.sorted { $0.sortScore > $1.sortScore }.prefix(200).map(\.hit)
+
+        // 排名、条数与整个 hit（含 score / displayScore / tier / reason）全等。
+        #expect(hits.map(\.repo.id) == expectedHits.map(\.repo.id))
+        #expect(hits.count == 200)
+        #expect(hits == expectedHits)
+    }
+
+    @Test("P1-3: sortScore 并列时保持候选输入顺序，FTS 加权命中排最前")
+    @MainActor func searchKeepsCandidateOrderWhenScoresTie() async throws {
+        let suiteName = "semantic-search-rank-tie"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let settings = AppSettings(defaults: defaults)
+        let model = "test-embedding-model"
+        let repository = RecordingEmbeddingRepository()
+        let service = SemanticSearchService(
+            embeddingRepository: repository,
+            settings: settings,
+            queryClientOverride: StubEmbeddingClient(queryVector: seededVector(seed: 43, dimension: 8)),
+            queryModelOverride: model
+        )
+        // 5 个候选共用同一向量 → cosine 全同；卡片字段不含 query、不在 ftsHitIDs → sortScore 完全并列。
+        let repos = (1...5).map { index in
+            makeRepo(fullName: "owner/common-\(index)", description: "unrelated description", topics: nil, id: Int64(index))
+        }
+        let sharedVector = seededVector(seed: 42, dimension: 8)
+        await repository.store(repos.map { repo in
+            RepoEmbedding(repoId: repo.id, model: model, vector: sharedVector, snapshotJson: "{}", updatedAt: "2026-01-01T00:00:00Z")
+        })
+
+        let ties = try await service.search(query: "needle", candidates: repos, ftsHitIDs: [], limit: 10)
+        #expect(ties.map(\.repo.id) == repos.map(\.id))
+
+        // 稳定排序下 FTS 加权的 id=3 排最前，其余并列者保持输入顺序 1, 2, 4, 5。
+        let boosted = try await service.search(query: "needle", candidates: repos, ftsHitIDs: [3], limit: 10)
+        #expect(boosted.map(\.repo.id) == [3, 1, 2, 4, 5])
+    }
+
+    @Test("P1-3: 缺向量 / 空向量 / 维度不符 / 零向量候选被跳过")
+    @MainActor func searchSkipsInvalidEmbeddingRows() async throws {
+        let suiteName = "semantic-search-rank-invalid"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let settings = AppSettings(defaults: defaults)
+        let model = "test-embedding-model"
+        let dimension = 8
+        let repository = RecordingEmbeddingRepository()
+        let service = SemanticSearchService(
+            embeddingRepository: repository,
+            settings: settings,
+            queryClientOverride: StubEmbeddingClient(queryVector: seededVector(seed: 7, dimension: dimension)),
+            queryModelOverride: model
+        )
+        // id 1 库里没有向量；id 2 空向量；id 3 维度不符；id 4 零向量（cosine NaN）；id 5 正常。
+        let repos = (1...5).map { index in
+            makeRepo(fullName: "owner/repo-\(index)", description: nil, topics: nil, id: Int64(index))
+        }
+        await repository.store([
+            RepoEmbedding(repoId: 2, model: model, vector: [], snapshotJson: "{}", updatedAt: "2026-01-01T00:00:00Z"),
+            RepoEmbedding(repoId: 3, model: model, vector: seededVector(seed: 9, dimension: 3), snapshotJson: "{}", updatedAt: "2026-01-01T00:00:00Z"),
+            RepoEmbedding(repoId: 4, model: model, vector: [Float](repeating: 0, count: dimension), snapshotJson: "{}", updatedAt: "2026-01-01T00:00:00Z"),
+            RepoEmbedding(repoId: 5, model: model, vector: seededVector(seed: 8, dimension: dimension), snapshotJson: "{}", updatedAt: "2026-01-01T00:00:00Z"),
+        ])
+
+        // id 4 即便有 FTS 加权也不能把无效向量捞回结果。
+        let hits = try await service.search(query: "needle", candidates: repos, ftsHitIDs: [4], limit: 10)
+        #expect(hits.map(\.repo.id) == [5])
+    }
+
+    @Test("P1-3: 已取消任务的搜索在打分阶段抛 CancellationError")
+    @MainActor func searchThrowsCancellationWhenTaskAlreadyCancelled() async throws {
+        let suiteName = "semantic-search-rank-cancel"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let settings = AppSettings(defaults: defaults)
+        let model = "test-embedding-model"
+        let repository = RecordingEmbeddingRepository()
+        let service = SemanticSearchService(
+            embeddingRepository: repository,
+            settings: settings,
+            queryClientOverride: StubEmbeddingClient(queryVector: seededVector(seed: 7, dimension: 8)),
+            queryModelOverride: model
+        )
+        let repos = (1...3).map { index in
+            makeRepo(fullName: "owner/repo-\(index)", description: nil, topics: nil, id: Int64(index))
+        }
+        await repository.store(repos.map { repo in
+            RepoEmbedding(repoId: repo.id, model: model, vector: seededVector(seed: UInt64(repo.id), dimension: 8), snapshotJson: "{}", updatedAt: "2026-01-01T00:00:00Z")
+        })
+
+        // 主 actor 测试内创建的 Task 继承主 actor；同步 cancel 保证 body 启动前已标记取消，
+        // rankCandidates 的入口检查必须先于逐条打分触发 CancellationError。
+        let task = Task { try await service.search(query: "needle", candidates: repos) }
+        task.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+    }
+
     // MARK: - helpers
 
     private actor RecordingEmbeddingRepository: RepoEmbeddingRepositoryProtocol {
@@ -290,12 +492,13 @@ struct SemanticSearchTests {
         func testConnection() async throws {}
     }
 
-    private func makeRepo(fullName: String, description: String?, topics: String?) -> Repo {
+    /// id 默认 1 与既有用例行为不变；5k 对拍等批量场景需要 id 区分候选身份。
+    private func makeRepo(fullName: String, description: String?, topics: String?, id: Int64 = 1) -> Repo {
         let parts = fullName.split(separator: "/", maxSplits: 1).map(String.init)
         let owner = parts.count == 2 ? parts[0] : ""
         let name = parts.count == 2 ? parts[1] : fullName
         return Repo(
-            id: 1,
+            id: id,
             owner: owner,
             name: name,
             fullName: fullName,
@@ -749,6 +952,43 @@ struct SemanticIndexProgressSinkTests {
         )
         #expect(count == 1)
         #expect(try await repository.countEmbeddings(model: "text-embedding-3-small", repoIDs: []) == 0)
+    }
+
+    @Test("P1-3: fetchEmbeddings 跨 500-ID 分块取回完整且容忍重复候选 ID")
+    func fetchEmbeddingsChunksBeyondSQLiteVariableLimit() async throws {
+        let db = try InMemoryDatabaseManager()
+        let repository = GRDBRepoEmbeddingRepository(database: db)
+        // 1200 个 ID > 单条 IN 的 SQLite 变量上限（默认 999），分块后必须完整取回。
+        // repo_embeddings.repo_id 外键指向 repos.id，先插占位 repo 行再写向量。
+        for id in 1...1200 {
+            try await db.insertRepoFixture(id: Int64(id))
+        }
+        try await repository.upsert((1...1200).map { id in
+            RepoEmbedding(
+                repoId: Int64(id),
+                model: "text-embedding-3-small",
+                vector: [Float(id), 0.5],
+                snapshotJson: "{}",
+                updatedAt: "2026-01-01T00:00:00Z"
+            )
+        })
+
+        let ids = (1...1200).map(Int64.init)
+        let fetched = try await repository.fetchEmbeddings(model: "text-embedding-3-small", repoIDs: ids)
+        #expect(fetched.count == 1200)
+        #expect(Set(fetched.map(\.repoId)) == Set(ids))
+
+        // 真实调用可能传重复候选 ID；IN 查询语义下不得重复计数。
+        let duplicated = try await repository.fetchEmbeddings(
+            model: "text-embedding-3-small",
+            repoIDs: ids + [1, 1, 1200]
+        )
+        #expect(duplicated.count == 1200)
+
+        let byID = try await repository.fetchEmbeddingsByRepoID(model: "text-embedding-3-small", repoIDs: ids)
+        #expect(byID.count == 1200)
+        #expect(byID[1]?.vector == [1, 0.5])
+        #expect(byID[1200]?.vector == [1200, 0.5])
     }
 
     @Test("底栏向量 chip：刷新中优先进度，空闲看覆盖率，0 条为未就绪")
