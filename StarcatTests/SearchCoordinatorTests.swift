@@ -232,6 +232,46 @@ struct SearchCoordinatorTests {
         #expect(result[0].card.description == "local")
     }
 
+    @Test("合并器字典化与旧实现逐例对拍")
+    func mergeMatchesLegacyFirstIndexReference() {
+        // Swift 函数引用不保留默认参数：绑定成 c 后 6 参全必填，4 参速记调用
+        // 会报 missing arguments。包一层闭包让默认值生效；需要覆盖 description
+        // / localRepo 的场景直接调 Self.makeIdentityCandidate 全参形态。
+        let c: (Int64?, String, String, SearchSource) -> RepositoryCandidate = {
+            Self.makeIdentityCandidate(id: $0, owner: $1, name: $2, source: $3)
+        }
+        // 覆盖字典化查表的关键等价边界：改名、nil 与 0、同名不同 ID、
+        // 双键冲突（ID 与名称命中不同行取更小下标）、来源归并、空批次、
+        // 单批次与 incoming 链式命中。
+        let scenarios: [(label: String, existing: [RepositoryCandidate], incoming: [RepositoryCandidate])] = [
+            ("空批次", [c(1, "a", "b", .localKeyword)], []),
+            ("空库单批次", [], [c(1, "a", "b", .github), c(2, "c", "d", .github)]),
+            ("改名同 ID 仅 ID 键命中", [c(7, "old", "name", .localKeyword)], [c(7, "new", "name", .github)]),
+            ("nil ID 走名称命中", [c(7, "old", "name", .localKeyword)], [c(nil, "old", "name", .github)]),
+            ("ID 0 可匹配", [c(0, "x", "y", .localKeyword)], [c(0, "x", "y", .github)]),
+            ("ID 0 不同名不匹配 nil 行", [c(nil, "a", "b", .localKeyword)], [c(0, "c", "d", .github)]),
+            ("同名不同 ID 仍判同仓", [c(1, "dup", "repo", .localKeyword)], [c(2, "dup", "repo", .github)]),
+            ("双键冲突取更小下标", [c(1, "a", "b", .localKeyword), c(3, "z", "w", .localSemantic)], [c(3, "a", "b", .github)]),
+            ("同 ID 来源归并多次", [c(5, "m", "r", .localKeyword)], [c(5, "m", "r", .github), c(5, "m", "r", .localSemantic)]),
+            ("incoming 链式命中追加行", [], [c(nil, "chain", "one", .github), c(nil, "chain", "one", .web)]),
+            (
+                "incoming 链式 ID 命中不同名",
+                [],
+                [c(nil, "ch", "one", .github), c(11, "other", "two", .web), c(11, "unrelated", "name", .localSemantic)]
+            ),
+            (
+                "incoming 补本地状态",
+                [Self.makeIdentityCandidate(id: 9, owner: "s", name: "t", source: .github, description: "remote")],
+                [Self.makeIdentityCandidate(id: 9, owner: "s", name: "t", source: .localKeyword, description: "local", localRepo: Self.makeRepo(id: 9, owner: "s", name: "t"))]
+            ),
+        ]
+        for scenario in scenarios {
+            let actual = SearchCoordinator.mergeRepositories(existing: scenario.existing, incoming: scenario.incoming)
+            let legacy = Self.legacyMerge(existing: scenario.existing, incoming: scenario.incoming)
+            #expect(actual == legacy, "场景「\(scenario.label)」合并结果与旧 firstIndex 实现不一致")
+        }
+    }
+
     @Test("原地更新 Repo 知识库状态")
     func updateRepositoryLibraryStateRefreshesLoadedCandidate() async {
         let repo = Self.makeRepo(id: 42, owner: "OpenAI", name: "Codex")
@@ -601,6 +641,85 @@ struct SearchCoordinatorTests {
             remoteRepo: nil,
             semanticScore: nil
         )
+    }
+
+    /// 构造不带本地 Repo 的轻量候选，专供合并对拍场景使用。
+    nonisolated fileprivate static func makeIdentityCandidate(
+        id: Int64?,
+        owner: String,
+        name: String,
+        source: SearchSource,
+        description: String = "card",
+        localRepo: Repo? = nil
+    ) -> RepositoryCandidate {
+        RepositoryCandidate(
+            identity: RepoIdentity(ghRepoID: id, owner: owner, name: name),
+            card: RepoCardViewData(
+                // ghRepoId 必填（Identifiable 依赖非可选 Int64）；nil 身份行只
+                // 出现在合并对拍场景，匹配只看 identity，卡片用 -1 占位不参与。
+                ghRepoId: id ?? -1,
+                fullName: "\(owner)/\(name)",
+                owner: owner,
+                repo: name,
+                avatarURL: nil,
+                description: description,
+                language: nil,
+                starsCount: 0,
+                forksCount: 0,
+                isArchived: false,
+                isFork: false,
+                isPrivate: false,
+                isStarred: false,
+                isInLibrary: false,
+                badge: nil,
+                weeklySources: [],
+                weeklySourceLabel: nil,
+                inlineMetadata: nil,
+                footerMetadata: nil,
+                readStatus: nil,
+                openSSFScore: nil,
+                healthBadge: nil
+            ),
+            sources: [source],
+            localRepo: localRepo,
+            remoteRepo: nil,
+            semanticScore: nil
+        )
+    }
+
+    /// 旧实现的逐个 firstIndex 线性扫描：作为对拍参照冻结在此，
+    /// 谓词复用生产 `isSameRepository`，保证字典化改动不改变合并语义。
+    nonisolated fileprivate static func legacyMerge(
+        existing: [RepositoryCandidate],
+        incoming: [RepositoryCandidate]
+    ) -> [RepositoryCandidate] {
+        var merged = existing
+        for candidate in incoming {
+            let matchIndex = merged.firstIndex {
+                RepositorySearchMerger.isSameRepository($0.identity, candidate.identity)
+            }
+            guard let matchIndex else {
+                merged.append(candidate)
+                continue
+            }
+            var current = merged[matchIndex]
+            current.sources.formUnion(candidate.sources)
+            if current.localRepo == nil, let localRepo = candidate.localRepo {
+                current.localRepo = localRepo
+                current.card = candidate.card
+            }
+            if current.remoteRepo == nil {
+                current.remoteRepo = candidate.remoteRepo
+            }
+            if current.semanticScore == nil {
+                current.semanticScore = candidate.semanticScore
+            }
+            if current.semanticReason == nil {
+                current.semanticReason = candidate.semanticReason
+            }
+            merged[matchIndex] = current
+        }
+        return merged
     }
 }
 
