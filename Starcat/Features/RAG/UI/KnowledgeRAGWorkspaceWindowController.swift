@@ -1400,9 +1400,13 @@ private struct KnowledgeRAGBrowserView: View {
         return font.ascender - font.descender + font.leading
     }
 
-    /// 召回测试仍是内容输入，和主问答及其占位提示采用同一阅读字号。
+    /// 召回测试的输入、占位提示与行高共用紧凑字号。
     private var retrievalQueryFont: NSFont {
-        MarkdownTypography.nativeFont(scale: interfaceScale, adjustment: inputSettings?.readmeFontSizeAdjustment ?? 0)
+        MarkdownTypography.nativeFont(
+            scale: interfaceScale,
+            adjustment: inputSettings?.readmeFontSizeAdjustment ?? 0,
+            baseline: .compact
+        )
     }
 
     private var retrievalQueryMinHeight: CGFloat {
@@ -3278,7 +3282,7 @@ private struct KnowledgeRAGChunkEditor: View {
                     })
                 } else {
                     TextEditor(text: $content)
-                        .starcatMarkdownBodyFont(design: usesMonospacedEditor ? .monospaced : .default)
+                        .starcatMarkdownBodyFont(baseline: .compact, design: usesMonospacedEditor ? .monospaced : .default)
                         .scrollContentBackground(.hidden)
                         .padding(8)
                         .frame(maxWidth: .infinity, minHeight: 250, maxHeight: .infinity)

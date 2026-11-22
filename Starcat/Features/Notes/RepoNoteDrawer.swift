@@ -221,7 +221,7 @@ struct RepoNoteDrawer: View {
                 content: Binding(get: { workspace.content }, set: workspace.updateContent),
                 placeholder: .l10n("repo.notesPlaceholder"),
                 font: MarkdownTypography.nativeFont(
-                    scale: scale, adjustment: settings.readmeFontSizeAdjustment, baseline: .repositoryPanel
+                    scale: scale, adjustment: settings.readmeFontSizeAdjustment, baseline: .compact
                 ),
                 isEditable: !workspace.isClosing,
                 onClose: close
@@ -233,11 +233,11 @@ struct RepoNoteDrawer: View {
         Group {
             if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(emptyKey)
-                    .starcatMarkdownBodyFont(baseline: .repositoryPanel)
+                    .starcatMarkdownBodyFont(baseline: .compact)
                     .foregroundStyle(.secondary)
             } else {
                 Markdown(content)
-                    .starcatMarkdownStyle(baseline: .repositoryPanel)
+                    .starcatMarkdownStyle(baseline: .compact)
                     .textSelection(.enabled)
             }
         }

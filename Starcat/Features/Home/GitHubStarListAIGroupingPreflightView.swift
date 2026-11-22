@@ -469,7 +469,7 @@ private struct GitHubStarListAIGroupingRuleCard: View {
                     text: $instruction,
                     axis: .vertical
                 )
-                .starcatMarkdownBodyFont()
+                .starcatMarkdownBodyFont(baseline: .compact)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(2...4)
             }

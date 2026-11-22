@@ -38,6 +38,8 @@ struct MarkdownTypographyTests {
         #expect(MarkdownTypography.bodyFontSize(scale: scale, adjustment: 2) == 18 * scale.multiplier)
         #expect(MarkdownTypography.bodyFontSize(scale: scale, adjustment: -99) == 14 * scale.multiplier)
         #expect(MarkdownTypography.bodyFontSize(scale: scale, adjustment: 99) == 20 * scale.multiplier)
+        #expect(MarkdownTypography.bodyFontSize(scale: scale, baseline: .compact) == 14 * scale.multiplier)
+        #expect(MarkdownTypography.bodyFontSize(scale: scale, adjustment: 2, baseline: .compact) == 16 * scale.multiplier)
     }
 
     @Test("HTML 与原生标题和代码使用同一层级")

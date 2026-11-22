@@ -1444,7 +1444,7 @@ struct RAGWorkspaceSettingsView: View {
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
             TextEditor(text: text)
-                .starcatMarkdownBodyFont(design: .monospaced)
+                .starcatMarkdownBodyFont(baseline: .compact, design: .monospaced)
                 .accessibilityLabel(title)
                 .frame(height: height)
                 .overlay(

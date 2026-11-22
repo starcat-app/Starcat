@@ -74,7 +74,7 @@ struct AIChatBubble: View {
             // 头像只与问题气泡垂直居中，footer 单独铺在气泡下方。
             HStack(alignment: .center, spacing: 8) {
                 Text(message.content)
-                    .starcatMarkdownBodyFont(baseline: .repositoryPanel)
+                    .starcatMarkdownBodyFont(baseline: .compact)
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.leading)
                     .textSelection(.enabled)
@@ -334,7 +334,7 @@ private struct AIChatReasoningDisclosure: View {
         let font = MarkdownTypography.nativeFont(
             scale: interfaceScale,
             adjustment: settings?.readmeFontSizeAdjustment ?? 0,
-            baseline: .repositoryPanel
+            baseline: .compact
         )
         if isStreaming, let liveSession {
             RAGStreamingReasoningViewport(
@@ -408,7 +408,7 @@ struct AIStreamingChatBubble: View {
                         // 尾部结构仍可能被下一个 token 改写（代码围栏、列表、强调等），
                         // 中间态用纯文本换取稳定帧率；完成后整条消息恢复完整 Markdown。
                         Text(snapshot.liveTail)
-                            .starcatMarkdownBodyFont(baseline: .repositoryPanel)
+                            .starcatMarkdownBodyFont(baseline: .compact)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }

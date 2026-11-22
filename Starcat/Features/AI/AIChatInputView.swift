@@ -123,7 +123,7 @@ struct AIChatInputView: View {
             font: MarkdownTypography.nativeFont(
                 scale: interfaceScale,
                 adjustment: settings.readmeFontSizeAdjustment,
-                baseline: .repositoryPanel
+                baseline: .compact
             ),
             isEnabled: !isSending,
             isFocused: focus,
@@ -491,7 +491,7 @@ private enum AIChatEditorMetrics {
 
     @MainActor
     static var defaultFont: NSFont {
-        MarkdownTypography.nativeFont(scale: .standard, baseline: .repositoryPanel)
+        MarkdownTypography.nativeFont(scale: .standard, baseline: .compact)
     }
 
     @MainActor

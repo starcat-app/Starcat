@@ -66,7 +66,7 @@ struct RepositoryInsightsXMLViewer: View {
                 Text("rag.browser.chunk.contentLabel").font(.caption).foregroundStyle(.secondary)
                 ScrollView {
                     Text(verbatim: artifact.document.xml)
-                        .font(.body.monospaced())
+                        .starcatMarkdownBodyFont(baseline: .compact, design: .monospaced)
                         .foregroundStyle(.primary)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .topLeading)

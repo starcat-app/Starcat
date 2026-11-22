@@ -4,7 +4,7 @@
 
 ## 字号的单一来源
 
-Markdown 正文基准由 `MarkdownTypography.BodyBaseline` 定义。仓库详情 Skills、主窗口 README 及其他常规内容使用 **16 pt**，仓库笔记和仓库 AI 助手使用 **14 pt**。
+Markdown 正文基准由 `MarkdownTypography.BodyBaseline` 定义。仓库详情 Skills、主窗口 README 及其他常规内容使用 **16 pt**，仓库笔记、仓库 AI 助手及下文指定的编辑和查看入口使用 **14 pt**。
 
 字号按 `（正文基准 + AppSettings.readmeFontSizeAdjustment）× InterfaceScale.multiplier` 统一计算，沿用现有偏好键及 -2…4 的阅读微调范围。
 
@@ -35,7 +35,13 @@ WebView 的 CSS px 与 MarkdownUI 的原生 point 采用相同逻辑数值；不
 
 控件选择与光标、占位提示的基线对齐同时遵守 [输入框与占位提示规范](UI-输入框与占位提示-规范.md)；同字号不代表同一文字起点，不能用独立 padding/offset 猜测原生编辑器内边距。
 
-笔记、Issue 标题/正文/回复/评论编辑、AI 对话、RAG/Agent 命令、提示词模板和其他多行内容输入，均与对应阅读正文共用字号基准、界面倍率及阅读微调。仓库笔记的编辑、预览和 AI 草稿，以及仓库 AI 助手的摘要、对话和输入框，共用 14 pt 基准。输入文字和空输入提示必须采用同一个字体来源。
+内容输入默认采用 16 pt，沿用共享界面倍率和阅读微调。仓库笔记的编辑、预览和 AI 草稿，以及仓库 AI 助手的摘要、对话和输入框，共用 14 pt 基准。输入文字和空输入提示必须采用同一个字体来源。
+
+以下入口也采用 14 pt 基准。
+
+- AI 任务、翻译和知识库 RAG 的系统提示词与用户提示词或模板保留等宽字体。
+- 知识库浏览器的召回测试查询、分片正文编辑、仓库上下文 XML 编辑及仓库洞察 XML 只读正文。两个 XML 入口均使用等宽字体。
+- 仓库 Issues 工作台和活动通知详情的评论、回复及首帖和评论编辑，以及新建 GitHub Issue 的标题与正文。新建 Issue 和评论的草稿预览与对应编辑框同字号。
 
 - SwiftUI `TextEditor` / 多行 `TextField` 使用 `starcatMarkdownBodyFont()`；独立 overlay placeholder 也必须使用同一 modifier。提示词/XML 等原有等宽设计保留，字号相同。
 - AppKit `NSTextView` 从 `MarkdownTypography.nativeFont` 取得字体；`makeNSView` 和 `updateNSView` 均应用。字体变化时更新现有正文与 typingAttributes、重绘占位提示并重新测高，不能只在创建时设一次字体。

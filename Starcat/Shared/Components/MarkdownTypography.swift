@@ -12,10 +12,10 @@ import SwiftUI
 
 /// 阅读正文、标题与代码的尺寸契约；保留现有阅读偏移键及用户已保存的设置。
 enum MarkdownTypography {
-    /// 仓库笔记和 AI 助手的阅读、输入与流式正文共用紧凑基准。
+    /// 紧凑基准供仓库笔记、仓库 AI 助手及规范指定的编辑和查看入口共用。
     enum BodyBaseline: Int {
         case standard = 16
-        case repositoryPanel = 14
+        case compact = 14
     }
 
     static let bodySize = CGFloat(BodyBaseline.standard.rawValue)

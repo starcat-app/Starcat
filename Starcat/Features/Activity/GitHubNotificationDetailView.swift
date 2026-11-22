@@ -1475,7 +1475,11 @@ struct GitHubNotificationCommentCard: View, @MainActor Equatable {
 
     /// 输入与高度上限必须使用同一字体，否则大字档会少显示几行。
     private var editFont: NSFont {
-        MarkdownTypography.nativeFont(scale: dependencies.settings.interfaceScale, adjustment: dependencies.settings.readmeFontSizeAdjustment)
+        MarkdownTypography.nativeFont(
+            scale: dependencies.settings.interfaceScale,
+            adjustment: dependencies.settings.readmeFontSizeAdjustment,
+            baseline: .compact
+        )
     }
 
     private var editEditorMaxHeight: CGFloat {
@@ -2122,7 +2126,7 @@ private struct GitHubNotificationCommentComposer: View {
                     zh: "留下评论…",
                     en: "Leave a comment…"
                 ))
-                .starcatMarkdownBodyFont()
+                .starcatMarkdownBodyFont(baseline: .compact)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 Spacer(minLength: 0)
@@ -2379,7 +2383,11 @@ private struct GitHubNotificationCommentComposer: View {
     /// 收起态对齐 RAG composer：默认 3 行，随正文长高，到上限后内部滚动。
     /// 点展开后由父视图收起会话列表，输入区吃掉右栏剩余高度。
     private var composerFont: NSFont {
-        MarkdownTypography.nativeFont(scale: dependencies.settings.interfaceScale, adjustment: dependencies.settings.readmeFontSizeAdjustment)
+        MarkdownTypography.nativeFont(
+            scale: dependencies.settings.interfaceScale,
+            adjustment: dependencies.settings.readmeFontSizeAdjustment,
+            baseline: .compact
+        )
     }
 
     private var composerLineHeight: CGFloat {
@@ -2407,13 +2415,14 @@ private struct GitHubNotificationCommentComposer: View {
                 ScrollView {
                     if trimmed.isEmpty {
                         Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "没什么可预览的", en: "Nothing to preview"))
-                            .starcatMarkdownBodyFont()
+                            .starcatMarkdownBodyFont(baseline: .compact)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                     } else {
                         GitHubNotificationMarkdown(
                             content: draft,
-                            repositoryFullName: repositoryFullName
+                            repositoryFullName: repositoryFullName,
+                            baseline: .compact
                         )
                     }
                 }
@@ -2906,6 +2915,7 @@ private struct GitHubNotificationCommentComposer: View {
 private struct GitHubNotificationMarkdown: View {
     let content: String
     let repositoryFullName: String
+    var baseline: MarkdownTypography.BodyBaseline = .standard
 
     var body: some View {
         Markdown(
@@ -2914,7 +2924,7 @@ private struct GitHubNotificationMarkdown: View {
                 repositoryFullName: repositoryFullName
             )
         )
-        .starcatMarkdownStyle()
+        .starcatMarkdownStyle(baseline: baseline)
         .markdownImageProvider(GitHubNotificationImageProvider())
         .frame(maxWidth: .infinity, alignment: .leading)
         .environment(\.openURL, OpenURLAction { url in

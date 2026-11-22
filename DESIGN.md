@@ -209,7 +209,7 @@ Apple 的系统字体会按字号自动处理 optical size：小字号使用更�
 
 主窗口、Agent 工作台、知识库 RAG 工作台必须共享同一个 `InterfaceScale.multiplier`。不要为某个工作台额外放大或缩小一档；如果页面需要更强的可读层级，应选择更合适的 Typography token，而不是叠加第二套倍率。
 
-Markdown 阅读正文及内容输入（包括占位提示）默认采用 16 pt 基准，仓库笔记与仓库 AI 助手采用 14 pt 基准。两者共享现有阅读微调与界面倍率。字号层级、WebView / MarkdownUI 选型及资源边界统一遵循 [`UI-Markdown字号与渲染规范`](docs/5-规范/UI-Markdown字号与渲染规范.md)。
+Markdown 阅读正文及内容输入（包括占位提示）默认采用 16 pt 基准。仓库笔记、仓库 AI 助手及规范指定的编辑和查看入口采用 14 pt 基准。两档共享现有阅读微调与界面倍率。字号层级、WebView / MarkdownUI 选型及资源边界统一遵循 [`UI-Markdown字号与渲染规范`](docs/5-规范/UI-Markdown字号与渲染规范.md)。
 
 任何新增或修改的输入框必须同时遵守 [`UI-输入框与占位提示-规范`](docs/5-规范/UI-输入框与占位提示-规范.md)：优先原生 placeholder，光标、占位提示与首字符共用文字布局；禁止用独立 padding/offset 猜测基线。短任务窗口按内容确定高度，不以整页滚动掩盖布局问题。
 

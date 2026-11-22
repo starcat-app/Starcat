@@ -43,8 +43,7 @@ struct AITaskPromptSheet: View {
                         .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     TextEditor(text: $systemPrompt)
-                        // 可编辑提示词使用系统正文等宽字号，caption 仅用于辅助说明。
-                        .starcatMarkdownBodyFont(design: .monospaced)
+                        .starcatMarkdownBodyFont(baseline: .compact, design: .monospaced)
                         .accessibilityLabel("settings.ai.prompt.system")
                         .frame(height: 180)
                         .overlay(
@@ -65,7 +64,7 @@ struct AITaskPromptSheet: View {
                         .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     TextEditor(text: $userPromptTemplate)
-                        .starcatMarkdownBodyFont(design: .monospaced)
+                        .starcatMarkdownBodyFont(baseline: .compact, design: .monospaced)
                         .accessibilityLabel(userPromptTitle)
                         // 仅一个输入模板时复用两编辑区的内容预算，不留下空白 system 区。
                         .frame(height: task.supportsSystemPrompt ? 80 : 260)

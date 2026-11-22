@@ -105,7 +105,7 @@ struct RepoIssueCreatePane: View {
                 text: $viewModel.createTitle
             )
             .textFieldStyle(.roundedBorder)
-            .starcatMarkdownBodyFont()
+            .starcatMarkdownBodyFont(baseline: .compact)
             .focused($isTitleFocused)
         }
         .padding(.top, 6)
@@ -174,7 +174,7 @@ struct RepoIssueCreatePane: View {
                 let trimmed = viewModel.trimmedCreateBody
                 if trimmed.isEmpty {
                     Text(String.l10n("repo.issues.sheet.emptyPreview", defaultValue: "暂无内容可预览"))
-                        .starcatMarkdownBodyFont()
+                        .starcatMarkdownBodyFont(baseline: .compact)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
@@ -191,7 +191,11 @@ struct RepoIssueCreatePane: View {
             ImagePasteTextEditor(
                 text: $viewModel.createBody,
                 placeholder: String.l10n("repo.issues.sheet.bodyPlaceholder", defaultValue: "描述这个 Issue，支持 Markdown，可粘贴剪切板图片…"),
-                font: MarkdownTypography.nativeFont(scale: interfaceScale, adjustment: dependencies.settings.readmeFontSizeAdjustment),
+                font: MarkdownTypography.nativeFont(
+                    scale: interfaceScale,
+                    adjustment: dependencies.settings.readmeFontSizeAdjustment,
+                    baseline: .compact
+                ),
                 isEditable: !viewModel.isGeneratingIssue && !viewModel.isUploadingImage,
                 maximumHeight: 4_000,
                 onHeightChange: { _ in },
@@ -263,7 +267,7 @@ struct RepoIssueCreatePane: View {
 enum RepoIssueMarkdownTheme {
     @MainActor
     static func content(scale: InterfaceScale, adjustment: Int) -> Theme {
-        MarkdownTypography.theme(scale: scale, adjustment: adjustment)
+        MarkdownTypography.theme(scale: scale, adjustment: adjustment, baseline: .compact)
             .heading1 { configuration in
                 configuration.label
                     .markdownTextStyle { FontWeight(.semibold); FontSize(.em(MarkdownTypography.Heading.h1.ratio)) }
