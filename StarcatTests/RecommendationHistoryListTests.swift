@@ -48,20 +48,20 @@ struct RecommendationHistoryListTests {
         model.activate(scope: "42|1")
         let entries = (1...250).reversed().map { entry(Int64($0)) }
         model.rebuild(entries: entries, starredIDs: [])
-        #expect(model.rows.count == 100)
+        #expect(model.rows.count == 20)
         model.loadMore()
-        #expect(model.rows.count == 200)
+        #expect(model.rows.count == 40)
         model.selectedID = 200
         let identity = model.paginationIdentity
         let revision = model.revision
         model.rebuild(entries: entries, starredIDs: [200])
         #expect(model.selectedID == 200)
-        #expect(model.rows.count == 200)
+        #expect(model.rows.count == 40)
         #expect(model.paginationIdentity == identity)
         #expect(model.revision == revision)
         model.search = "repo2"
         model.rebuild(entries: entries, starredIDs: [200])
-        #expect(model.visibleLimit == 100)
+        #expect(model.visibleLimit == 20)
         #expect(model.paginationIdentity != identity)
         model.activate(scope: "99|2")
         #expect(model.selectedID == nil)
@@ -75,10 +75,10 @@ struct RecommendationHistoryListTests {
         let model = RecommendationHistoryListModel()
         let entries = (1...10_050).reversed().map { entry(Int64($0)) }
         model.rebuild(entries: entries, starredIDs: [])
-        #expect(model.rows.count == 100)
+        #expect(model.rows.count == 20)
         #expect(model.rows.first?.id == 10_050)
         let identity = model.paginationIdentity
-        for _ in 0..<100 { model.loadMore() }
+        for _ in stride(from: 20, to: entries.count, by: 20) { model.loadMore() }
         #expect(model.rows.map(\.id) == entries.map(\.id))
         #expect(Set(model.rows.map(\.id)).count == entries.count)
         #expect(!model.hasMore)
@@ -90,17 +90,17 @@ struct RecommendationHistoryListTests {
         let starredIDs = Set((1...450).map(Int64.init))
         model.rebuild(entries: entries, starredIDs: starredIDs)
         #expect(model.filtered.count == 450)
-        #expect(model.rows.count == 100)
+        #expect(model.rows.count == 20)
         #expect(model.rows.first?.id == 450)
         #expect(model.selectedID == nil)
         #expect(model.paginationIdentity != identity)
         model.loadMore()
-        #expect(model.rows.count == 200)
+        #expect(model.rows.count == 40)
         model.filter = .all
         model.search = "repo9999"
         model.rebuild(entries: entries, starredIDs: starredIDs)
         #expect(model.rows.map(\.id) == [9999])
-        #expect(model.visibleLimit == 100)
+        #expect(model.visibleLimit == 20)
         #expect(!model.hasMore)
     }
 
@@ -110,23 +110,23 @@ struct RecommendationHistoryListTests {
         var entries = (1...350).map { entry(Int64($0)) }
         model.rebuild(entries: entries, starredIDs: [])
         model.loadMore()
-        model.selectedID = 150
+        model.selectedID = 30
         let identity = model.paginationIdentity
         let revision = model.revision
-        entries[149] = entry(150, dismissed: true, description: "Updated project description")
+        entries[29] = entry(30, dismissed: true, description: "Updated project description")
         model.rebuild(entries: entries, starredIDs: [])
-        #expect(model.rows.count == 200)
-        #expect(model.rows[149].item?.description == "Updated project description")
-        #expect(model.rows[149].isDismissed)
+        #expect(model.rows.count == 40)
+        #expect(model.rows[29].item?.description == "Updated project description")
+        #expect(model.rows[29].isDismissed)
         #expect(model.selectedEntry?.isDismissed == true)
-        #expect(model.selectedID == 150)
+        #expect(model.selectedID == 30)
         #expect(model.paginationIdentity == identity)
         #expect(model.revision == revision)
         model.filter = .dismissed
         model.rebuild(entries: entries, starredIDs: [])
-        #expect(model.rows.map(\.id) == [150])
-        #expect(model.selectedID == 150)
-        entries[149] = entry(150)
+        #expect(model.rows.map(\.id) == [30])
+        #expect(model.selectedID == 30)
+        entries[29] = entry(30)
         model.rebuild(entries: entries, starredIDs: [])
         #expect(model.rows.isEmpty)
         #expect(model.selectedID == nil)

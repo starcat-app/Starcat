@@ -493,48 +493,23 @@ private struct ExploreDiscoveryListView: View {
                 )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
-                .automaticListPagination(
-                    appearingIndex: item.index,
-                    visibleItemCount: indexedRepos.count,
-                    loadedItemCount: viewModel.repos.count,
-                    hasMore: hasPublishedCurrentQuery && viewModel.nextPage != nil,
-                    // 只用 isLoading 做闸门，不掺 isRefreshing：SWR 后台刷新几乎覆盖
-                    // 每次进入分类的头几秒，若一并拦截，快速滚动触发的请求会被整体
-                    // 吞掉且刷新完成后无法经 onChange 恢复（见 loadMoreIfNeeded 注释）。
-                    isLoading: viewModel.isLoading,
-                    identity: queryIdentity
-                ) {
-                    await viewModel.loadMoreIfNeeded(
-                        repository: dependencies.discoveryRepository,
-                        currentRepo: repo,
-                        appearingIndex: item.index,
-                        visibleItemCount: indexedRepos.count,
-                        mode: mode,
-                        language: mode == .discover ? nil : selectedLanguage,
-                        topic: mode == .discover ? selectedTopic : nil,
-                        platform: mode == .discover ? selectedPlatform : nil,
-                        sort: currentSort,
-                        searchQuery: quickSearchQuery,
-                        licenseFilter: settings.licenseFilter
-                    )
-                }
+                .automaticListPagination(appearingIndex: item.index)
             }
         }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
-        .automaticListPaginationFill(
+        .automaticListPagination(
             visibleItemCount: indexedRepos.count,
             loadedItemCount: viewModel.repos.count,
             hasMore: hasPublishedCurrentQuery && viewModel.nextPage != nil,
-            // 与行级触发器同口径：SWR 后台刷新不拦截分页（见上方注释）。
+            // SWR 刷新保留可浏览的本地快照，只有首次加载占用分页入口。
             isLoading: viewModel.isLoading,
-            identity: queryIdentity
+            identity: "\(queryIdentity):\(settings.skillScanFilterIdentity)",
+            fillsFilteredWindow: settings.skillFilter == .any
         ) {
             await viewModel.loadMoreIfNeeded(
                 repository: dependencies.discoveryRepository,
-                currentRepo: viewModel.repos.last,
-                appearingIndex: nil,
-                visibleItemCount: indexedRepos.count,
+                currentRepo: nil,
                 mode: mode,
                 language: mode == .discover ? nil : selectedLanguage,
                 topic: mode == .discover ? selectedTopic : nil,
@@ -824,8 +799,11 @@ private struct ExploreDiscoveryListView: View {
     /// 来源页没有命中时仍向后消费；每次最多补 20 页，并始终显示已核实数量。
     private func fillSkillResults() async {
         for _ in 0..<20 {
-            guard !Task.isCancelled, settings.skillFilter != .any,
-                  indexedRepos(for: viewModel.repos).count < 40, viewModel.nextPage != nil, !viewModel.isLoading else { return }
+            guard !Task.isCancelled, settings.skillFilter != .any, !viewModel.isLoading,
+                  ListPaginationPolicy.shouldFillVisibleWindow(
+                    visibleItemCount: indexedRepos(for: viewModel.repos).count,
+                    hasMore: viewModel.nextPage != nil
+                  ) else { return }
             guard skillPageBudget.claim(scope: "\(skillScanScope):\(dependencies.repoSkillStore.paginationRevision)") else { return }
             let count = viewModel.repos.count
             await viewModel.loadMoreIfNeeded(

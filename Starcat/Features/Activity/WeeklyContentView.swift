@@ -157,7 +157,10 @@ struct WeeklyContentView: View {
             let scope = "weekly:\(selectedLanguage ?? ""):\(viewModel.quickSearchQuery):\(settings.skillScanFilterIdentity):\(settings.exploreCatalogPreferences.hiddenWeeklySources)"
             dependencies.repoSkillStore.enqueue(candidates, scope: scope)
             for _ in 0..<20 {
-                guard !Task.isCancelled, globalFilteredItems(viewModel.items).count < 40, viewModel.hasMore else { break }
+                guard !Task.isCancelled, ListPaginationPolicy.shouldFillVisibleWindow(
+                    visibleItemCount: globalFilteredItems(viewModel.items).count,
+                    hasMore: viewModel.hasMore
+                ) else { break }
                 guard skillPageBudget.claim(scope: "\(scope):\(dependencies.repoSkillStore.paginationRevision)") else { break }
                 let count = viewModel.items.count
                 await viewModel.loadMoreIfNeeded()
@@ -748,16 +751,7 @@ struct WeeklyContentView: View {
                 )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
-                .automaticListPagination(
-                    appearingIndex: index,
-                    visibleItemCount: visibleItems.count,
-                    loadedItemCount: viewModel.items.count,
-                    hasMore: viewModel.hasMore,
-                    isLoading: viewModel.isLoading || viewModel.isLoadingMore,
-                    identity: "weekly-\(viewModel.itemsRevision)-\(settings.licenseFilter.cacheKey)"
-                ) {
-                    await viewModel.loadMoreIfNeeded()
-                }
+                .automaticListPagination(appearingIndex: index)
             }
 
             if viewModel.isLoadingMore {
@@ -774,12 +768,13 @@ struct WeeklyContentView: View {
         }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
-        .automaticListPaginationFill(
+        .automaticListPagination(
             visibleItemCount: visibleItems.count,
             loadedItemCount: viewModel.items.count,
             hasMore: viewModel.hasMore,
             isLoading: viewModel.isLoading || viewModel.isLoadingMore,
-            identity: "weekly-\(viewModel.itemsRevision)-\(settings.licenseFilter.cacheKey)"
+            identity: "weekly-\(viewModel.itemsRevision)-\(viewModel.page)-\(settings.skillScanFilterIdentity)",
+            fillsFilteredWindow: settings.skillFilter == .any
         ) {
             await viewModel.loadMoreIfNeeded()
         }
@@ -1064,7 +1059,7 @@ final class WeeklyContentViewModel {
 
     /// `.local` 模式下客户端分页 page size（与后端 default page=20 对齐，让"切到 local
     /// 后滚动"与"remote 模式滚动"视觉体验一致）。
-    private static let localPageSize: Int = 20
+    private static let localPageSize = ListPaginationPolicy.repoCardPageSize
     /// 常用 source / language / sort 组合只保留近期工作集，避免会话内无限增长。
     private static let preparedSnapshotCapacity: Int = 12
 
@@ -1451,6 +1446,7 @@ final class WeeklyContentViewModel {
                     language: selectedLanguage.isEmpty ? nil : selectedLanguage,
                     sort: selectedSort,
                     page: nextPage,
+                    pageSize: Self.localPageSize,
                     allowedSources: allowedQuerySources
                 )
             )
@@ -1669,6 +1665,7 @@ final class WeeklyContentViewModel {
                     language: selectedLanguage.isEmpty ? nil : selectedLanguage,
                     sort: selectedSort,
                     page: 1,
+                    pageSize: Self.localPageSize,
                     allowedSources: allowedQuerySources
                 )
             )

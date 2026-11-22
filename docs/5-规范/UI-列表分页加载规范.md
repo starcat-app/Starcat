@@ -41,6 +41,8 @@ Starcat 的交互列表必须在普通滚动、快速滑到底部、筛选后尾
 
 `prefetchDistance` 是触发距离，不是每页大小。每页大小由数据源与性能要求决定，禁止因为预取距离为 10 就把所有 API page size 强制改成 10。
 
+主窗口的星标、探索与活动中栏仓库列表使用 `ListPaginationPolicy.repoCardPageSize`，首批和追加均为最多 20 条。中栏列表容器通过 `.automaticListPagination(...)` 提供当前快照，行通过 `.automaticListPagination(appearingIndex:)` 报告实际视口位置。多个尾行进入视口时，同一快照只请求一次。筛选后不足 10 条时按来源允许的范围补页。
+
 ## 强制规则
 
 ### 1. 自动列表只使用共享策略

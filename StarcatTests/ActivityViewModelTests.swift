@@ -922,7 +922,7 @@ struct ActivityViewModelTests {
 
         h.viewModel.loadMoreIfNeeded()
 
-        #expect(h.viewModel.items.count == 60)
+        #expect(h.viewModel.items.count == 40)
         #expect(h.viewModel.rowRevealRevision == revisionBeforeAppend,
                 "本地分页 append 只动 items，行入场快照不重播")
     }
@@ -1165,7 +1165,7 @@ struct ActivityViewModelTests {
         try await h.eventRepo.upsertMany(records)
 
         await h.viewModel.ensureLoaded(category: .following)
-        #expect(h.viewModel.items.count == ActivityViewModel.pageSize)
+        #expect(h.viewModel.items.count == 20)
         #expect(h.viewModel.hasMoreItems)
 
         h.viewModel.loadMoreIfNeeded()
@@ -1199,14 +1199,18 @@ struct ActivityViewModelTests {
         await h.viewModel.ensureLoaded(category: .following)
         let firstPageIDs = h.viewModel.items.map(\.id)
         let revisionBeforeAppend = h.viewModel.itemsRevision
+        #expect(firstPageIDs.count == 20)
 
         h.viewModel.loadMoreIfNeeded()
 
-        #expect(h.viewModel.items.count == 60)
+        #expect(h.viewModel.items.count == 40)
         #expect(Array(h.viewModel.items.map(\.id).prefix(ActivityViewModel.pageSize)) == firstPageIDs,
                 "append 后前一页 identity 必须保持原顺序,避免 List 误判为整段替换")
         #expect(h.viewModel.itemsRevision == revisionBeforeAppend,
                 "本地分页 append 不应 bump revision,否则会触发整栏 reveal / 重建")
+        #expect(h.viewModel.hasMoreItems)
+        h.viewModel.loadMoreIfNeeded()
+        #expect(h.viewModel.items.count == 60)
         #expect(h.viewModel.hasMoreItems == false)
     }
 

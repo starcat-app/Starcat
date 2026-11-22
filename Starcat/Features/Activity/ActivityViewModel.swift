@@ -99,7 +99,7 @@ final class ActivityViewModel {
     nonisolated static let primeStarredLimit = 150
 
     /// 列表客户端分页：首屏 + 滚到底增量加载（对齐 Weekly `localPageSize`）。
-    nonisolated static let pageSize = 30
+    nonisolated static let pageSize = ListPaginationPolicy.repoCardPageSize
 
     /// 超过该条数的 filter 走后台线程（`.all` 始终后台）。
     nonisolated static let asyncFilterItemThreshold = 400

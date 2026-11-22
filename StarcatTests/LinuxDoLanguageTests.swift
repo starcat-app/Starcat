@@ -118,7 +118,7 @@ struct LinuxDoLanguageTests {
         #expect(result.isFiltered)
     }
 
-    /// 语言变化重新从首批 40 项开始；即使两次结果都为空，也保留不同的分页身份。
+    /// 语言变化重新从首批 20 项开始；即使两次结果都为空，也保留不同的分页身份。
     @Test func changingLanguageResetsLoadedPagesAndEmptyCategoryIdentity() throws {
         let repos = try repositories(Array(repeating: "Swift", count: 70) + Array(repeating: "Rust", count: 25))
         let model = LinuxDoListModel()
@@ -128,11 +128,11 @@ struct LinuxDoLanguageTests {
             }
             model.reset(repositories: matching, promotionDates: [:], search: "", recentPromotionFirst: false, identity: "linuxdo:\(language)")
             #expect(model.total == matching.count)
-            #expect(model.rows.count == min(40, matching.count))
+            #expect(model.rows.count == min(20, matching.count))
             #expect(model.identity == "linuxdo:\(language)")
             if language == "Swift" {
                 model.loadMore()
-                #expect(model.rows.count == 70)
+                #expect(model.rows.count == 40)
             }
         }
         #expect(model.rows.isEmpty)
@@ -154,12 +154,12 @@ struct LinuxDoLanguageTests {
         model.reset(repositories: prepare(), promotionDates: [:], search: "", recentPromotionFirst: false, identity: "provider:7:Swift")
         #expect(preparations == 1)
         #expect(model.rows.map(\.repoID) == loadedIDs)
-        #expect(model.rows.count == 80)
+        #expect(model.rows.count == 40)
         #expect(model.hasMore)
 
         model.reset(repositories: prepare(), promotionDates: [:], search: "", recentPromotionFirst: false, identity: "provider:8:Swift")
         #expect(preparations == 2)
-        #expect(model.rows.count == 40)
+        #expect(model.rows.count == 20)
         #expect(model.total == 95)
     }
 
