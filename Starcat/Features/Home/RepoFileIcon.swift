@@ -10,13 +10,21 @@ import SwiftUI
 
 /// 文件名始终由旁边的文本表达，图标本身不重复朗读。
 struct RepoFileIcon: View {
-    let name: String
-    var size: CGFloat = 16
+    private let source: BusinessIcon.Source
+    private let size: CGFloat
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
+    init(name: String, size: CGFloat = 16) {
+        self.init(source: RepoFileTypeIcon.iconSource(forFileName: name), size: size)
+    }
+
+    init(source: BusinessIcon.Source, size: CGFloat) {
+        self.source = source
+        self.size = size
+    }
+
     var body: some View {
-        let source = RepoFileTypeIcon.iconSource(forFileName: name)
         Group {
             if case .asset(let asset) = source, !asset.hasPrefix("Business"), NSImage(named: asset) != nil {
                 Image(asset)

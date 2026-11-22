@@ -316,8 +316,17 @@ private struct ReleaseAssetDownloadToastModifier: ViewModifier {
 // MARK: - Icon helper
 
 enum ReleaseAssetIcon {
-    /// Release 资产类型图标：dmg 硬盘 / pkg 软件包 / 压缩包 / Windows 显示器 / Linux 终端 / app 窗口。
     static func iconSource(for filename: String) -> BusinessIcon.Source {
+        buildSource(for: filename) ?? .business(.file)
+    }
+
+    /// 下载清单保留构建产物的专用图标，签名和普通附件按文件自身的类型展示。
+    static func workspaceSource(for filename: String) -> BusinessIcon.Source {
+        if filename.lowercased().hasSuffix(".sig") { return .system("checkmark.seal") }
+        return buildSource(for: filename) ?? RepoFileTypeIcon.iconSource(forFileName: filename)
+    }
+
+    private static func buildSource(for filename: String) -> BusinessIcon.Source? {
         let lower = filename.lowercased()
         if lower.hasSuffix(".dmg") { return .business(.storage) }
         if lower.hasSuffix(".pkg") { return .business(.packageAsset) }
@@ -325,6 +334,6 @@ enum ReleaseAssetIcon {
         if lower.hasSuffix(".exe") || lower.hasSuffix(".msi") { return .business(.monitor) }
         if lower.hasSuffix(".deb") || lower.hasSuffix(".rpm") || lower.hasSuffix(".appimage") { return .business(.terminal) }
         if lower.hasSuffix(".app") { return .business(.appWindow) }
-        return .business(.file)
+        return nil
     }
 }

@@ -103,7 +103,7 @@ private struct ReleaseWorkspaceAssetRow: View {
 
     var body: some View {
         HStack(spacing: 9) {
-            BusinessIcon(source: ReleaseAssetIcon.iconSource(for: build.asset.name), pointSize: 19)
+            RepoFileIcon(source: ReleaseAssetIcon.workspaceSource(for: build.asset.name), size: 19)
                 .frame(width: 29, height: 29)
                 .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
             VStack(alignment: .leading, spacing: 3) {

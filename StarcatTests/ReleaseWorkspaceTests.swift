@@ -45,6 +45,18 @@ struct ReleaseWorkspaceTests {
         #expect(builds.filter(ReleaseArtifactFilter(platform: .windows, architecture: .intel).matches).isEmpty)
     }
 
+    @Test("下载文件区区分安装包、压缩包、签名和普通文件")
+    func assetIconsUseFileTypes() {
+        let jsonSource = RepoFileTypeIcon.iconSource(forFileName: "latest.json")
+        #expect(ReleaseAssetIcon.workspaceSource(for: "app-arm64.dmg") == .business(.storage))
+        #expect(ReleaseAssetIcon.workspaceSource(for: "app-arm64.rpm") == .business(.terminal))
+        #expect(ReleaseAssetIcon.workspaceSource(for: "app.tar.gz") == .business(.fileArchive))
+        #expect(ReleaseAssetIcon.workspaceSource(for: "app.rpm.SIG") == .system("checkmark.seal"))
+        #expect(ReleaseAssetIcon.workspaceSource(for: "latest.json") == jsonSource)
+        #expect(ReleaseAssetIcon.workspaceSource(for: "data.unknownext") == .business(.file))
+        #expect(ReleaseAssetIcon.iconSource(for: "latest.json") == .business(.file))
+    }
+
     @Test("跨页深链只消费一次，历史已读版本与其他版本都可搜索和定位")
     @MainActor func selectionAndPaging() async throws {
         let database = try InMemoryDatabaseManager()
