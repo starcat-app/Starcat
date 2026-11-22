@@ -32,12 +32,20 @@ struct DiskChatHistoryStoreTests {
         return (store, root)
     }
 
-    private func makeIsolatedSQLiteStore(file: StaticString = #filePath, line: UInt = #line) throws
-        -> (store: DiskChatHistoryStore, root: URL)
+    private func makeIsolatedSQLiteStore(
+        maxTotalBytes: Int64? = nil,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws -> (store: DiskChatHistoryStore, root: URL)
     {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("starcat-chat-history-sqlite-test-\(UUID().uuidString)", isDirectory: true)
-        let store = DiskChatHistoryStore(rootOverride: root, storageKind: .sqlite)
+        // maxTotalBytes 仅测试注入：小配额驱动 LRU 淘汰路径，生产保持默认 100 MiB。
+        let store = DiskChatHistoryStore(
+            rootOverride: root,
+            storageKind: .sqlite,
+            sqliteMaxTotalBytes: maxTotalBytes
+        )
         return (store, root)
     }
 
@@ -67,6 +75,19 @@ struct DiskChatHistoryStoreTests {
             updatedAt: updatedAt,
             messages: messages
         )
+    }
+
+    /// 构造指定近似逻辑字节量的会话：ASCII 填充 content，字符数即 UTF-8 字节数，
+    /// 便于精确断言 LRU 淘汰的扣减口径。
+    private func makeSizedSession(
+        id: UUID = UUID(),
+        title: String,
+        contentBytes: Int,
+        updatedAt: Date
+    ) -> ChatSession {
+        let content = String(repeating: "a", count: contentBytes)
+        let message = ChatMessage(id: UUID(), role: .user, content: content, timestamp: updatedAt)
+        return ChatSession(id: id, title: title, createdAt: updatedAt, updatedAt: updatedAt, messages: [message])
     }
 
     // MARK: - listSessions
@@ -517,5 +538,73 @@ struct DiskChatHistoryStoreTests {
         #expect(store.sessionCount == 0)
         #expect(store.repoCount == 0)
         #expect(try store.listSessions(owner: "octo", repo: "demo").isEmpty)
+    }
+
+    // MARK: - SQLite 后端：LRU 淘汰
+
+    @Test("SQLite 后端：略超配额按最旧优先淘汰，删到达标即停不清空")
+    func sqliteLruSweepStopsAtQuota() throws {
+        // 配额 2000 逻辑字节：A(1501) 保存后未超；B(701) 加入后共 2202 超配额 → 只删 A；
+        // C(701) 加入后共 1402 未超 → no-op。旧实现用物理文件大小做停止条件
+        // （事务内 DELETE 不缩文件，页开销恒真），会把 A、B、C 全部删光。
+        let (store, root) = try makeIsolatedSQLiteStore(maxTotalBytes: 2000)
+        defer { cleanup(root) }
+
+        let a = makeSizedSession(title: "A", contentBytes: 1500, updatedAt: Date(timeIntervalSince1970: 1000))
+        let b = makeSizedSession(title: "B", contentBytes: 700, updatedAt: Date(timeIntervalSince1970: 2000))
+        let c = makeSizedSession(title: "C", contentBytes: 700, updatedAt: Date(timeIntervalSince1970: 3000))
+
+        // saveSession 内部隐式触发 sweep，即生产真实路径。
+        try store.saveSession(owner: "octo", repo: "demo", session: a)
+        try store.saveSession(owner: "octo", repo: "demo", session: b)
+        try store.saveSession(owner: "octo", repo: "demo", session: c)
+
+        #expect(try store.loadSession(owner: "octo", repo: "demo", sessionId: a.id) == nil)
+        // #require 的宏展开不传播外层 try，内层抛错表达式必须自带 try。
+        let loadedB = try #require(try store.loadSession(owner: "octo", repo: "demo", sessionId: b.id))
+        #expect(loadedB.messages.first?.content == String(repeating: "a", count: 700))
+        let loadedC = try #require(try store.loadSession(owner: "octo", repo: "demo", sessionId: c.id))
+        #expect(loadedC.messages.first?.content == String(repeating: "a", count: 700))
+        #expect(store.sessionCount == 2)
+
+        // 幂等：再次显式 sweep，保留集不变。
+        try store.lruSweep()
+        #expect(store.sessionCount == 2)
+        #expect(try store.loadSession(owner: "octo", repo: "demo", sessionId: b.id) != nil)
+        #expect(try store.loadSession(owner: "octo", repo: "demo", sessionId: c.id) != nil)
+    }
+
+    @Test("SQLite 后端：连续超配额时逐轮扣减逻辑字节")
+    func sqliteLruSweepDeductsPerSession() throws {
+        // 每加入一个会话都触发 sweep：A(1201) 存活 → B(1101) 加入后共 2302 删 A →
+        // C(1001) 加入后共 2102 删 B → 只剩 C。
+        let (store, root) = try makeIsolatedSQLiteStore(maxTotalBytes: 2000)
+        defer { cleanup(root) }
+
+        let a = makeSizedSession(title: "A", contentBytes: 1200, updatedAt: Date(timeIntervalSince1970: 1000))
+        let b = makeSizedSession(title: "B", contentBytes: 1100, updatedAt: Date(timeIntervalSince1970: 2000))
+        let c = makeSizedSession(title: "C", contentBytes: 1000, updatedAt: Date(timeIntervalSince1970: 3000))
+
+        try store.saveSession(owner: "octo", repo: "demo", session: a)
+        try store.saveSession(owner: "octo", repo: "demo", session: b)
+        try store.saveSession(owner: "octo", repo: "demo", session: c)
+
+        #expect(store.sessionCount == 1)
+        #expect(try store.loadSession(owner: "octo", repo: "demo", sessionId: a.id) == nil)
+        #expect(try store.loadSession(owner: "octo", repo: "demo", sessionId: b.id) == nil)
+        #expect(try store.loadSession(owner: "octo", repo: "demo", sessionId: c.id) != nil)
+    }
+
+    @Test("SQLite 后端：默认配额下小库 sweep no-op")
+    func sqliteLruSweepDefaultQuotaNoop() throws {
+        // 默认 100 MiB 配额：极小测试库不应有任何淘汰（对照 JSON 后端 lruSweepUnderLimitNoop）。
+        let (store, root) = try makeIsolatedSQLiteStore()
+        defer { cleanup(root) }
+
+        try store.saveSession(owner: "octo", repo: "demo", session: makeSession())
+        try store.saveSession(owner: "octo", repo: "demo", session: makeSession())
+
+        try store.lruSweep()
+        #expect(store.sessionCount == 2)
     }
 }
