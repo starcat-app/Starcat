@@ -81,10 +81,19 @@ final class CacheCleaner {
     func loadStatistics() async -> CacheStatistics {
         let (readmeCount, readmeBytes) = await loadReadmeStats()
         let imageDisk = await calculateImageDiskBytes() + attachmentImages.diskSize()
-        // 目录枚举和文件属性读取都是同步磁盘 I/O，设置页只等待统计快照。
+        // 目录枚举和文件属性读取都是同步磁盘 I/O，派到 utility 队列执行，设置页只等待统计快照。
+        // 关键约束：utility 闭包在任意后台线程运行，闭包内禁止触碰任何 MainActor 隔离状态 ——
+        // bb2a61b0 曾直接在其中调用 MainActor 隔离的 loadArchiveStats()，Swift 6 动态隔离检查
+        // （dispatch_assert_queue）在该线程陷阱崩溃。因此先在主线程快照依赖，再调 nonisolated
+        // 静态函数：函数体只依赖传入参数，不捕获 self。
+        let fileManager = self.fileManager
+        let fixedArchiveDirectory = self.fixedArchiveDirectory
         let archives = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
-                continuation.resume(returning: self.loadArchiveStats())
+                continuation.resume(returning: Self.loadArchiveStats(
+                    fileManager: fileManager,
+                    fixedArchiveDirectory: fixedArchiveDirectory
+                ))
             }
         }
         return CacheStatistics(
@@ -139,8 +148,11 @@ final class CacheCleaner {
     /// 只删除共享下载目录里的 ZIP 文件，保留根目录和任何非 ZIP 文件。
     func clearArchives() {
         do {
-            let directory = try archiveDirectoryURL()
-            for url in archiveFileURLs(in: directory) {
+            let directory = try Self.archiveDirectoryURL(
+                fileManager: fileManager,
+                fixedArchiveDirectory: fixedArchiveDirectory
+            )
+            for url in Self.archiveFileURLs(in: directory, using: fileManager) {
                 try fileManager.removeItem(at: url)
             }
             removeEmptySubdirectories(in: directory)
@@ -152,7 +164,10 @@ final class CacheCleaner {
 
     /// 打开共享 ZIP 下载目录；目录尚未创建时先创建。
     func revealArchiveDirectory() throws {
-        let directory = try archiveDirectoryURL()
+        let directory = try Self.archiveDirectoryURL(
+            fileManager: fileManager,
+            fixedArchiveDirectory: fixedArchiveDirectory
+        )
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         NSWorkspace.shared.open(directory)
     }
@@ -183,9 +198,20 @@ final class CacheCleaner {
         }
     }
 
-    private func loadArchiveStats() -> (count: Int, bytes: Int64) {
+    /// 归档 ZIP 统计。nonisolated static：只依赖显式传入的参数、不触碰 self，
+    /// 因此既能在 utility 队列供 loadStatistics 使用，也能被 MainActor 的清理路径复用。
+    /// 注意：类上的 @MainActor 同样隔离 static 成员，必须显式 nonisolated 才能在后台队列调用。
+    /// FileManager 本身线程安全；依赖通过参数传递而非属性访问，规避跨隔离读取（FileManager 非 Sendable）。
+    private nonisolated static func loadArchiveStats(
+        fileManager: FileManager,
+        fixedArchiveDirectory: URL?
+    ) -> (count: Int, bytes: Int64) {
         do {
-            let files = archiveFileURLs(in: try archiveDirectoryURL())
+            let directory = try archiveDirectoryURL(
+                fileManager: fileManager,
+                fixedArchiveDirectory: fixedArchiveDirectory
+            )
+            let files = archiveFileURLs(in: directory, using: fileManager)
             let bytes = files.reduce(into: Int64(0)) { total, url in
                 let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize
                 total += Int64(size ?? 0)
@@ -197,7 +223,11 @@ final class CacheCleaner {
         }
     }
 
-    private func archiveDirectoryURL() throws -> URL {
+    /// 共享 ZIP 下载目录路径：fixed 注入优先（测试隔离用），否则 Application Support/Starcat/archives。
+    private nonisolated static func archiveDirectoryURL(
+        fileManager: FileManager,
+        fixedArchiveDirectory: URL?
+    ) throws -> URL {
         if let fixedArchiveDirectory { return fixedArchiveDirectory }
         return try fileManager.url(
             for: .applicationSupportDirectory,
@@ -208,7 +238,8 @@ final class CacheCleaner {
         .appendingPathComponent("Starcat/archives", isDirectory: true)
     }
 
-    private func archiveFileURLs(in directory: URL) -> [URL] {
+    /// 枚举目录下的 ZIP 正式文件（跳过隐藏文件与目录）。
+    private nonisolated static func archiveFileURLs(in directory: URL, using fileManager: FileManager) -> [URL] {
         guard let enumerator = fileManager.enumerator(
             at: directory,
             includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
