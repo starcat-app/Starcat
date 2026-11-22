@@ -8,11 +8,10 @@
 //  - 头像（圆形，56pt）
 //  - 显示名 + @login
 //  - 三栏统计：本地 Starred / 远程 Followers / 远程 Following
-//  - 点击头像 → 跳转 GitHub 主页；左上角"…"按钮 → popover：退出登录；右上角分享按钮 → 分享卡 sheet
+//  - 点击头像 → 跳转 GitHub 主页；右上角"…"按钮 → 账户浮层；左上角分享按钮 → 分享卡 sheet
 //
 //  设计约束：
-//  - 用 popover 而非 Menu，避免 macOS 26 toolbar 上 Menu(label: custom view)
-//    导致的 sizing bug（详情见 docs/工程进度/2026-05-30 评审）
+//  - 账户资料以主窗口边缘定位，按钮只提供箭头锚点。
 //  - 数据来源：本地 starred 计数走 HomeViewModel.totalCount；
 //    Followers/Following 走 AuthSession 的 user 字段（首次 /user 调用时拉到）
 //  - 未授权态：不渲染（Sidebar 在登录后才挂载）
@@ -23,6 +22,10 @@ import AppKit
 import Combine
 
 struct SidebarHeaderView: View {
+    /// 浮层沿头像行右缘加上留白，定位到实际侧栏边缘。
+    private static let horizontalInset: CGFloat = 14
+    private static let accountMenuHitSize: CGFloat = 22
+
     /// 图谱由主窗口承载，统计卡不自行创建窗口或持有网络任务。
     var onOpenFollowGraph: (FollowGraphRelation) -> Void = { _ in }
     /// 与 Explore 侧栏共享的新功能标识状态，保证同一功能在任一入口点击后不再提示。
@@ -95,7 +98,7 @@ struct SidebarHeaderView: View {
                 unauthenticatedIdentity()
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, Self.horizontalInset)
         .padding(.top, 8)
         // 登录态由色条下方 6pt 热区与草坪顶部 2pt 组成 8pt 间距。
         .padding(.bottom, authSession.state.isAuthenticated ? 0 : 12)
@@ -395,6 +398,11 @@ struct SidebarHeaderView: View {
                 Spacer()
                 accountMenu()
             }
+            .background {
+                if showAccountPopover {
+                    accountPopover(user: user)
+                }
+            }
         }
     }
 
@@ -421,8 +429,6 @@ struct SidebarHeaderView: View {
         .accessibilityLabel(Text("sharecard.button.help"))
     }
 
-    /// 复用原有右上角入口；资料和账户操作收进同一个原生 Popover，避免出现两个省略号按钮。
-    @ViewBuilder
     private func accountMenu() -> some View {
         Button {
             accountMenuReferenceDate = Date()
@@ -432,33 +438,38 @@ struct SidebarHeaderView: View {
                 .font(.system(size: 16))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.secondary)
+                .frame(width: Self.accountMenuHitSize, height: Self.accountMenuHitSize)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .popover(isPresented: $showAccountPopover, arrowEdge: .trailing) {
-            if let user = authSession.state.user {
-                ProfileAccountPopover(
-                    user: user,
-                    service: dependencies.profileExtrasService,
-                    lastRefreshed: userProfileService.lastFetchedAt.map(lastRefreshedText),
-                    onRefresh: {
-                        dependencies.profileExtrasService.load(user: user, force: true)
-                        userProfileService.load(login: user.login, force: true)
-                        contributionService.load(login: user.login, force: true)
-                        developerLanguageService.load(login: user.login, force: true)
-                        Task { await refreshGitHubStarLists(login: user.login) }
-                    },
-                    onSignOut: {
-                        showAccountPopover = false
-                        Task { await authSession.signOut() }
-                    }
-                )
-                .id(user.id)
-                .appLocaleEnvironment()
-            }
-        }
         .help(Text("profile.extras.title"))
         .accessibilityLabel(Text("profile.extras.title"))
+    }
+
+    /// 探针填满整行，让拖动侧栏触发布局更新。最右侧的按钮是箭头和二次点击的锚点。
+    private func accountPopover(user: GitHubUserDTO) -> some View {
+        ProfileAccountPopoverHost(
+            content: ProfileAccountPopover(
+                user: user,
+                service: dependencies.profileExtrasService,
+                lastRefreshed: userProfileService.lastFetchedAt.map(lastRefreshedText),
+                onRefresh: {
+                    dependencies.profileExtrasService.load(user: user, force: true)
+                    userProfileService.load(login: user.login, force: true)
+                    contributionService.load(login: user.login, force: true)
+                    developerLanguageService.load(login: user.login, force: true)
+                    Task { await refreshGitHubStarLists(login: user.login) }
+                },
+                onSignOut: {
+                    showAccountPopover = false
+                    Task { await authSession.signOut() }
+                }
+            ),
+            sidebarInset: Self.horizontalInset,
+            triggerWidth: Self.accountMenuHitSize,
+            onDismiss: { showAccountPopover = false }
+        )
     }
 
     // MARK: - 显示名 + login
