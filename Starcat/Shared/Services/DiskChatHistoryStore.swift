@@ -77,7 +77,10 @@ private protocol ChatHistoryStorageBackend: AnyObject {
     func loadSessionAsync(owner: String, repo: String, sessionId: UUID) async throws -> ChatSession?
     func loadSessionTailAsync(owner: String, repo: String, sessionId: UUID, tailCount: Int) async throws -> ChatSessionPage?
     func loadMessagesAsync(owner: String, repo: String, sessionId: UUID, start: Int, end: Int) async throws -> [ChatMessage]
-    func saveSession(owner: String, repo: String, session: ChatSession) throws
+    /// `replacingExisting`：传入会话即权威版本，无视磁盘已有内容整体替换。
+    /// 仅迁移写入（同 UUID 可能已有不同内容的旧版本）使用；常规追加保存传 false。
+    /// 注意：protocol 声明不带默认值，existential 调用点必须显式传参。
+    func saveSession(owner: String, repo: String, session: ChatSession, replacingExisting: Bool) throws
     func deleteSession(owner: String, repo: String, sessionId: UUID) throws
     func deleteAllForRepo(owner: String, repo: String) throws
     func deleteEverything() throws
@@ -197,7 +200,8 @@ final class DiskChatHistoryStore {
     }
 
     func saveSession(owner: String, repo: String, session: ChatSession) throws {
-        try backend.saveSession(owner: owner, repo: repo, session: session)
+        // facade 只暴露常规追加保存；迁移的「传入即权威」替换语义仅经 backend 直达。
+        try backend.saveSession(owner: owner, repo: repo, session: session, replacingExisting: false)
         if isMigrating { migrationWrites.append(.save(owner, repo, session.id)) }
     }
 
@@ -266,7 +270,10 @@ final class DiskChatHistoryStore {
         func writeAndVerify(_ session: ChatSession, at location: ChatHistoryLocation) throws {
             var persisted = session
             for index in persisted.messages.indices { persisted.messages[index].isStreaming = false }
-            try staged.saveSession(owner: location.owner, repo: location.repo, session: persisted)
+            // 迁移写入必须是整体替换（replacingExisting: true）：staged 库里同 UUID 可能
+            // 已有不同内容的旧版本（冲突另存场景），增量路径会保留旧前缀导致回读校验
+            // 比对的是旧内容而非传入内容，校验失败会误报迁移不可用。
+            try staged.saveSession(owner: location.owner, repo: location.repo, session: persisted, replacingExisting: true)
             guard try staged.migrationSession(at: location) == persisted else {
                 throw DiskChatHistoryStoreError.migrationUnavailable
             }
@@ -583,37 +590,49 @@ private final class JSONChatHistoryStorageBackend: ChatHistoryStorageBackend {
         }.value
     }
 
-    func saveSession(owner: String, repo: String, session: ChatSession) throws {
+    func saveSession(owner: String, repo: String, session: ChatSession, replacingExisting: Bool) throws {
         let dir = try projectDirectory(owner: owner, repo: repo)
         try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
 
         let sessionDir = try sessionDirectory(owner: owner, repo: repo, sessionId: session.id)
-        let tmpDir = dir.appendingPathComponent(".\(session.id.uuidString).tmp-\(UUID().uuidString)", isDirectory: true)
-        let chunksDir = tmpDir.appendingPathComponent("chunks", isDirectory: true)
-        try fileManager.createDirectory(at: chunksDir, withIntermediateDirectories: true)
-
         let metadata = ChatSessionMetadata(session: session, messageCount: session.messages.count)
-        try encoder.encode(metadata).write(
-            to: tmpDir.appendingPathComponent("metadata.json"),
-            options: .atomic
+        let existed = fileManager.fileExists(atPath: sessionDir.path)
+        // 旧 messageCount：新会话或 metadata 损坏时读不到，按 nil 处理走整体重建自愈。
+        // 可解码但 messageCount 为负属损坏数据：负值会让 writeMessageChunks 生成负下标，
+        // 必须归一化为 nil 走重建（迁移路径 :769 有同样防御，这里对齐）。
+        let rawOldCount = existed ? (try? readMetadata(at: sessionDir.appendingPathComponent("metadata.json")))?.messageCount : nil
+        let oldCount = rawOldCount.flatMap { $0 >= 0 ? $0 : nil }
+        // 前缀分块必须仍在磁盘上才允许增量写：chunks 目录缺失意味着历史 chunk 已丢失，
+        // 增量写无法恢复前缀（旧全量重建路径可以），此时降级整体重建恢复数据完整性。
+        let chunksDirExists = fileManager.fileExists(
+            atPath: sessionDir.appendingPathComponent("chunks", isDirectory: true).path
         )
+        let indexExisted = fileManager.fileExists(atPath: try indexFile(owner: owner, repo: repo).path)
 
-        for (chunkIndex, start) in stride(from: 0, to: session.messages.count, by: DiskChatHistoryStore.messagesPerChunk).enumerated() {
-            let end = min(start + DiskChatHistoryStore.messagesPerChunk, session.messages.count)
-            let chunk = ChatMessageChunk(startIndex: start, messages: Array(session.messages[start..<end]))
-            try encoder.encode(chunk).write(
-                to: chunksDir.appendingPathComponent(Self.chunkFileName(chunkIndex)),
-                options: .atomic
-            )
+        // 追加保存（每个对话回合的热路径）只重写受影响的尾部 chunk；旧实现每次重建
+        // 整个会话目录并重写全部分块，200 条消息 = 10 个 chunk 全量 IO。
+        // 消息数回退（读盘失败降级）、metadata 损坏、chunks 缺失或迁移显式替换
+        // （replacingExisting，传入即权威）时整体重建，顺带清掉多余 chunk。
+        var summaryBytes: Int64 = 0
+        var sessionDirDelta: Int64 = 0
+        var bytesDeltaForIndex: Int64? = nil
+        if let oldCount, !replacingExisting, chunksDirExists, session.messages.count >= oldCount {
+            // 同数保存（仅标题 / 时间戳变化）没有新消息，跳过分块写避免无谓重写含最后
+            // 一条的非整块；历史消息从不改写（调用方契约），磁盘分块已是最新内容。
+            if session.messages.count > oldCount {
+                sessionDirDelta = try writeMessageChunks(sessionDir: sessionDir, messages: session.messages, fromMessage: oldCount)
+            }
+            sessionDirDelta += try writeAtomically(try encoder.encode(metadata), to: sessionDir.appendingPathComponent("metadata.json"))
+            // 目录大小按「index 旧值 + delta」解析，不再为统计枚举整个会话目录。
+            bytesDeltaForIndex = sessionDirDelta
+        } else {
+            let oldSize: Int64 = existed ? directorySize(sessionDir) : 0
+            try writeFullSession(dir: dir, sessionDir: sessionDir, session: session, metadata: metadata)
+            summaryBytes = directorySize(sessionDir)
+            sessionDirDelta = summaryBytes - oldSize
         }
 
-        if fileManager.fileExists(atPath: sessionDir.path) {
-            try fileManager.removeItem(at: sessionDir)
-        }
-        try fileManager.moveItem(at: tmpDir, to: sessionDir)
-
-        let size = directorySize(sessionDir)
-        try upsertIndex(
+        let indexDelta = try upsertIndex(
             owner: owner,
             repo: repo,
             summary: ChatSessionSummary(
@@ -622,13 +641,71 @@ private final class JSONChatHistoryStorageBackend: ChatHistoryStorageBackend {
                 createdAt: session.createdAt,
                 updatedAt: session.updatedAt,
                 messageCount: session.messages.count,
-                bytes: size
-            )
+                bytes: summaryBytes
+            ),
+            bytesDelta: bytesDeltaForIndex
         )
 
+        // 统计增量维护（口径与 reload 一致：会话目录 + index.json）。保存热路径不再
+        // 全库遍历；全库重算只在 init / 删除 / LRU sweep 后执行。
+        if !existed {
+            sessionCount += 1
+            if !indexExisted { repoCount += 1 }
+        }
+        totalBytes += sessionDirDelta + indexDelta
+
         saveCountSinceLastSweep += 1
-        reload()
         if !suspendsRetention { try maybeTriggerLRUSweep() }
+    }
+
+    /// 增量写消息分块：从 `fromMessage` 所在 chunk 起重写到末尾（旧实现每次重建整个目录）。
+    /// 契约：调用方保证 chunks 目录存在且 `fromMessage >= 0`（saveSession 已用
+    /// chunksDirExists 与 oldCount 归一化把关，任一不满足走整体重建恢复前缀）；
+    /// 且传入消息列表的 [0, fromMessage) 前缀与磁盘内容一致——本仓库唯一热路径
+    /// 调用方 RepoAIChatViewModel 只在尾部追加，历史消息从不改写。选择「增量快」而非
+    /// 「逐字节校验前缀」，因为校验需要读回并解码全部分块，抵消增量收益。
+    /// metadata 由调用方在 chunk 之后最后写入，充当提交点：chunk 写一半失败时旧 metadata
+    /// 仍指向旧 messageCount，多写的尾部 chunk 不会被读取端读到，下次保存覆盖自愈。
+    /// - Returns: 写入文件的字节增量（新内容大小 − 旧文件大小），供 totalBytes 增量维护。
+    private func writeMessageChunks(sessionDir: URL, messages: [ChatMessage], fromMessage: Int) throws -> Int64 {
+        let perChunk = DiskChatHistoryStore.messagesPerChunk
+        let chunksDir = sessionDir.appendingPathComponent("chunks", isDirectory: true)
+        var delta: Int64 = 0
+        var chunkIndex = fromMessage / perChunk
+        while chunkIndex * perChunk < messages.count {
+            let chunkStart = chunkIndex * perChunk
+            let end = min(chunkStart + perChunk, messages.count)
+            let chunk = ChatMessageChunk(startIndex: chunkStart, messages: Array(messages[chunkStart..<end]))
+            delta += try writeAtomically(try encoder.encode(chunk), to: chunksDir.appendingPathComponent(Self.chunkFileName(chunkIndex)))
+            chunkIndex += 1
+        }
+        return delta
+    }
+
+    /// 整目录重建：tmp 组装 + 原子换入。仅用于首次落盘与会话长度回退的低频路径；
+    /// 常规追加保存走 `writeMessageChunks`，不为每条新消息重写全部分块。
+    private func writeFullSession(dir: URL, sessionDir: URL, session: ChatSession, metadata: ChatSessionMetadata) throws {
+        let tmpDir = dir.appendingPathComponent(".\(session.id.uuidString).tmp-\(UUID().uuidString)", isDirectory: true)
+        let chunksDir = tmpDir.appendingPathComponent("chunks", isDirectory: true)
+        try fileManager.createDirectory(at: chunksDir, withIntermediateDirectories: true)
+        try encoder.encode(metadata).write(to: tmpDir.appendingPathComponent("metadata.json"), options: .atomic)
+        for (chunkIndex, start) in stride(from: 0, to: session.messages.count, by: DiskChatHistoryStore.messagesPerChunk).enumerated() {
+            let end = min(start + DiskChatHistoryStore.messagesPerChunk, session.messages.count)
+            let chunk = ChatMessageChunk(startIndex: start, messages: Array(session.messages[start..<end]))
+            try encoder.encode(chunk).write(to: chunksDir.appendingPathComponent(Self.chunkFileName(chunkIndex)), options: .atomic)
+        }
+        if fileManager.fileExists(atPath: sessionDir.path) {
+            try fileManager.removeItem(at: sessionDir)
+        }
+        try fileManager.moveItem(at: tmpDir, to: sessionDir)
+    }
+
+    /// 原子写单文件并返回字节差（旧文件不存在按 0 计）。原子写落盘内容与 `data` 逐字节
+    /// 一致，新大小直接取 `data.count`，省一次 stat。
+    private func writeAtomically(_ data: Data, to url: URL) throws -> Int64 {
+        let oldSize = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+        try data.write(to: url, options: .atomic)
+        return Int64(data.count) - oldSize
     }
 
     func deleteSession(owner: String, repo: String, sessionId: UUID) throws {
@@ -782,8 +859,13 @@ private final class JSONChatHistoryStorageBackend: ChatHistoryStorageBackend {
         repoCount = repos
     }
 
-    private func upsertIndex(owner: String, repo: String, summary: ChatSessionSummary) throws {
+    /// 更新 index.json 中单会话摘要，返回 index.json 的字节差（供 totalBytes 增量维护，
+    /// 口径与 reload 一致：reload 把 index.json 计入全库字节）。
+    /// `bytesDelta` 非 nil（追加保存热路径）时，目录大小按「index 旧值 + delta」解析，
+    /// 避免为统计重新枚举会话目录；为 nil（整体重建路径）时直接使用 summary.bytes。
+    private func upsertIndex(owner: String, repo: String, summary: ChatSessionSummary, bytesDelta: Int64? = nil) throws -> Int64 {
         let indexURL = try indexFile(owner: owner, repo: repo)
+        let oldIndexSize = (try? indexURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
         var index: ChatSessionIndex
         if fileManager.fileExists(atPath: indexURL.path),
            let data = try? Data(contentsOf: indexURL),
@@ -793,13 +875,21 @@ private final class JSONChatHistoryStorageBackend: ChatHistoryStorageBackend {
             index = ChatSessionIndex(sessions: [])
         }
 
-        if let pos = index.sessions.firstIndex(where: { $0.id == summary.id }) {
-            index.sessions[pos] = summary
-        } else {
-            index.sessions.append(summary)
+        var resolved = summary
+        if let bytesDelta {
+            let oldBytes = index.sessions.first(where: { $0.id == summary.id })?.bytes ?? 0
+            resolved.bytes = oldBytes + bytesDelta
         }
 
-        try encoder.encode(index).write(to: indexURL, options: .atomic)
+        if let pos = index.sessions.firstIndex(where: { $0.id == summary.id }) {
+            index.sessions[pos] = resolved
+        } else {
+            index.sessions.append(resolved)
+        }
+
+        let encoded = try encoder.encode(index)
+        try encoded.write(to: indexURL, options: .atomic)
+        return Int64(encoded.count) - oldIndexSize
     }
 
     private func syncIndexAfterRemove(owner: String, repo: String, sessionId: UUID) throws {
@@ -1097,9 +1187,15 @@ private final class SQLiteChatHistoryStorageBackend: ChatHistoryStorageBackend {
         }
     }
 
-    func saveSession(owner: String, repo: String, session: ChatSession) throws {
+    func saveSession(owner: String, repo: String, session: ChatSession, replacingExisting: Bool) throws {
         guard let dbQueue else { return }
         try dbQueue.write { db in
+            // 先读旧行拿旧 messageCount，再覆盖会话行；新会话无旧行按 0 处理。
+            let oldCount = try ChatSessionSQLRow
+                .filter(Column("id") == session.id.uuidString)
+                .fetchOne(db)?.messageCount ?? 0
+            let newCount = session.messages.count
+
             var sessionRow = ChatSessionSQLRow(
                 id: session.id.uuidString,
                 owner: owner,
@@ -1108,15 +1204,14 @@ private final class SQLiteChatHistoryStorageBackend: ChatHistoryStorageBackend {
                 createdAt: session.createdAt.timeIntervalSince1970,
                 updatedAt: session.updatedAt.timeIntervalSince1970,
                 carriedOverSummary: session.carriedOverSummary,
-                messageCount: session.messages.count
+                messageCount: newCount
             )
             try sessionRow.save(db)
 
-            try ChatMessageSQLRow
-                .filter(Column("session_id") == session.id.uuidString)
-                .deleteAll(db)
-
-            for (index, message) in session.messages.enumerated() {
+            // 单条消息按 ordinal 落盘；onConflict: .replace 兜底异常态下 ordinal 撞主键，
+            // 落盘值仍以此刻传入的消息为准。
+            func insertMessage(at index: Int) throws {
+                let message = session.messages[index]
                 var messageRow = ChatMessageSQLRow(
                     sessionId: session.id.uuidString,
                     ordinal: index,
@@ -1129,7 +1224,36 @@ private final class SQLiteChatHistoryStorageBackend: ChatHistoryStorageBackend {
                     responseCompletedAt: message.responseCompletedAt?.timeIntervalSince1970,
                     timestamp: message.timestamp.timeIntervalSince1970
                 )
-                try messageRow.insert(db)
+                try messageRow.insert(db, onConflict: .replace)
+            }
+
+            // 常规追加路径的契约：调用方只在尾部追加（RepoAIChatViewModel 的历史消息
+            // 从不改写），已有 ordinal 不再删光重插——200 条会话每个回合从
+            // 「200 删 + 200 插」降为 1~2 条 insert。
+            if replacingExisting {
+                // 迁移写入：同 UUID 在 staged 库里可能已有不同内容的旧版本（冲突另存前的
+                // 原位覆盖），传入即权威——必须删光重插。若沿用追加路径，旧前缀会顶替
+                // 传入内容，迁移后的回读校验（比对落盘与传入）将失败并中断迁移。
+                try ChatMessageSQLRow
+                    .filter(Column("session_id") == session.id.uuidString)
+                    .deleteAll(db)
+                for index in 0..<newCount {
+                    try insertMessage(at: index)
+                }
+            } else if newCount >= oldCount {
+                for index in oldCount..<newCount {
+                    try insertMessage(at: index)
+                }
+            } else {
+                // 消息数回退（如读盘失败降级保存的截断窗口）：传入即权威——前缀按传入
+                // 内容重写 + 清掉多余 ordinal，落盘状态与旧实现删光重插完全等价。
+                // 只删不插会让旧前缀顶替传入内容，本次保存的新消息直接丢失。
+                for index in 0..<newCount {
+                    try insertMessage(at: index)
+                }
+                try ChatMessageSQLRow
+                    .filter(Column("session_id") == session.id.uuidString && Column("ordinal") >= newCount)
+                    .deleteAll(db)
             }
         }
         reload()
