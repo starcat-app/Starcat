@@ -33,10 +33,12 @@ def gh(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         if args[1] == "download":
             detail = args[args.index("--pattern") + 1]
         print(f"[github-release] 开始 {label}: {detail}", flush=True)
+    # 大 DMG 在慢链路上可能超过 15 分钟，只延长上传时限。
+    timeout = 2400 if args[:2] == ("release", "upload") else 900
     started = time.monotonic()
     try:
         result = subprocess.run(
-            ["gh", *args], capture_output=True, text=True, timeout=900
+            ["gh", *args], capture_output=True, text=True, timeout=timeout
         )
     except subprocess.TimeoutExpired:
         print("[github-release] 命令超时；先回读草稿/附件状态，禁止直接重建草稿", flush=True)
