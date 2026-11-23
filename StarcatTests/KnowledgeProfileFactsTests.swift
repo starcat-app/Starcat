@@ -75,8 +75,14 @@ struct KnowledgeProfileFactsTests {
         try migrations.migrate(queue)
         try queue.read { db in
             let applied = try migrations.appliedIdentifiers(db)
-            #expect(applied.contains("v30-knowledge-activity"))
-            #expect(!applied.contains("v28-knowledge-activity"))
+            #expect(applied.contains("v28-release-1.9.7"))
+            #expect(applied.isDisjoint(with: [
+                "v28-clear-empty-repo-note-edited-at",
+                "v28-knowledge-activity",
+                "v29-recheck-legacy-zero-subscriber-counts",
+                "v30-knowledge-activity",
+                "v31-compressed-local-snapshots",
+            ]))
             #expect(try Double.fetchOne(db, sql: "SELECT started_at FROM knowledge_activity_coverage") == 100)
             #expect(try String.fetchAll(db, sql: "SELECT kind FROM knowledge_activity") == ["wroteNote"])
             #expect(try RepoNote.fetchOne(db, key: 1)?.editedAt == nil)

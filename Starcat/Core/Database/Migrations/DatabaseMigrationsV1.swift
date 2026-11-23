@@ -52,6 +52,13 @@
 //  仅在开发构建中出现过。正式 v20 继续使用 GRDB merging migration，保证 v19 正式用户
 //  一次升级，并让停在任意开发期中间状态的本机数据库收敛到同一个正式标识。
 //
+//  **1.9.7 开发期迁移（已由正式 v28 合并接管）**：
+//  `v28-clear-empty-repo-note-edited-at`、`v28-knowledge-activity`、
+//  `v29-recheck-legacy-zero-subscriber-counts`、`v30-knowledge-activity` 与
+//  `v31-compressed-local-snapshots` 仅在开发构建中出现过。正式 v28 继续使用
+//  GRDB merging migration，保证 v27 正式用户一次升级，并让停在任意开发期
+//  中间状态的本机数据库收敛到同一个正式标识。
+//
 
 import Foundation
 import GRDB
@@ -92,6 +99,14 @@ enum DatabaseMigrations {
         "v33-awesome-resource-entries",
         "v34-github-star-list-ai-auto-ignored",
     ]
+    private static let releaseV28Identifier = "v28-release-1.9.7"
+    private static let releaseV28DevelopmentIdentifiers: Set<String> = [
+        "v28-clear-empty-repo-note-edited-at",
+        "v28-knowledge-activity",
+        "v29-recheck-legacy-zero-subscriber-counts",
+        "v30-knowledge-activity",
+        "v31-compressed-local-snapshots",
+    ]
 
     /// 将所有版本的迁移注册到 migrator。
     ///
@@ -126,22 +141,91 @@ enum DatabaseMigrations {
         registerV26(into: &migrator)
         registerV27(into: &migrator)
         registerV28(into: &migrator)
-        registerV29(into: &migrator)
-        registerV30(into: &migrator)
-        registerV31(into: &migrator)
+    }
+
+    // MARK: - v28-release-1.9.7：1.9.7 正式版 schema 收口（2026-11-23）
+
+    /// 1.9.7 开发期的 4 个迁移覆盖空笔记编辑时间清理、知识动态账本、零关注者数
+    /// 核查与本地快照压缩。正式发布时，v27 线上用户必须只看到一次原子升级；
+    /// 开发机则可能停在任意中间标识。merging migration 会跳过已执行步骤、
+    /// 补齐缺失步骤，并将迁移账本收敛为唯一正式标识。禁止手工改写
+    /// `grdb_migrations`，否则 schema 与迁移账本可能失配。
+    private static func registerV28(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration(
+            releaseV28Identifier,
+            merging: releaseV28DevelopmentIdentifiers
+        ) { db, appliedIdentifiers in
+            if !appliedIdentifiers.contains("v28-clear-empty-repo-note-edited-at") {
+                try applyClearEmptyRepoNoteEditedAt(db)
+            }
+            if !appliedIdentifiers.contains("v29-recheck-legacy-zero-subscriber-counts") {
+                try applyRecheckLegacyZeroSubscriberCounts(db)
+            }
+            // 到达过 v30 的开发库账本里，v28-knowledge-activity 已被 v30 自己的
+            // merging 收敛掉，因此两个标识命中任意一个都要跳过建表。
+            let knowledgeApplied = appliedIdentifiers.contains("v28-knowledge-activity")
+                || appliedIdentifiers.contains("v30-knowledge-activity")
+            if !knowledgeApplied {
+                try applyKnowledgeActivity(db)
+            }
+            if !appliedIdentifiers.contains("v31-compressed-local-snapshots") {
+                try applyCompressedLocalSnapshots(db)
+            }
+        }
+    }
+
+    /// 旧版本的空笔记无法区分状态写入和主动清空，因此统一清除编辑时间。
+    private static func applyClearEmptyRepoNoteEditedAt(_ db: Database) throws {
+        let rows = try Row.fetchCursor(db, sql: """
+            SELECT repo_id, content FROM repo_notes WHERE edited_at IS NOT NULL
+            """)
+        var emptyNoteRepoIDs: [Int64] = []
+        while let row = try rows.next() {
+            let content: String? = row["content"]
+            if (content ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                emptyNoteRepoIDs.append(row["repo_id"])
+            }
+        }
+        for repoID in emptyNoteRepoIDs {
+            try db.execute(
+                sql: "UPDATE repo_notes SET edited_at = NULL WHERE repo_id = ?",
+                arguments: [repoID]
+            )
+        }
+    }
+
+    /// 过去的精简快照可能将缺失计数写为零，旧行无法区分这两种情况。
+    /// 只清理有歧义的统计值，打开详情时再向 GitHub 核实。
+    private static func applyRecheckLegacyZeroSubscriberCounts(_ db: Database) throws {
+        try db.execute(sql: "UPDATE repos SET subscribers_count = NULL WHERE subscribers_count = 0")
+    }
+
+    /// 每个账号有自己的库。采集起点与新账本原子创建，空账本也可以证明本机覆盖期。
+    /// 已运行专项预览版的账号库沿用原账本和采集起点。
+    private static func applyKnowledgeActivity(_ db: Database) throws {
+        try db.execute(sql: """
+            CREATE TABLE knowledge_activity_coverage (
+                id INTEGER PRIMARY KEY CHECK (id = 1), started_at REAL NOT NULL
+            );
+            CREATE TABLE knowledge_activity (
+                id INTEGER PRIMARY KEY, repo_id INTEGER NOT NULL, kind TEXT NOT NULL,
+                occurred_at REAL NOT NULL, source TEXT NOT NULL
+            );
+            CREATE INDEX idx_knowledge_activity_time ON knowledge_activity(occurred_at);
+            """)
+        try db.execute(sql: "INSERT INTO knowledge_activity_coverage VALUES (1, ?)",
+                       arguments: [Date().timeIntervalSince1970])
     }
 
     /// 逐批压缩可重建快照，向量与用于筛选的 Skill 元数据不需解码或重建。
-    private static func registerV31(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v31-compressed-local-snapshots") { db in
-            if try db.tableExists("repo_embeddings") {
-                try db.execute(sql: "ALTER TABLE repo_embeddings ADD COLUMN snapshot_payload BLOB NOT NULL DEFAULT X''")
-                try compressSnapshotRows(in: db, table: "repo_embeddings", source: "snapshot_json", target: "snapshot_payload")
-                try db.execute(sql: "ALTER TABLE repo_embeddings DROP COLUMN snapshot_json")
-            }
-            if try db.tableExists("repo_skill_scans") {
-                try compressSnapshotRows(in: db, table: "repo_skill_scans", source: "payload", target: "payload")
-            }
+    private static func applyCompressedLocalSnapshots(_ db: Database) throws {
+        if try db.tableExists("repo_embeddings") {
+            try db.execute(sql: "ALTER TABLE repo_embeddings ADD COLUMN snapshot_payload BLOB NOT NULL DEFAULT X''")
+            try compressSnapshotRows(in: db, table: "repo_embeddings", source: "snapshot_json", target: "snapshot_payload")
+            try db.execute(sql: "ALTER TABLE repo_embeddings DROP COLUMN snapshot_json")
+        }
+        if try db.tableExists("repo_skill_scans") {
+            try compressSnapshotRows(in: db, table: "repo_skill_scans", source: "payload", target: "payload")
         }
     }
 
@@ -160,56 +244,6 @@ enum DatabaseMigrations {
                 let packed = try CacheJSONCodec.isCompressed(stored) ? stored : CacheJSONCodec.pack(stored)
                 try db.execute(sql: "UPDATE \(table) SET \(target) = ? WHERE rowid = ?", arguments: [packed, rowID])
                 lastRowID = rowID
-            }
-        }
-    }
-
-    /// 每个账号有自己的库。采集起点与新账本原子创建，空账本也可以证明本机覆盖期。
-    /// 已运行专项预览版的账号库沿用原账本和采集起点。
-    private static func registerV30(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v30-knowledge-activity", merging: ["v28-knowledge-activity"]) { db, applied in
-            guard !applied.contains("v28-knowledge-activity") else { return }
-            try db.execute(sql: """
-                CREATE TABLE knowledge_activity_coverage (
-                    id INTEGER PRIMARY KEY CHECK (id = 1), started_at REAL NOT NULL
-                );
-                CREATE TABLE knowledge_activity (
-                    id INTEGER PRIMARY KEY, repo_id INTEGER NOT NULL, kind TEXT NOT NULL,
-                    occurred_at REAL NOT NULL, source TEXT NOT NULL
-                );
-                CREATE INDEX idx_knowledge_activity_time ON knowledge_activity(occurred_at);
-                """)
-            try db.execute(sql: "INSERT INTO knowledge_activity_coverage VALUES (1, ?)",
-                           arguments: [Date().timeIntervalSince1970])
-        }
-    }
-
-    /// 过去的精简快照可能将缺失计数写为零，旧行无法区分这两种情况。
-    /// 只清理有歧义的统计值，打开详情时再向 GitHub 核实。
-    private static func registerV29(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v29-recheck-legacy-zero-subscriber-counts") { db in
-            try db.execute(sql: "UPDATE repos SET subscribers_count = NULL WHERE subscribers_count = 0")
-        }
-    }
-
-    /// 旧版本的空笔记无法区分状态写入和主动清空，因此统一清除编辑时间。
-    private static func registerV28(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v28-clear-empty-repo-note-edited-at") { db in
-            let rows = try Row.fetchCursor(db, sql: """
-                SELECT repo_id, content FROM repo_notes WHERE edited_at IS NOT NULL
-                """)
-            var emptyNoteRepoIDs: [Int64] = []
-            while let row = try rows.next() {
-                let content: String? = row["content"]
-                if (content ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    emptyNoteRepoIDs.append(row["repo_id"])
-                }
-            }
-            for repoID in emptyNoteRepoIDs {
-                try db.execute(
-                    sql: "UPDATE repo_notes SET edited_at = NULL WHERE repo_id = ?",
-                    arguments: [repoID]
-                )
             }
         }
     }
@@ -476,6 +510,33 @@ enum DatabaseMigrations {
         migrator.registerMigration(
             "v34-github-star-list-ai-auto-ignored",
             migrate: applyGitHubStarListAIAutoIgnoredV20
+        )
+    }
+
+    /// 只供迁移测试重建 1.9.7 开发期数据库状态，生产启动路径始终只注册正式 v28。
+    static func registerRelease197DevelopmentMigrationsForTesting(
+        into migrator: inout DatabaseMigrator
+    ) {
+        migrator.registerMigration(
+            "v28-clear-empty-repo-note-edited-at",
+            migrate: applyClearEmptyRepoNoteEditedAt
+        )
+        migrator.registerMigration("v28-knowledge-activity", migrate: applyKnowledgeActivity)
+        migrator.registerMigration(
+            "v29-recheck-legacy-zero-subscriber-counts",
+            migrate: applyRecheckLegacyZeroSubscriberCounts
+        )
+        // 复刻开发期 v30 的 merging 语义：停在早期 v28-knowledge 的库不重复建表。
+        migrator.registerMigration(
+            "v30-knowledge-activity",
+            merging: ["v28-knowledge-activity"]
+        ) { db, applied in
+            guard !applied.contains("v28-knowledge-activity") else { return }
+            try applyKnowledgeActivity(db)
+        }
+        migrator.registerMigration(
+            "v31-compressed-local-snapshots",
+            migrate: applyCompressedLocalSnapshots
         )
     }
 #endif

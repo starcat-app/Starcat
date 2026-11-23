@@ -32,6 +32,14 @@ struct DatabaseMigrationsV1Tests {
         "v34-github-star-list-ai-auto-ignored",
     ]
 
+    private let release197DevelopmentIdentifiers: Set<String> = [
+        "v28-clear-empty-repo-note-edited-at",
+        "v28-knowledge-activity",
+        "v29-recheck-legacy-zero-subscriber-counts",
+        "v30-knowledge-activity",
+        "v31-compressed-local-snapshots",
+    ]
+
     /// 创建一个全新的内存数据库，已应用 v1。
     private func makeDB() throws -> any DatabaseWriter {
         let mgr = try InMemoryDatabaseManager()
@@ -43,7 +51,8 @@ struct DatabaseMigrationsV1Tests {
         let queue = try DatabaseQueue()
         var migrator = DatabaseMigrator()
         DatabaseMigrations.registerAll(into: &migrator)
-        try migrator.migrate(queue, upTo: "v30-knowledge-activity")
+        // 1.9.7 起 v28~v31 已合并为正式 v28，旧数据停在已发布的 v27 边界。
+        try migrator.migrate(queue, upTo: "v27-repository-skill-summaries")
 
         let json = "{\"body\":\"\(String(repeating: "Old snapshot body. ", count: 600))\"}"
         let oldPayload = Data(json.utf8)
@@ -109,6 +118,120 @@ struct DatabaseMigrationsV1Tests {
         )
         try developmentMigrator.migrate(queue, upTo: boundary)
         return (queue, developmentMigrator)
+    }
+
+    @Test("1.9.7 正式迁移应只保留单个 v28 标识")
+    func release197MigrationUsesSingleFormalIdentifier() throws {
+        let writer = try makeDB()
+        try writer.read { db in
+            var migrator = DatabaseMigrator()
+            DatabaseMigrations.registerAll(into: &migrator)
+            let applied = try migrator.appliedIdentifiers(db)
+
+            #expect(applied.contains("v28-release-1.9.7"))
+            #expect(applied.isDisjoint(with: release197DevelopmentIdentifiers))
+        }
+    }
+
+    /// 足够长以触发 zlib 压缩的旧快照 JSON：CacheJSONCodec 会原样保留小条目。
+    private static let legacySnapshotJSON =
+        "{\"body\":\"\(String(repeating: "legacy snapshot body. ", count: 60))\"}"
+
+    /// 在 v27 已发布边界构造一份含旧快照格式的数据，再复现 1.9.7 开发期账本。
+    private func makeRelease197DevelopmentDB(upTo boundary: String) throws -> DatabaseQueue {
+        let queue = try DatabaseQueue()
+        var releaseMigrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &releaseMigrator)
+        try releaseMigrator.migrate(queue, upTo: "v27-repository-skill-summaries")
+
+        try queue.write { db in
+            try db.execute(sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url, subscribers_count)
+                VALUES (1, 'starcat', 'dev-197', 'starcat/dev-197',
+                        'https://github.com/starcat/dev-197', 0)
+                """)
+            try db.execute(sql: """
+                INSERT INTO repo_notes (repo_id, content, edited_at)
+                VALUES (1, '', '2026-11-01T00:00:00Z')
+                """)
+            try db.execute(sql: """
+                INSERT INTO repo_embeddings (repo_id, model, dimensions, embedding, snapshot_json, updated_at)
+                VALUES (1, 'p/test', 1, ?, ?, '2026-11-01T00:00:00Z')
+                """, arguments: [Data([0, 0, 128, 63]), Self.legacySnapshotJSON])
+        }
+
+        var developmentMigrator = DatabaseMigrator()
+        DatabaseMigrations.registerRelease197DevelopmentMigrationsForTesting(
+            into: &developmentMigrator
+        )
+        // GRDB 一次 migrate 批次的 appliedIdentifiers 是批前快照，merging 收敛
+        // 只认批前已应用的标识；真实开发库总是分多次启动逐级升级，这里逐级
+        // 提交复刻真实账本。注意 v30 的收敛会从账本删除 v28-knowledge-activity
+        // 标识——GRDB 对「已注册但账本中不存在」的迁移一律视为未应用并重跑，
+        // 收敛之后再用同一 migrator 开新批次就会重跑建表（真实演进中该注册
+        // 随即移除、由 v30 的 merging 接管，不会发生）。因此 v30 起的剩余
+        // 迁移必须留在同一批执行。
+        let developmentSequence = [
+            "v28-clear-empty-repo-note-edited-at",
+            "v28-knowledge-activity",
+            "v29-recheck-legacy-zero-subscriber-counts",
+            "v30-knowledge-activity",
+            "v31-compressed-local-snapshots",
+        ]
+        if let boundaryIndex = developmentSequence.firstIndex(of: boundary) {
+            let convergenceIndex = developmentSequence.firstIndex(of: "v30-knowledge-activity")
+                ?? boundaryIndex
+            let leveledCount = min(boundaryIndex, convergenceIndex)
+            for identifier in developmentSequence[..<leveledCount] {
+                try developmentMigrator.migrate(queue, upTo: identifier)
+            }
+        }
+        try developmentMigrator.migrate(queue, upTo: boundary)
+        return queue
+    }
+
+    @Test("1.9.7 正式迁移应接管早期、中期与完整开发库")
+    func release197MigrationConvergesDevelopmentDatabases() throws {
+        // 依次覆盖：只跑过清理、停在早期 knowledge、停在 v30 收敛点、完整开发库。
+        let developmentBoundaries = [
+            "v28-clear-empty-repo-note-edited-at",
+            "v28-knowledge-activity",
+            "v30-knowledge-activity",
+            "v31-compressed-local-snapshots",
+        ]
+
+        for boundary in developmentBoundaries {
+            let queue = try makeRelease197DevelopmentDB(upTo: boundary)
+
+            var releaseMigrator = DatabaseMigrator()
+            DatabaseMigrations.registerAll(into: &releaseMigrator)
+            try releaseMigrator.migrate(queue)
+
+            try queue.read { db in
+                let applied = try releaseMigrator.appliedIdentifiers(db)
+                #expect(applied.contains("v28-release-1.9.7"), "boundary=\(boundary)")
+                #expect(applied.isDisjoint(with: release197DevelopmentIdentifiers), "boundary=\(boundary)")
+                #expect(try db.tableExists("knowledge_activity"), "boundary=\(boundary)")
+                #expect(try db.tableExists("knowledge_activity_coverage"), "boundary=\(boundary)")
+                #expect(try String.fetchOne(
+                    db, sql: "SELECT content FROM repo_notes WHERE repo_id = 1"
+                ) == "", "boundary=\(boundary)")
+                #expect(try String.fetchOne(
+                    db, sql: "SELECT edited_at FROM repo_notes WHERE repo_id = 1"
+                ) == nil, "boundary=\(boundary)")
+                #expect(try Int.fetchOne(
+                    db, sql: "SELECT subscribers_count FROM repos WHERE id = 1"
+                ) == nil, "boundary=\(boundary)")
+                #expect(try !db.columns(in: "repo_embeddings").contains { $0.name == "snapshot_json" },
+                        "boundary=\(boundary)")
+                let packed = try #require(try Data.fetchOne(
+                    db, sql: "SELECT snapshot_payload FROM repo_embeddings WHERE repo_id = 1"
+                ), "boundary=\(boundary)")
+                #expect(CacheJSONCodec.isCompressed(packed), "boundary=\(boundary)")
+                #expect(try CacheJSONCodec.unpack(packed) == Data(Self.legacySnapshotJSON.utf8),
+                        "boundary=\(boundary)")
+            }
+        }
     }
 
     @Test("全量迁移应建出所有 P0 表与知识库 RAG 表")
