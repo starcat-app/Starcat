@@ -6,7 +6,7 @@
 >
 > 操作规范：[`docs/5-规范/Git-分支与Worktree规范.md`](docs/5-规范/Git-分支与Worktree规范.md)
 >
-> 最后核对：2026-11-22
+> 最后核对：2026-11-23
 
 ## 登记说明
 
@@ -49,9 +49,9 @@ Search Center 内容过滤、误杀控制、来源胶囊筛选、主题适配与
 | `codex/skill-evaluator` | 本地 `../Starcat-skill-evaluator`；无远端专项分支 | 基于 `origin/dev@d436acf6`，为 Direct 的仓库 Skills 面板和本机管理窗口加入静态及 AI 评估、批量报告与 CLI/MCP 能力。 | `已合并`；2026-11-22 两次将 `dev` 合入本分支（`388f3bf8` / `4a49731e`），解决能力覆盖清单 CAP 编号、`StarcatMCPPublicFacade` init 与 `BRANCH.md` 冲突，并以 `eee16eea` 修复 `tasks` 初始化编译错误；在合并树上通过 121 项定向测试及双渠道构建，再经 `dab386de` 以 merge commit 合回本地 `dev`（未 push）。仍待 dong4j 功能与 UI 验收。 | 保留本地分支与 worktree 供验收；如需删除或推送远端，等待 dong4j 单独授权。 |
 | `codex/repo-list-loading-motion` | 本地，`../Starcat-repo-list-loading-motion` | 从 `dev@df9db309` 统一星标、探索与活动中栏的列表切换及加载衔接。按[专题清单](docs/4-工程进度/中栏列表加载动效专题/实施Checklist.md)执行。 | `已合并`；2026-11-22 将 `dev` 合入本分支并解决 `HomeView` / `RepoListView` 两处冲突（保留 dev 洞察全窗口覆盖与专题 `MiddleListPageFade` 动效），再 fast-forward 合回 `dev`。 | 保留本地分支与 worktree；如需删除，等待 dong4j 单独授权。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
-| `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-11-15 按 dong4j 要求经 `4712a2b6` 合入 Skill 管理 `3162ca5d`，包含研究文档、M0–M3 实现及开窗崩溃修复。dong4j 确认目前可用，后续优化与剩余验收直接在本工作区进行；每日推荐已合入本地 `dev`，2026-11-16 再整合列表与详情动效、七项性能修复及独立洞察图标改动；CLI/MCP 能力与浏览器配对经 `8eea1a1b` 合入，四个支持仓也已同步至各自 `dev`。2026-11-19 从 `d436acf6` 构建 Direct `1.9.6 Beta 1`。 | 继续承载后续开发。每次发布后同步主仓库及全部 supports 独立项目的本地与远端 `dev/main`，新增变更不得回写已公开 tag。 |
+| `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-11-15 按 dong4j 要求经 `4712a2b6` 合入 Skill 管理 `3162ca5d`，包含研究文档、M0–M3 实现及开窗崩溃修复。dong4j 确认目前可用，后续优化与剩余验收直接在本工作区进行；每日推荐已合入本地 `dev`，2026-11-16 再整合列表与详情动效、七项性能修复及独立洞察图标改动；CLI/MCP 能力与浏览器配对经 `8eea1a1b` 合入，四个支持仓也已同步至各自 `dev`。2026-11-19 从 `d436acf6` 构建 Direct `1.9.6 Beta 1`。2026-11-23 从 `c6e510e0` 发布 Direct `1.9.7-beta.1`（GitHub prerelease、`starcat.ink` 开发 feed 与官网双语日志均核验），并提交发布器上传时限修复与发布审计落档。 | 继续承载后续开发。每次发布后同步主仓库及全部 supports 独立项目的本地与远端 `dev/main`，新增变更不得回写已公开 tag。 |
 | `codex/laya-mlx-swift-poc` | 本地；无独立 worktree、无远端分支 | Laya MLX 决策引擎 PoC 的历史分支。 | `已合并`；分支头 `706f6bff` 已是 `dev` 的 ancestor，独有提交为 0。 | 暂时保留本地分支；如需删除，等待 dong4j 单独授权。 |
-| `main` | 本地 + `origin/main`；仓库根目录 worktree（正式发布期间检出） | 远端默认稳定主线和发布基线。 | `长期保留`；2026-11-19 在 Direct `1.9.6 Beta 1` 发布后快进到 `d436acf6`，核实本地和远端 `dev/main` 均指向该提交。 | 保持稳定；发布收尾覆盖全部独立项目，回读远端 refs 确认同步结果，不改写已公开 tag。 |
+| `main` | 本地 + `origin/main`；仓库根目录 worktree（正式发布期间检出） | 远端默认稳定主线和发布基线。 | `长期保留`；2026-11-19 在 Direct `1.9.6 Beta 1` 发布后快进到 `d436acf6`，核实本地和远端 `dev/main` 均指向该提交。2026-11-23 在 Direct `1.9.7-beta.1` 发布收尾后随 `dev` 再次快进，发布器修复与发布审计落档随同进入 `main`。 | 保持稳定；发布收尾覆盖全部独立项目，回读远端 refs 确认同步结果，不改写已公开 tag。 |
 
 2026-11-19 核对主仓库及 supports 下共 31 个独立 Git 仓库，`dev/main` 已对齐，
 包括官网 `1264f7f`、CLI `4e0d274`、Homebrew CLI `7fdf7a7`，以及仅有本地分支的
